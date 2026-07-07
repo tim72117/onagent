@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+.env
+.env.local
+.env.*.local
+
+# Go
+/backend/agent-tool-platform
+/backend/server

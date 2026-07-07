@@ -1,0 +1,28 @@
+# Tool definitions for the analysis project (examples/analysis), a Vue 3
+# survey-analysis tool. The user picks which survey questions to include in
+# an analysis run from a checklist (components/Menu.vue); this app lets an
+# assistant help by selecting/deselecting questions by name.
+appId: analysis-app
+
+tools:
+  - name: select_question
+    description: >-
+      Select or deselect survey questions in the question checklist by
+      name, so the user doesn't have to find and click each one manually.
+      Pass clear=true to reset the whole checklist instead. Use this when
+      the user describes which questions they want to include in their
+      analysis (e.g. "選擇跟年齡有關的題目") or asks to start over.
+    parameters:
+      type: object
+      properties:
+        names:
+          type: array
+          description: The question names (as shown in the checklist) to select or deselect. Omit when clear=true.
+          items:
+            type: string
+        selected:
+          type: boolean
+          description: true to check these questions, false to uncheck them. Omit when clear=true.
+        clear:
+          type: boolean
+          description: true to clear all currently selected questions, ignoring names/selected.

@@ -1,0 +1,60 @@
+# Example tool definition file for a developer application.
+# Each file under backend/tools/ describes one app's tools; the appId
+# must be unique across all files and is what the front-end SDK passes
+# in its `hello` message to select which tool set to load.
+appId: demo-app
+
+tools:
+  - name: fill_search_form
+    description: >-
+      Fill the on-page search form with the given query and submit it.
+      Use this when the user asks to search for something.
+    parameters:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+          description: The search text to enter into the search box.
+
+  - name: navigate_to_page
+    description: >-
+      Navigate the current page to a different in-app route. Use this to
+      help the user reach a page they asked for (e.g. "take me to settings").
+    parameters:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: The app-relative path to navigate to, e.g. "/settings".
+    returns:
+      type: object
+      properties:
+        currentPath:
+          type: string
+          description: The path the page actually landed on after navigation.
+
+  - name: highlight_element
+    description: >-
+      Visually highlight a DOM element on the page to draw the user's
+      attention to it, identified by a CSS selector.
+    parameters:
+      type: object
+      required: [selector]
+      properties:
+        selector:
+          type: string
+          description: CSS selector for the element to highlight.
+        durationMs:
+          type: number
+          description: How long to keep the highlight visible, in milliseconds.
+
+  - name: click_checkout_button
+    description: >-
+      Click the checkout button to complete the current order. Use this
+      when the user asks to check out, complete their purchase, or finish
+      the order.
+    parameters:
+      type: object
+      properties: {}
