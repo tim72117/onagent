@@ -1,5 +1,5 @@
 {
-  "name": "@agent-tool-platform/tool-editor",
+  "name": "@agent-tool-platform/console",
   "version": "0.1.0",
   "private": true,
   "description": "Front-end for third-party developers to define and preview agent-tool-platform tool schemas (YAML / LLM tool JSON / TypeScript) without touching the backend directly.",

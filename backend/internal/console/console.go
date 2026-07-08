@@ -1,14 +1,18 @@
-// Package console exposes the API the tool-editor front-end (or any other
+// Package console exposes the API the console front-end (or any other
 // client) uses for developers to register/log in and manage their own
 // apps: creating them, editing tool definitions and the agent Thought, and
 // issuing/revoking API keys. This is not an administrator-only surface —
 // every registered user gets one, scoped to the apps they created.
 //
 // Every route (other than /auth/register and /auth/login themselves)
-// requires a valid session cookie (internal/session), and every app-scoped
-// operation checks that the calling user owns the app before touching it —
-// this is the actual multi-tenant boundary. There is no super-admin
-// override: a user can only ever see and modify apps they created.
+// requires either a valid session cookie (internal/session, for the
+// browser console) or a bearer token (internal/usertoken, for CLI/script
+// access) — see withAuth. Every app-scoped operation additionally checks
+// that the calling user owns the app before touching it; this ownership
+// check is the actual multi-tenant boundary, applied identically
+// regardless of which of the two auth methods resolved the caller. There
+// is no super-admin override: a user can only ever see and modify apps
+// they created.
 // (An earlier version of this package used one shared ADMIN_TOKEN with no
 // per-app ownership at all, and was named "admin" — misleading, since it's
 // every developer's own workspace, not an operator-only console.)
@@ -18,11 +22,14 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/tim72117/agent-tool-platform/internal/auth"
+	"github.com/tim72117/agent-tool-platform/internal/cliauth"
 	"github.com/tim72117/agent-tool-platform/internal/inference"
 	"github.com/tim72117/agent-tool-platform/internal/session"
 	"github.com/tim72117/agent-tool-platform/internal/toolschema"
+	"github.com/tim72117/agent-tool-platform/internal/usertoken"
 )
 
 // Handler serves the /console/* and /auth/* APIs.
@@ -30,10 +37,12 @@ type Handler struct {
 	Apps    *toolschema.Registry
 	Auth    *auth.Store
 	Session *session.Store
+	Tokens  *usertoken.Store
+	CliAuth *cliauth.Store
 }
 
-func NewHandler(apps *toolschema.Registry, authStore *auth.Store, sessionStore *session.Store) *Handler {
-	return &Handler{Apps: apps, Auth: authStore, Session: sessionStore}
+func NewHandler(apps *toolschema.Registry, authStore *auth.Store, sessionStore *session.Store, tokenStore *usertoken.Store, cliAuthStore *cliauth.Store) *Handler {
+	return &Handler{Apps: apps, Auth: authStore, Session: sessionStore, Tokens: tokenStore, CliAuth: cliAuthStore}
 }
 
 // syncWantRole re-registers appID's want agent role (tool whitelist +
@@ -68,14 +77,56 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /console/apps/{appId}", h.withOwnedApp(h.deleteApp))
 	mux.HandleFunc("POST /console/apps/{appId}/key", h.withOwnedApp(h.issueKey))
 	mux.HandleFunc("DELETE /console/apps/{appId}/key", h.withOwnedApp(h.revokeKey))
+
+	// issueToken and approveCliAuth are withCookieAuth, not withAuth: both
+	// mint a new bearer token, and if a bearer token itself could
+	// authorize minting more of them, one leaked token would let an
+	// attacker mint unlimited replacements — revoking the token that
+	// leaked wouldn't cut off access, the attacker just switches to one
+	// minted before the victim noticed. Requiring the browser session
+	// (which a CLI never holds beyond the moment it trades it for a
+	// token) breaks that chain. Listing/revoking stay on withAuth since
+	// neither compounds access — revoking is self-limiting no matter
+	// which credential requested it.
+	mux.HandleFunc("POST /console/tokens", h.withCookieAuth(h.issueToken))
+	mux.HandleFunc("GET /console/tokens", h.withAuth(h.listTokens))
+	mux.HandleFunc("DELETE /console/tokens/{tokenId}", h.withAuth(h.revokeToken))
+
+	// start and exchange are unauthenticated by design — see
+	// internal/cliauth's package doc for why the session id itself (32
+	// random bytes, single-use) is the right credential for each: Start
+	// happens before the CLI has any credential at all, and Exchange's id
+	// only ever works once, right after a legitimate approval, for
+	// whoever holds the id the CLI itself generated the URL from.
+	mux.HandleFunc("POST /console/cli-auth/start", h.startCliAuth)
+	mux.HandleFunc("GET /console/cli-auth/{id}", h.getCliAuth)
+	mux.HandleFunc("POST /console/cli-auth/{id}/approve", h.withCookieAuth(h.approveCliAuth))
+	mux.HandleFunc("POST /console/cli-auth/{id}/exchange", h.exchangeCliAuth)
 }
 
-// withAuth resolves the session cookie and rejects the request if it's
-// missing/expired. Handlers that need the user read it back via
-// h.userFrom(r) — Go's stdlib http.HandlerFunc has no room for an extra
-// return value, so it rides in via request context like any other
-// middleware-injected value.
+// withAuth resolves the caller's identity — a session cookie first (the
+// browser console's path), falling back to a bearer token
+// (internal/usertoken, the CLI's path) — and rejects the request if
+// neither resolves. Handlers downstream see a single *session.User either
+// way; they never need to know which method authenticated the caller.
 func (h *Handler) withAuth(next func(http.ResponseWriter, *http.Request, *session.User)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if user, ok := h.Session.Verify(r); ok {
+			next(w, r, user)
+			return
+		}
+		if u, ok := h.Tokens.Verify(r); ok {
+			next(w, r, &session.User{ID: u.ID, Email: u.Email})
+			return
+		}
+		http.Error(w, "not authenticated", http.StatusUnauthorized)
+	}
+}
+
+// withCookieAuth is withAuth restricted to the session cookie only, no
+// bearer-token fallback — see the Register call sites for why this
+// matters specifically for token-minting routes.
+func (h *Handler) withCookieAuth(next func(http.ResponseWriter, *http.Request, *session.User)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user, ok := h.Session.Verify(r)
 		if !ok {
@@ -355,6 +406,156 @@ func (h *Handler) revokeKey(w http.ResponseWriter, r *http.Request, user *sessio
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- user tokens (CLI/script auth) ------------------------------------------
+
+type issueTokenRequest struct {
+	// Name is a human label distinguishing this token from a user's other
+	// ones, e.g. "laptop" or "ci" — shown back in listTokens so a user can
+	// tell which one to revoke without having kept the plaintext.
+	Name string `json:"name"`
+}
+
+type issueTokenResponse struct {
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Token string `json:"token"` // plaintext — shown exactly once, never retrievable again
+}
+
+func (h *Handler) issueToken(w http.ResponseWriter, r *http.Request, user *session.User) {
+	var req issueTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	id, token, err := h.Tokens.Issue(user.ID, req.Name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, issueTokenResponse{ID: id, Name: req.Name, Token: token})
+}
+
+func (h *Handler) listTokens(w http.ResponseWriter, r *http.Request, user *session.User) {
+	tokens, err := h.Tokens.List(user.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, tokens)
+}
+
+func (h *Handler) revokeToken(w http.ResponseWriter, r *http.Request, user *session.User) {
+	tokenID, err := strconv.ParseInt(r.PathValue("tokenId"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid tokenId", http.StatusBadRequest)
+		return
+	}
+	if err := h.Tokens.Revoke(user.ID, tokenID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- CLI browser login (atp login --web) -----------------------------------
+//
+// Four routes implement the handoff described in internal/cliauth's
+// package doc: the CLI registers its (validated, loopback-only)
+// redirect_uri out of band via start, before it has any credential at
+// all; the browser only ever carries the resulting opaque id; approve
+// mints the actual token server-side once the user consents; and the
+// CLI's own local callback server collects it via exchange, once, right
+// after the browser redirects back with that id.
+
+type startCliAuthRequest struct {
+	RedirectURI string `json:"redirectUri"`
+	Name        string `json:"name"`
+}
+
+type startCliAuthResponse struct {
+	ID string `json:"id"`
+}
+
+func (h *Handler) startCliAuth(w http.ResponseWriter, r *http.Request) {
+	var req startCliAuthRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	id, err := h.CliAuth.Start(req.RedirectURI, req.Name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusCreated, startCliAuthResponse{ID: id})
+}
+
+type getCliAuthResponse struct {
+	// Name is the only thing this endpoint reveals about a session —
+	// enough for CliAuthPage to render "the {name} CLI wants to sign in"
+	// without needing redirect_uri (or anything else sensitive) in the
+	// page's own URL or any response a page script can read.
+	Name string `json:"name"`
+}
+
+func (h *Handler) getCliAuth(w http.ResponseWriter, r *http.Request) {
+	name, ok := h.CliAuth.NameFor(r.PathValue("id"))
+	if !ok {
+		http.Error(w, "unknown or expired session", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, getCliAuthResponse{Name: name})
+}
+
+type approveCliAuthResponse struct {
+	// RedirectURI is where the front-end sends the browser next (with
+	// ?code={id} appended) — looked up server-side from what start
+	// registered, never re-derived from the page's own URL.
+	RedirectURI string `json:"redirectUri"`
+}
+
+func (h *Handler) approveCliAuth(w http.ResponseWriter, r *http.Request, user *session.User) {
+	id := r.PathValue("id")
+
+	name, ok := h.CliAuth.NameFor(id)
+	if !ok {
+		http.Error(w, "unknown or expired session", http.StatusNotFound)
+		return
+	}
+
+	_, token, err := h.Tokens.Issue(user.ID, name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	redirectURI, ok := h.CliAuth.Approve(id, token)
+	if !ok {
+		// The minted token above was never persisted anywhere or shown to
+		// anyone — Approve failing just means it's discarded here, not a
+		// leak. See Approve's doc comment for why double-approval is
+		// rejected rather than re-collected.
+		http.Error(w, "session already used or expired", http.StatusConflict)
+		return
+	}
+	writeJSON(w, http.StatusOK, approveCliAuthResponse{RedirectURI: redirectURI})
+}
+
+type exchangeCliAuthResponse struct {
+	Token string `json:"token"` // plaintext — shown exactly once, never retrievable again
+}
+
+func (h *Handler) exchangeCliAuth(w http.ResponseWriter, r *http.Request) {
+	token, ok := h.CliAuth.Exchange(r.PathValue("id"))
+	if !ok {
+		http.Error(w, "not approved yet, or already collected", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, exchangeCliAuthResponse{Token: token})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {

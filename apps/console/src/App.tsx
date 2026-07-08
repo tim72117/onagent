@@ -5,6 +5,7 @@ import { api, ApiError } from './api'
 import type { AppSummary, CurrentUser, IssuedKey } from './api'
 import { Login } from './Login'
 import { KeyModal } from './KeyModal'
+import { AddAppModal } from './AddAppModal'
 import { Sidebar } from './Sidebar'
 import { ToolForm } from './ToolForm'
 import { ThoughtEditor } from './ThoughtEditor'
@@ -30,6 +31,7 @@ export default function App() {
   const [activeToolIndex, setActiveToolIndex] = useState<number | null>(null)
   const [agentSelected, setAgentSelected] = useState(false)
   const [issuedKey, setIssuedKey] = useState<IssuedKey | null>(null)
+  const [showAddApp, setShowAddApp] = useState(false)
   const [busy, setBusy] = useState(false)
   // Origin edits save immediately on submit (unlike tool edits, which batch
   // into draft/dirty until Save) — it's a single field with its own PUT
@@ -143,10 +145,12 @@ export default function App() {
     }
   }
 
-  async function addApp() {
+  function addApp() {
     if (!confirmDiscard()) return
-    const appId = prompt('New app id (letters, digits, - and _):')?.trim()
-    if (!appId) return
+    setShowAddApp(true)
+  }
+
+  async function createApp(appId: string) {
     try {
       await api.createApp(appId)
       await refreshSummaries()
@@ -155,6 +159,7 @@ export default function App() {
       setDirty(false)
       setActiveToolIndex(null)
       setAgentSelected(false)
+      setShowAddApp(false)
     } catch (err) {
       reportError(err)
     }
@@ -440,6 +445,7 @@ export default function App() {
       </main>
 
       {issuedKey && <KeyModal issued={issuedKey} onClose={() => setIssuedKey(null)} />}
+      {showAddApp && <AddAppModal onSubmit={createApp} onClose={() => setShowAddApp(false)} />}
     </div>
   )
 }

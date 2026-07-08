@@ -200,7 +200,7 @@ func (s *Store) Logout(w http.ResponseWriter, r *http.Request) {
 // cookie from CreateSession was never stored in http://localhost dev,
 // so every request looked unauthenticated one round trip later even though
 // login itself reported success). Secure=true deployments use None because
-// the tool-editor origin and the backend origin differ (e.g. a dashboard
+// the console origin and the backend origin differ (e.g. a dashboard
 // domain calling an api. subdomain) and the fetch is cross-site from the
 // cookie's perspective. Secure=false (plain-HTTP local dev) falls back to
 // Lax, which browsers do send on the same-site fetches this SPA makes to

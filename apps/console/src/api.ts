@@ -100,4 +100,16 @@ export const api = {
 
   revokeKey: (appId: string): Promise<void> =>
     request('DELETE', `/console/apps/${id(appId)}/key`).then(() => undefined),
+
+  // The CLI's own -console page only ever carries an opaque session id
+  // (see backend/internal/cliauth) — these two calls resolve it to a
+  // display name and, on approval, to where the browser should go next.
+  // There's no client-side redirect validation here anymore: the actual
+  // destination was registered server-side when the CLI called
+  // POST /console/cli-auth/start, before this page ever existed.
+  getCliAuthName: (sessionId: string): Promise<{ name: string }> =>
+    request('GET', `/console/cli-auth/${id(sessionId)}`).then((r) => r.json()),
+
+  approveCliAuth: (sessionId: string): Promise<{ redirectUri: string }> =>
+    request('POST', `/console/cli-auth/${id(sessionId)}/approve`).then((r) => r.json()),
 }

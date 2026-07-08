@@ -7,12 +7,14 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/lib/pq v1.12.3
-
 require (
-	github.com/joho/godotenv v1.5.1 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
+	github.com/joho/godotenv v1.5.1
+	github.com/lib/pq v1.12.3
+	golang.org/x/crypto v0.53.0
+	golang.org/x/term v0.44.0
 )
+
+require golang.org/x/sys v0.46.0 // indirect
 
 require (
 	github.com/go-rod/rod v0.116.2 // indirect

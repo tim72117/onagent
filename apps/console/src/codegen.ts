@@ -67,7 +67,7 @@ export function toLLMToolsJSON(app: App): string {
 
 export function toTypeScript(app: App): string {
   const lines: string[] = []
-  lines.push(`// Preview generated from the tool-editor. DO NOT EDIT.`)
+  lines.push(`// Preview generated from the console. DO NOT EDIT.`)
   lines.push('')
 
   const names = app.tools.map((t) => t.name)

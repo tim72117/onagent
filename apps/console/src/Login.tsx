@@ -52,7 +52,7 @@ export function Login({
           <span className="sidebar-mark" aria-hidden="true">
             ⌘
           </span>
-          <span className="sidebar-brand-name">Tool Editor</span>
+          <span className="sidebar-brand-name">Console</span>
         </div>
         <p className="login-copy">
           {mode === 'login'

@@ -1040,4 +1040,9 @@ button.primary:disabled {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
+}
+
+.modal-input {
+  width: 100%;
 }

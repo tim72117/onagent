@@ -14,12 +14,14 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/tim72117/agent-tool-platform/internal/auth"
+	"github.com/tim72117/agent-tool-platform/internal/cliauth"
 	"github.com/tim72117/agent-tool-platform/internal/codegen"
 	"github.com/tim72117/agent-tool-platform/internal/console"
 	"github.com/tim72117/agent-tool-platform/internal/db"
 	"github.com/tim72117/agent-tool-platform/internal/inference"
 	"github.com/tim72117/agent-tool-platform/internal/session"
 	"github.com/tim72117/agent-tool-platform/internal/toolschema"
+	"github.com/tim72117/agent-tool-platform/internal/usertoken"
 	"github.com/tim72117/agent-tool-platform/internal/ws"
 )
 
@@ -48,13 +50,18 @@ func main() {
 	}
 	log.Info("loaded tool definitions from database", "apps", len(apps.All()))
 
+	// Governs both the WebSocket handshake (ws.Handler) and credentialed
+	// CORS for /console, /auth (withCORS) — one setting, since both are
+	// really the same question: which front-end origins does this backend
+	// trust with a real session/token, not just "which origins can read
+	// public codegen artifacts" (unrestricted regardless, see withCORS).
 	originAllowlist := parseOrigins(envOr("ALLOWED_ORIGINS", ""))
 	originChecker := ws.AllowAllOrigins
 	if len(originAllowlist) > 0 {
 		originChecker = allowlistChecker(originAllowlist)
 		log.Info("origin allowlist enabled", "origins", originAllowlist)
 	} else {
-		log.Warn("no ALLOWED_ORIGINS set; accepting WebSocket handshakes from any origin (dev mode only)")
+		log.Warn("no ALLOWED_ORIGINS set; accepting WebSocket handshakes AND credentialed /console, /auth CORS requests from any origin (dev mode only — set this before any real deployment)")
 	}
 
 	authStore := auth.New(conn)
@@ -69,6 +76,8 @@ func main() {
 		log.Warn("COOKIE_SECURE not set to \"true\"; session cookie will be sent over plain HTTP (dev mode only)")
 	}
 	sessionStore := session.New(conn, cookieSecure)
+	tokenStore := usertoken.New(conn)
+	cliAuthStore := cliauth.New(conn)
 
 	// wsAuth == nil is what tells ws.Handler to skip verification entirely
 	// (see Handler.ServeHTTP) — appropriate only when literally no app can
@@ -86,7 +95,7 @@ func main() {
 
 	inferSvc := newInferenceService(log, apps.All())
 	wsHandler := ws.NewHandler(apps, inferSvc, log, originChecker, wsAuth)
-	consoleHandler := console.NewHandler(apps, authStore, sessionStore)
+	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore)
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", wsHandler)
@@ -100,7 +109,7 @@ func main() {
 
 	addr := envOr("ADDR", ":8080")
 	log.Info("listening", "addr", addr)
-	if err := http.ListenAndServe(addr, withCORS(mux)); err != nil {
+	if err := http.ListenAndServe(addr, withCORS(mux, originChecker)); err != nil {
 		log.Error("server exited", "err", err)
 		os.Exit(1)
 	}
@@ -135,30 +144,42 @@ func handleToolTypeScript(apps *toolschema.Registry) http.HandlerFunc {
 	}
 }
 
-// withCORS enables browser fetches to the HTTP endpoints above from any
-// origin. The codegen endpoints (tools.json / tools.ts) stay permissive —
-// they only return public artifacts, so "*" leaks nothing there.
+// withCORS enables browser fetches to the HTTP endpoints above. Policy
+// differs by path, because the security requirement differs:
 //
-// The /console and /auth endpoints now run on session cookies (internal/session)
-// instead of a bearer token, and cookies are ambient credentials a
-// cross-site page can ride on — the classic case CORS exists to guard
-// against. Browsers refuse to combine Access-Control-Allow-Origin: * with
-// Access-Control-Allow-Credentials: true specifically to prevent that, so
-// this echoes back the actual request Origin (and always sets
-// Allow-Credentials) rather than using a wildcard. That's still an open
-// allowlist — any origin gets echoed back — matching the tool-editor's
-// current "runs wherever a developer points it" deployment model; a
-// production deployment with a fixed dashboard origin should replace this
-// with a real allowlist the way ws.Handler's AllowedOrigins already works.
-func withCORS(next http.Handler) http.Handler {
+//   - /apps/{appId}/tools.json|.ts (codegen) return public, non-credentialed
+//     artifacts — "*" leaks nothing there, so any origin is fine.
+//
+//   - /console/* and /auth/* run on session cookies (internal/session) or a
+//     bearer token minted through them, and cookies are ambient credentials
+//     a cross-site page can ride on — the classic case CORS exists to guard
+//     against. This used to reflect back *any* request Origin (with
+//     Access-Control-Allow-Credentials: true), which let any website that
+//     got a logged-in user to visit it read authenticated responses from
+//     their browser — including a freshly minted bearer token from
+//     POST /console/tokens or /console/cli-auth/approve. allowedOrigins
+//     (the same allowlist ws.Handler already enforces for WebSocket
+//     handshakes — one ALLOWED_ORIGINS setting governs both) is now
+//     required to get Access-Control-Allow-Origin at all here; an origin
+//     not on the list gets no such header, so the browser's own
+//     same-origin policy blocks the page from ever reading the response,
+//     regardless of what the server computed.
+func withCORS(next http.Handler, allowedOrigins ws.OriginChecker) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Vary", "Origin")
-		} else {
+		origin := r.Header.Get("Origin")
+		credentialed := strings.HasPrefix(r.URL.Path, "/console/") || strings.HasPrefix(r.URL.Path, "/auth/")
+
+		switch {
+		case credentialed:
+			if origin != "" && allowedOrigins(origin) {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Set("Vary", "Origin")
+			}
+		default:
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		if r.Method == http.MethodOptions {

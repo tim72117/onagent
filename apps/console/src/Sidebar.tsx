@@ -39,7 +39,7 @@ export function Sidebar({
         <span className="sidebar-mark" aria-hidden="true">
           ⌘
         </span>
-        <span className="sidebar-brand-name">Tool Editor</span>
+        <span className="sidebar-brand-name">Console</span>
       </div>
 
       <div className="sidebar-section">
