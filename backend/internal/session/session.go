@@ -1,7 +1,7 @@
 // Package session implements email/password accounts and database-backed
-// login sessions for the admin API (internal/admin), replacing the earlier
-// single shared ADMIN_TOKEN. Every app now belongs to exactly one user
-// (apps.owner_id); internal/admin is responsible for checking that
+// login sessions for the console API (internal/console), replacing the
+// earlier single shared ADMIN_TOKEN. Every app now belongs to exactly one
+// user (apps.owner_id); internal/console is responsible for checking that
 // ownership on every request, this package only answers "who is making
 // this request, if anyone."
 package session
@@ -21,7 +21,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// CookieName is the cookie the admin API's session id travels in. httpOnly
+// CookieName is the cookie the console API's session id travels in. httpOnly
 // so page JavaScript can't read it (XSS can't exfiltrate the session even
 // if it can run arbitrary code), Secure in production (see Store.Secure).
 const CookieName = "atp_session"

@@ -5,22 +5,24 @@
 // want ships with built-in tools (Bash, Browser, Edit, ...) that execute for
 // real on the backend — Browser literally drives a headless Chrome instance.
 // Those must never run here: this platform's tools are meant to be executed
-// by the connected web page, not by the backend. WantService therefore
-// always runs want under the "platform-tools" agent role (see
-// want_tools.go), whose tool whitelist contains only the tools declared by
-// loaded apps; the built-ins are registered in want's global registry (we
-// can't stop that) but are simply never selectable by this role. Selecting
-// one of those tools doesn't execute it either — the tool's Call
-// implementation (forwardingTool, in want_tools.go) records the call and
-// returns immediately; WantService.Complete reads it back out of the shared
-// sink once the run reaches "idle".
+// by the connected web page, not by the backend. WantService therefore runs
+// want under a per-app agent role (agentRoleFor in want_tools.go), whose
+// tool whitelist contains only that app's own declared tools; the built-ins
+// are registered in want's global registry (we can't stop that) but are
+// simply never selectable by any of these roles. Selecting one of an app's
+// own tools doesn't execute it either — the tool's Call implementation
+// (forwardingTool, in want_tools.go) records the call and returns
+// immediately; WantService.Complete reads it back out of the shared sink
+// once the run reaches "idle".
 //
-// want.Orchestrator has one AgentID per orchestrator instance and dispatches
-// every Submit() onto the same activation queue, processing one agent run at
-// a time. WantService therefore serializes Complete() calls with a mutex:
-// concurrent requests would otherwise race on the same AgentID's event
-// stream — and on the package-level callSink — and each would risk
-// observing the other's output.
+// want.Orchestrator has one AgentID (and one Role) per orchestrator
+// instance and dispatches every Submit() onto the same activation queue,
+// processing one agent run at a time. WantService therefore serializes
+// Complete() calls with a mutex: concurrent requests would otherwise race
+// on the same AgentID/Role and the package-level callSink, each risking
+// observing the other's output — this is also what makes it safe to swap
+// AgentID/Role per call (see Complete) rather than needing one orchestrator
+// per app/session.
 package inference
 
 import (
@@ -67,8 +69,11 @@ type WantService struct {
 	mu   sync.Mutex
 }
 
-// NewWant builds a want orchestrator from settings, running under the
-// platform-tools agent role, and starts its background dispatch loop.
+// NewWant builds a want orchestrator from settings and starts its
+// background dispatch loop. The initial role is a harmless placeholder —
+// Complete sets orch.Role to the requesting app's own role on every call,
+// before that app has ever been selected the orchestrator simply hasn't
+// been asked to run yet.
 func NewWant(settings WantSettings) *WantService {
 	orch := orchestrator.SetupWith(&config.Settings{
 		Provider:        settings.Provider,
@@ -79,7 +84,7 @@ func NewWant(settings WantSettings) *WantService {
 		AnthropicAPIKey: settings.AnthropicAPIKey,
 		Workspace:       settings.Workspace,
 		MockScenario:    settings.MockScenario,
-	}, platformAgentRole)
+	})
 	return &WantService{orch: orch}
 }
 
@@ -99,6 +104,16 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 	// while the field changes.
 	if id := sanitizeSessionID(req.SessionID); id != "" {
 		s.orch.AgentID = "WS-" + id
+	}
+
+	// Per-app agent selection: orch.Role picks which want agent definition
+	// (Tools whitelist + Thought) LoadToolUseContext resolves for this run
+	// — see want_tools.go's registerAppRole, which registered one such
+	// definition per app at startup. Without this, every app would share
+	// whatever role the orchestrator happened to be constructed with,
+	// meaning app A's LLM could see app B's tools (or B's custom Thought).
+	if req.AppID != "" {
+		s.orch.Role = agentRoleFor(req.AppID)
 	}
 
 	resetCallSink()

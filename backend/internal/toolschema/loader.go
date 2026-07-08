@@ -13,8 +13,8 @@ var nameRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // appIDRE constrains appIds to safe characters for use as a SQL identifier
 // value and, in the migration path (cmd/migrate) and auth.Store.Issue, a
-// filename stem. Path separators, "..", leading dots are all excluded so an
-// admin API request can never point outside what's intended.
+// filename stem. Path separators, "..", leading dots are all excluded so a
+// console API request can never point outside what's intended.
 var appIDRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
 // ValidAppID reports whether id is safe to use as an app identifier.
@@ -77,7 +77,7 @@ func LoadFile(path string) (*App, error) {
 
 // Validate checks the same rules LoadFile enforces (unique/valid tool
 // names, required description/parameters.type), independent of where the
-// App came from. Used by LoadFile for YAML on disk, and by the admin API
+// App came from. Used by LoadFile for YAML on disk, and by the console API
 // for an App decoded from a request body — both must reject the same
 // malformed input before it ever reaches a file or the in-memory Registry.
 func (a *App) Validate() error {

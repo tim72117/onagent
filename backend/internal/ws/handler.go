@@ -87,7 +87,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		// Per-app origin binding: this app's key only authenticates
 		// connections presenting the exact Origin it was configured with
-		// (admin's SetOrigin). No origin configured means every connection
+		// (auth.Store.SetOrigin, called from internal/console). No origin configured means every connection
 		// for this app is rejected (fail-closed) rather than falling back
 		// to the global AllowedOrigins check — a key stolen from one site
 		// must not work when replayed from another just because that other

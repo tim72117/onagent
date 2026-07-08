@@ -1,6 +1,8 @@
-// Package admin exposes the management API the tool-editor front-end (or
-// any other admin client) uses to register/log in, create apps, edit their
-// tool definitions, and issue/revoke API keys.
+// Package console exposes the API the tool-editor front-end (or any other
+// client) uses for developers to register/log in and manage their own
+// apps: creating them, editing tool definitions and the agent Thought, and
+// issuing/revoking API keys. This is not an administrator-only surface —
+// every registered user gets one, scoped to the apps they created.
 //
 // Every route (other than /auth/register and /auth/login themselves)
 // requires a valid session cookie (internal/session), and every app-scoped
@@ -8,8 +10,9 @@
 // this is the actual multi-tenant boundary. There is no super-admin
 // override: a user can only ever see and modify apps they created.
 // (An earlier version of this package used one shared ADMIN_TOKEN with no
-// per-app ownership at all; ownership checking is what replaced it.)
-package admin
+// per-app ownership at all, and was named "admin" — misleading, since it's
+// every developer's own workspace, not an operator-only console.)
+package console
 
 import (
 	"encoding/json"
@@ -17,11 +20,12 @@ import (
 	"net/http"
 
 	"github.com/tim72117/agent-tool-platform/internal/auth"
+	"github.com/tim72117/agent-tool-platform/internal/inference"
 	"github.com/tim72117/agent-tool-platform/internal/session"
 	"github.com/tim72117/agent-tool-platform/internal/toolschema"
 )
 
-// Handler serves the /admin/* and /auth/* APIs.
+// Handler serves the /console/* and /auth/* APIs.
 type Handler struct {
 	Apps    *toolschema.Registry
 	Auth    *auth.Store
@@ -32,21 +36,38 @@ func NewHandler(apps *toolschema.Registry, authStore *auth.Store, sessionStore *
 	return &Handler{Apps: apps, Auth: authStore, Session: sessionStore}
 }
 
-// Register mounts the auth and admin routes on mux.
+// syncWantRole re-registers appID's want agent role (tool whitelist +
+// Thought) so an edit takes effect on the very next prompt, without a
+// restart. Called after every successful write that changes what an app's
+// agent should see/say (create, save tools, set thought) — see
+// inference.RegisterAppRole's doc comment for what happens if this is
+// skipped. A no-op-safe best-effort: if the Registry's cache hasn't
+// reflected the write yet (shouldn't happen — Registry.Save/Create both
+// Reload before returning), this silently does nothing rather than
+// panicking, since a stale want role is a correctness bug to fix, not a
+// reason to fail the HTTP request that already succeeded.
+func (h *Handler) syncWantRole(appID string) {
+	if app, ok := h.Apps.Get(appID); ok {
+		inference.RegisterAppRole(app)
+	}
+}
+
+// Register mounts the auth and console routes on mux.
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/register", h.register)
 	mux.HandleFunc("POST /auth/login", h.login)
 	mux.HandleFunc("POST /auth/logout", h.logout)
 	mux.HandleFunc("GET /auth/me", h.withAuth(h.me))
 
-	mux.HandleFunc("GET /admin/apps", h.withAuth(h.listApps))
-	mux.HandleFunc("POST /admin/apps", h.withAuth(h.createApp))
-	mux.HandleFunc("GET /admin/apps/{appId}", h.withOwnedApp(h.getApp))
-	mux.HandleFunc("PUT /admin/apps/{appId}/tools", h.withOwnedApp(h.saveTools))
-	mux.HandleFunc("PUT /admin/apps/{appId}/origin", h.withOwnedApp(h.setOrigin))
-	mux.HandleFunc("DELETE /admin/apps/{appId}", h.withOwnedApp(h.deleteApp))
-	mux.HandleFunc("POST /admin/apps/{appId}/key", h.withOwnedApp(h.issueKey))
-	mux.HandleFunc("DELETE /admin/apps/{appId}/key", h.withOwnedApp(h.revokeKey))
+	mux.HandleFunc("GET /console/apps", h.withAuth(h.listApps))
+	mux.HandleFunc("POST /console/apps", h.withAuth(h.createApp))
+	mux.HandleFunc("GET /console/apps/{appId}", h.withOwnedApp(h.getApp))
+	mux.HandleFunc("PUT /console/apps/{appId}/tools", h.withOwnedApp(h.saveTools))
+	mux.HandleFunc("PUT /console/apps/{appId}/origin", h.withOwnedApp(h.setOrigin))
+	mux.HandleFunc("PUT /console/apps/{appId}/thought", h.withOwnedApp(h.setThought))
+	mux.HandleFunc("DELETE /console/apps/{appId}", h.withOwnedApp(h.deleteApp))
+	mux.HandleFunc("POST /console/apps/{appId}/key", h.withOwnedApp(h.issueKey))
+	mux.HandleFunc("DELETE /console/apps/{appId}/key", h.withOwnedApp(h.revokeKey))
 }
 
 // withAuth resolves the session cookie and rejects the request if it's
@@ -158,6 +179,7 @@ type appSummary struct {
 	ToolCount     int    `json:"toolCount"`
 	HasKey        bool   `json:"hasKey"`
 	AllowedOrigin string `json:"allowedOrigin"` // "" means unset (fail-closed — see ws.Handler.ServeHTTP)
+	Thought       string `json:"thought"`       // "" means the platform default applies (want_tools.go's defaultThought)
 }
 
 func (h *Handler) listApps(w http.ResponseWriter, r *http.Request, user *session.User) {
@@ -178,6 +200,7 @@ func (h *Handler) listApps(w http.ResponseWriter, r *http.Request, user *session
 			ToolCount:     len(app.Tools),
 			HasKey:        h.Auth.HasKey(id),
 			AllowedOrigin: h.Auth.OriginFor(id),
+			Thought:       app.Thought,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -207,6 +230,7 @@ func (h *Handler) createApp(w http.ResponseWriter, r *http.Request, user *sessio
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	h.syncWantRole(req.AppID)
 	writeJSON(w, http.StatusCreated, appSummary{AppID: req.AppID, ToolCount: 0, HasKey: false})
 }
 
@@ -237,6 +261,37 @@ func (h *Handler) setOrigin(w http.ResponseWriter, r *http.Request, user *sessio
 		ToolCount:     len(app.Tools),
 		HasKey:        h.Auth.HasKey(appID),
 		AllowedOrigin: req.Origin,
+		Thought:       app.Thought,
+	})
+}
+
+type setThoughtRequest struct {
+	// Thought is the app's custom want agent system prompt. Empty string
+	// clears it, returning the app to the platform default.
+	Thought string `json:"thought"`
+}
+
+func (h *Handler) setThought(w http.ResponseWriter, r *http.Request, user *session.User) {
+	appID := r.PathValue("appId")
+
+	var req setThoughtRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Apps.SetThought(appID, req.Thought); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	h.syncWantRole(appID)
+	app, _ := h.Apps.Get(appID)
+	writeJSON(w, http.StatusOK, appSummary{
+		AppID:         appID,
+		ToolCount:     len(app.Tools),
+		HasKey:        h.Auth.HasKey(appID),
+		AllowedOrigin: h.Auth.OriginFor(appID),
+		Thought:       req.Thought,
 	})
 }
 
@@ -254,11 +309,14 @@ func (h *Handler) saveTools(w http.ResponseWriter, r *http.Request, user *sessio
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	h.syncWantRole(appID)
+	saved, _ := h.Apps.Get(appID) // Save's own Reload already refreshed this; existing thought is untouched by saveApp (see registry.go)
 	writeJSON(w, http.StatusOK, appSummary{
 		AppID:         appID,
 		ToolCount:     len(tools),
 		HasKey:        h.Auth.HasKey(appID),
 		AllowedOrigin: h.Auth.OriginFor(appID),
+		Thought:       saved.Thought,
 	})
 }
 

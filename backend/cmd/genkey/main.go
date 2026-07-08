@@ -1,9 +1,9 @@
 // Command genkey issues a new API key for an app from the command line: it
 // prints the plaintext key once (nothing else ever will) and stores its
-// hash in the apps table, via auth.Store.Issue — the same path the admin
-// API (internal/admin) uses, so a key issued here and one issued through
+// hash in the apps table, via auth.Store.Issue — the same path the console
+// API (internal/console) uses, so a key issued here and one issued through
 // the dashboard are indistinguishable. The app must already exist (create
-// it first via the admin API or the tool-editor UI).
+// it first via the console API or the tool-editor UI).
 package main
 
 import (

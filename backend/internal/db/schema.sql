@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS apps (
     owner_id       BIGINT REFERENCES users (id) ON DELETE CASCADE, -- NULL only for apps migrated before multi-user existed
     api_key_hash   TEXT,              -- sha256 hex, NULL until a key is issued
     allowed_origin TEXT,              -- exact Origin header a connection must present; NULL = no site configured yet, so every WS handshake for this app is rejected (fail-closed) — see ws.Handler.ServeHTTP
+    thought        TEXT,              -- per-app want agent system prompt; NULL = use the platform default (want_tools.go's defaultThought)
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -44,6 +45,7 @@ CREATE TABLE IF NOT EXISTS apps (
 -- otherwise).
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS allowed_origin TEXT;
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES users (id) ON DELETE CASCADE;
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS thought TEXT;
 
 CREATE INDEX IF NOT EXISTS apps_owner_id_idx ON apps (owner_id);
 

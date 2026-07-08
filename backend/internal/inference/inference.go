@@ -34,6 +34,13 @@ type Request struct {
 	Context json.RawMessage
 	Tools   []codegen.LLMTool
 
+	// AppID identifies which developer app this prompt belongs to.
+	// Implementations use it to select app-specific reasoning behavior
+	// (see WantSettings' per-app agent role, driven by
+	// toolschema.App.Thought) — distinct from SessionID, which scopes
+	// per-user conversation history within that app.
+	AppID string
+
 	// SessionID identifies the end-user connection this prompt belongs to
 	// (the WebSocket session id). Implementations use it to isolate
 	// conversation state between users: two prompts share LLM conversation

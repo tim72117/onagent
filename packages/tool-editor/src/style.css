@@ -460,6 +460,46 @@ select:focus-visible {
   min-width: 0;
 }
 
+.thought-editor {
+  max-width: 720px;
+}
+
+.thought-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.thought-copy {
+  color: var(--ink-dim);
+  font-size: 12.5px;
+  line-height: 1.6;
+  margin: 0 0 14px;
+}
+
+.thought-textarea {
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.thought-default {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.thought-default-text {
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  line-height: 1.6;
+  margin: 6px 0 0;
+  font-style: italic;
+}
+
 .workspace-empty {
   padding: 48px 28px;
 }

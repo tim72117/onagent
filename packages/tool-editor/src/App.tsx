@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { App as AppSchema, Tool } from './schema'
-import { emptyTool } from './schema'
+import { DEFAULT_THOUGHT, emptyTool } from './schema'
 import { api, ApiError } from './api'
 import type { AppSummary, CurrentUser, IssuedKey } from './api'
 import { Login } from './Login'
 import { KeyModal } from './KeyModal'
 import { Sidebar } from './Sidebar'
 import { ToolForm } from './ToolForm'
+import { ThoughtEditor } from './ThoughtEditor'
 import { PreviewPanel } from './PreviewPanel'
 import { validateApp } from './validate'
 
@@ -27,6 +28,7 @@ export default function App() {
   const [draft, setDraft] = useState<AppSchema | null>(null)
   const [dirty, setDirty] = useState(false)
   const [activeToolIndex, setActiveToolIndex] = useState<number | null>(null)
+  const [agentSelected, setAgentSelected] = useState(false)
   const [issuedKey, setIssuedKey] = useState<IssuedKey | null>(null)
   const [busy, setBusy] = useState(false)
   // Origin edits save immediately on submit (unlike tool edits, which batch
@@ -35,6 +37,9 @@ export default function App() {
   // protecting against an accidental navigate-away.
   const [originDraft, setOriginDraft] = useState('')
   const [originBusy, setOriginBusy] = useState(false)
+  // Thought edits follow the same immediate-save pattern as origin.
+  const [thoughtDraft, setThoughtDraft] = useState('')
+  const [thoughtBusy, setThoughtBusy] = useState(false)
 
   const logout = useCallback((message: string | null) => {
     setUser(null)
@@ -43,6 +48,7 @@ export default function App() {
     setDraft(null)
     setDirty(false)
     setActiveToolIndex(null)
+    setAgentSelected(false)
     setLoginError(message)
   }, [])
 
@@ -108,13 +114,17 @@ export default function App() {
 
   const activeSummary = summaries?.find((s) => s.appId === draft?.appId) ?? null
 
-  // Keep the origin input in sync with the server's value whenever the
-  // selected app changes (including right after a save, via
+  // Keep the origin/thought inputs in sync with the server's value whenever
+  // the selected app changes (including right after a save, via
   // refreshSummaries) — but not on every keystroke, since that would fight
   // the user typing.
   useEffect(() => {
     setOriginDraft(activeSummary?.allowedOrigin ?? '')
   }, [activeSummary?.appId, activeSummary?.allowedOrigin])
+
+  useEffect(() => {
+    setThoughtDraft(activeSummary?.thought ?? '')
+  }, [activeSummary?.appId, activeSummary?.thought])
 
   function confirmDiscard(): boolean {
     return !dirty || confirm('Discard unsaved changes to this app?')
@@ -127,6 +137,7 @@ export default function App() {
       setDraft({ appId: app.appId, tools: app.tools ?? [] })
       setDirty(false)
       setActiveToolIndex(null)
+      setAgentSelected(false)
     } catch (err) {
       reportError(err)
     }
@@ -143,6 +154,7 @@ export default function App() {
       setDraft({ appId: app.appId, tools: app.tools ?? [] })
       setDirty(false)
       setActiveToolIndex(null)
+      setAgentSelected(false)
     } catch (err) {
       reportError(err)
     }
@@ -157,6 +169,7 @@ export default function App() {
       setDraft(null)
       setDirty(false)
       setActiveToolIndex(null)
+      setAgentSelected(false)
     } catch (err) {
       reportError(err)
     }
@@ -207,6 +220,20 @@ export default function App() {
     }
   }
 
+  async function saveThought(e: React.FormEvent) {
+    e.preventDefault()
+    if (!draft) return
+    setThoughtBusy(true)
+    try {
+      await api.setThought(draft.appId, thoughtDraft.trim())
+      await refreshSummaries()
+    } catch (err) {
+      reportError(err)
+    } finally {
+      setThoughtBusy(false)
+    }
+  }
+
   async function revokeKey() {
     if (!draft) return
     if (!confirm(`Revoke the API key for "${draft.appId}"? Connected sites stop working immediately.`)) return
@@ -227,6 +254,7 @@ export default function App() {
     if (!draft) return
     updateDraft({ ...draft, tools: [...draft.tools, emptyTool()] })
     setActiveToolIndex(draft.tools.length)
+    setAgentSelected(false)
   }
 
   function updateTool(index: number, next: Tool) {
@@ -240,6 +268,16 @@ export default function App() {
     if (!draft) return
     updateDraft({ ...draft, tools: draft.tools.filter((_, i) => i !== index) })
     setActiveToolIndex(null)
+  }
+
+  function selectTool(index: number) {
+    setActiveToolIndex(index)
+    setAgentSelected(false)
+  }
+
+  function selectAgent() {
+    setActiveToolIndex(null)
+    setAgentSelected(true)
   }
 
   async function doLogout() {
@@ -286,8 +324,10 @@ export default function App() {
         onAddApp={addApp}
         tools={draft?.tools ?? null}
         activeToolIndex={activeToolIndex}
+        agentSelected={agentSelected}
         issuesByTool={issuesByTool}
-        onSelectTool={setActiveToolIndex}
+        onSelectTool={selectTool}
+        onSelectAgent={selectAgent}
         onAddTool={addTool}
         onDeleteApp={deleteApp}
         onLogout={doLogout}
@@ -351,7 +391,16 @@ export default function App() {
 
             <div className="workspace-body">
               <section className="editor-pane">
-                {selectedTool ? (
+                {agentSelected ? (
+                  <ThoughtEditor
+                    value={thoughtDraft}
+                    defaultPreview={DEFAULT_THOUGHT}
+                    busy={thoughtBusy}
+                    dirty={thoughtDraft.trim() !== (activeSummary?.thought ?? '')}
+                    onChange={setThoughtDraft}
+                    onSave={saveThought}
+                  />
+                ) : selectedTool ? (
                   <ToolForm
                     key={activeToolIndex}
                     tool={selectedTool}

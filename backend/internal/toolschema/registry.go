@@ -8,7 +8,7 @@ import (
 )
 
 // Registry is a thread-safe, database-backed holder for the set of
-// registered apps. Introduced so the admin API (internal/admin) can
+// registered apps. Introduced so the console API (internal/console) can
 // create/update/delete an app's tools and have every consumer — the
 // WebSocket handler, the codegen HTTP endpoints — see the change without a
 // process restart. Originally backed by backend/tools/*.yaml on disk;
@@ -100,11 +100,11 @@ func (r *Registry) Delete(appID string) error {
 // Create inserts a brand-new app owned by ownerID with no tools yet, and
 // reloads. Fails if appID already exists — unlike Save, which is
 // upsert-and-replace-tools for editing an app the caller already knows
-// exists, Create is specifically "this must be a new app," so the admin API
-// can tell "created" apart from "already existed, tools replaced."
+// exists, Create is specifically "this must be a new app," so the console
+// API can tell "created" apart from "already existed, tools replaced."
 //
 // ownerID isn't part of the App type (see toolschema/schema.go) because
-// ownership is an admin-API-only concern — the WebSocket handler and public
+// ownership is a console-API-only concern — the WebSocket handler and public
 // codegen endpoints that read through Registry.Get/All never need to know
 // who owns what, only what an app's tools are.
 func (r *Registry) Create(appID string, ownerID int64) error {
@@ -134,6 +134,31 @@ func (r *Registry) OwnerOf(appID string) (ownerID int64, ok bool) {
 	return id.Int64, true
 }
 
+// SetThought sets or clears (thought == "") appID's custom want agent
+// system prompt, and reloads so the change is visible immediately. Fails
+// if appID doesn't exist.
+func (r *Registry) SetThought(appID, thought string) error {
+	if !ValidAppID(appID) {
+		return fmt.Errorf("toolschema: invalid appId %q", appID)
+	}
+	var val sql.NullString
+	if thought != "" {
+		val = sql.NullString{String: thought, Valid: true}
+	}
+	result, err := r.db.Exec(`UPDATE apps SET thought = $1 WHERE app_id = $2`, val, appID)
+	if err != nil {
+		return fmt.Errorf("toolschema: set thought for %s: %w", appID, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("toolschema: set thought for %s: %w", appID, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("toolschema: no such app %q", appID)
+	}
+	return r.Reload()
+}
+
 // OwnedBy returns every appId owned by ownerID, for a user's app list.
 func (r *Registry) OwnedBy(ownerID int64) ([]string, error) {
 	rows, err := r.db.Query(`SELECT app_id FROM apps WHERE owner_id = $1 ORDER BY app_id`, ownerID)
@@ -156,7 +181,7 @@ func (r *Registry) OwnedBy(ownerID int64) ([]string, error) {
 // --- database access ---------------------------------------------------
 
 func loadAllApps(db *sql.DB) (map[string]*App, error) {
-	appRows, err := db.Query(`SELECT app_id FROM apps ORDER BY app_id`)
+	appRows, err := db.Query(`SELECT app_id, thought FROM apps ORDER BY app_id`)
 	if err != nil {
 		return nil, fmt.Errorf("toolschema: query apps: %w", err)
 	}
@@ -165,11 +190,14 @@ func loadAllApps(db *sql.DB) (map[string]*App, error) {
 	apps := make(map[string]*App)
 	var ids []string
 	for appRows.Next() {
-		var id string
-		if err := appRows.Scan(&id); err != nil {
+		var (
+			id      string
+			thought sql.NullString
+		)
+		if err := appRows.Scan(&id, &thought); err != nil {
 			return nil, fmt.Errorf("toolschema: scan app_id: %w", err)
 		}
-		apps[id] = &App{AppID: id, Tools: []Tool{}}
+		apps[id] = &App{AppID: id, Tools: []Tool{}, Thought: thought.String}
 		ids = append(ids, id)
 	}
 	if err := appRows.Err(); err != nil {

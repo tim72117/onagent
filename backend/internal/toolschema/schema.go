@@ -42,4 +42,13 @@ type ParameterSchema struct {
 type App struct {
 	AppID string `yaml:"appId" json:"appId"`
 	Tools []Tool `yaml:"tools" json:"tools"`
+
+	// Thought is this app's custom instructions for the want agent that
+	// selects its tools — tone, domain knowledge, or app-specific rules a
+	// developer wants the LLM to follow beyond "call the matching tool."
+	// Empty means the platform default applies (see
+	// internal/inference/want_tools.go's defaultThought). Not part of the
+	// LLM tool schema itself (codegen.ToLLMTools doesn't touch it) — it
+	// only affects the want agent role's system prompt.
+	Thought string `yaml:"thought,omitempty" json:"thought,omitempty"`
 }

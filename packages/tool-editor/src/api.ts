@@ -1,4 +1,4 @@
-// Client for the backend's /admin and /auth APIs (backend/internal/admin).
+// Client for the backend's /console and /auth APIs (backend/internal/console).
 // Auth is a session cookie (backend/internal/session), not a bearer token —
 // every call sends credentials: 'include' so the browser attaches it, and
 // the backend's CORS layer (main.go's withCORS) echoes back the request
@@ -17,6 +17,9 @@ export interface AppSummary {
    * unset — the backend rejects every WebSocket connection for this app
    * until it's set (fail-closed; see backend's ws.Handler.ServeHTTP). */
   allowedOrigin: string
+  /** Custom want agent system prompt for this app. "" means the platform
+   * default applies. */
+  thought: string
 }
 
 export interface IssuedKey {
@@ -30,7 +33,7 @@ export interface CurrentUser {
   email: string
 }
 
-const BASE: string = import.meta.env.VITE_ADMIN_API_URL ?? 'http://localhost:8080'
+const BASE: string = import.meta.env.VITE_CONSOLE_API_URL ?? 'http://localhost:8080'
 
 export class ApiError extends Error {
   readonly status: number
@@ -73,25 +76,28 @@ export const api = {
 
   me: (): Promise<CurrentUser> => request('GET', '/auth/me').then((r) => r.json()),
 
-  listApps: (): Promise<AppSummary[]> => request('GET', '/admin/apps').then((r) => r.json()),
+  listApps: (): Promise<AppSummary[]> => request('GET', '/console/apps').then((r) => r.json()),
 
-  getApp: (appId: string): Promise<App> => request('GET', `/admin/apps/${id(appId)}`).then((r) => r.json()),
+  getApp: (appId: string): Promise<App> => request('GET', `/console/apps/${id(appId)}`).then((r) => r.json()),
 
   createApp: (appId: string): Promise<AppSummary> =>
-    request('POST', '/admin/apps', { appId }).then((r) => r.json()),
+    request('POST', '/console/apps', { appId }).then((r) => r.json()),
 
   saveTools: (appId: string, tools: Tool[]): Promise<AppSummary> =>
-    request('PUT', `/admin/apps/${id(appId)}/tools`, tools).then((r) => r.json()),
+    request('PUT', `/console/apps/${id(appId)}/tools`, tools).then((r) => r.json()),
 
   setOrigin: (appId: string, origin: string): Promise<AppSummary> =>
-    request('PUT', `/admin/apps/${id(appId)}/origin`, { origin }).then((r) => r.json()),
+    request('PUT', `/console/apps/${id(appId)}/origin`, { origin }).then((r) => r.json()),
+
+  setThought: (appId: string, thought: string): Promise<AppSummary> =>
+    request('PUT', `/console/apps/${id(appId)}/thought`, { thought }).then((r) => r.json()),
 
   deleteApp: (appId: string): Promise<void> =>
-    request('DELETE', `/admin/apps/${id(appId)}`).then(() => undefined),
+    request('DELETE', `/console/apps/${id(appId)}`).then(() => undefined),
 
   issueKey: (appId: string): Promise<IssuedKey> =>
-    request('POST', `/admin/apps/${id(appId)}/key`).then((r) => r.json()),
+    request('POST', `/console/apps/${id(appId)}/key`).then((r) => r.json()),
 
   revokeKey: (appId: string): Promise<void> =>
-    request('DELETE', `/admin/apps/${id(appId)}/key`).then(() => undefined),
+    request('DELETE', `/console/apps/${id(appId)}/key`).then(() => undefined),
 }

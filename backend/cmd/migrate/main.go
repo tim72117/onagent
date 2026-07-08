@@ -10,7 +10,7 @@
 //
 // Migrated apps have no owner (owner_id NULL) unless -owner-email is given,
 // since the pre-multi-user world had no concept of one. An unowned app is
-// invisible to the admin API (internal/admin's withOwnedApp requires an
+// invisible to the console API (internal/console's withOwnedApp requires an
 // exact owner match) — it keeps working for already-connected sites
 // (internal/ws doesn't check ownership), but nobody can log in and manage
 // it until an owner is assigned.

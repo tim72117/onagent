@@ -13,9 +13,9 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
-	"github.com/tim72117/agent-tool-platform/internal/admin"
 	"github.com/tim72117/agent-tool-platform/internal/auth"
 	"github.com/tim72117/agent-tool-platform/internal/codegen"
+	"github.com/tim72117/agent-tool-platform/internal/console"
 	"github.com/tim72117/agent-tool-platform/internal/db"
 	"github.com/tim72117/agent-tool-platform/internal/inference"
 	"github.com/tim72117/agent-tool-platform/internal/session"
@@ -72,7 +72,7 @@ func main() {
 
 	// wsAuth == nil is what tells ws.Handler to skip verification entirely
 	// (see Handler.ServeHTTP) — appropriate only when literally no app can
-	// have a key yet. Since the admin API is always on now (no ADMIN_TOKEN
+	// have a key yet. Since the console API is always on now (no ADMIN_TOKEN
 	// gate anymore — any registered user can create an app and issue it a
 	// key at any moment), auth must always stay enforced once at least one
 	// app exists. An empty Store just rejects every token until the first
@@ -86,7 +86,7 @@ func main() {
 
 	inferSvc := newInferenceService(log, apps.All())
 	wsHandler := ws.NewHandler(apps, inferSvc, log, originChecker, wsAuth)
-	adminHandler := admin.NewHandler(apps, authStore, sessionStore)
+	consoleHandler := console.NewHandler(apps, authStore, sessionStore)
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", wsHandler)
@@ -96,7 +96,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	adminHandler.Register(mux)
+	consoleHandler.Register(mux)
 
 	addr := envOr("ADDR", ":8080")
 	log.Info("listening", "addr", addr)
@@ -139,7 +139,7 @@ func handleToolTypeScript(apps *toolschema.Registry) http.HandlerFunc {
 // origin. The codegen endpoints (tools.json / tools.ts) stay permissive —
 // they only return public artifacts, so "*" leaks nothing there.
 //
-// The /admin and /auth endpoints now run on session cookies (internal/session)
+// The /console and /auth endpoints now run on session cookies (internal/session)
 // instead of a bearer token, and cookies are ambient credentials a
 // cross-site page can ride on — the classic case CORS exists to guard
 // against. Browsers refuse to combine Access-Control-Allow-Origin: * with

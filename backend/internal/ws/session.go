@@ -208,6 +208,7 @@ func (s *Session) handlePrompt(ctx context.Context, env protocol.Envelope) {
 		Prompt:    p.Text,
 		Context:   promptContext,
 		Tools:     codegen.ToLLMTools(app),
+		AppID:     app.AppID,
 		SessionID: s.id,
 	})
 	if err != nil {

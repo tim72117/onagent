@@ -10,8 +10,10 @@ export function Sidebar({
   onAddApp,
   tools,
   activeToolIndex,
+  agentSelected,
   issuesByTool,
   onSelectTool,
+  onSelectAgent,
   onAddTool,
   onDeleteApp,
   onLogout,
@@ -23,8 +25,10 @@ export function Sidebar({
   onAddApp: () => void
   tools: Tool[] | null // null when no app is selected
   activeToolIndex: number | null
+  agentSelected: boolean
   issuesByTool: Map<number, ValidationIssue[]>
   onSelectTool: (index: number) => void
+  onSelectAgent: () => void
   onAddTool: () => void
   onDeleteApp: () => void
   onLogout: () => void
@@ -66,6 +70,25 @@ export function Sidebar({
         </ul>
         {summaries.length === 0 && <p className="sidebar-empty">No apps yet</p>}
       </div>
+
+      {tools !== null && (
+        <div className="sidebar-section">
+          <div className="sidebar-section-head">
+            <span>Agent</span>
+          </div>
+          <ul className="sidebar-list">
+            <li>
+              <button
+                type="button"
+                className={`sidebar-item${agentSelected ? ' active' : ''}`}
+                onClick={onSelectAgent}
+              >
+                <span className="sidebar-item-label">Thought</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+      )}
 
       {tools !== null && (
         <div className="sidebar-section sidebar-section-grow">

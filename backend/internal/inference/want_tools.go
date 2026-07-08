@@ -10,11 +10,27 @@ import (
 	"github.com/tim72117/want/types"
 )
 
-// platformAgentRole is the want agent role registered for this platform.
-// No backend/.agents/<role>.md file exists, so AgentLoader always falls
-// back to this Go-defined built-in (see want internal/loader.go: disk
-// definitions only take priority when the file is actually present).
-const platformAgentRole = "platform-tools"
+// agentRoleFor returns the want agent role name for a given app: each app
+// gets its own role (rather than one shared "platform-tools" role) so its
+// Tools whitelist only ever contains that app's own tools, and its Thought
+// can be customized independently — see RegisterPlatformTools. No
+// backend/.agents/<role>.md file exists for any of these, so AgentLoader
+// always falls back to the Go-defined built-in (see want
+// internal/loader.go: disk definitions only take priority when the file is
+// actually present).
+func agentRoleFor(appID string) string {
+	return "platform-tools:" + appID
+}
+
+// defaultThought is the want agent's system prompt for an app that hasn't
+// set a custom toolschema.App.Thought.
+const defaultThought = "You are a tool-selection assistant embedded in a web page. " +
+	"The user is talking to the page, not to you directly. When their " +
+	"message calls for an action the page can perform, call the single " +
+	"matching tool with well-formed arguments; the page executes it, " +
+	"not you. If nothing needs doing, just reply in plain text. Never " +
+	"ask the user to wait or claim you performed an action yourself — " +
+	"the tool call itself is the action."
 
 // forwardedCall is one tool invocation the want LLM decided to make against
 // a platform-defined (front-end-executed) tool during a single Complete()
@@ -54,42 +70,77 @@ func addToCallSink(name string, args json.RawMessage) {
 	callSinkMu.Unlock()
 }
 
-// RegisterPlatformTools makes every tool declared across all loaded apps
-// selectable by the want LLM, and registers a "platform-tools" want agent
-// role whose tool whitelist contains exactly those names — deliberately
-// excluding want's own built-in tools (Bash, Browser, Edit, ...), which
-// would otherwise execute for real on the backend instead of being handed
-// to the front-end to run in the DOM.
-//
-// Must be called once at startup, before the first WantService.Complete
-// call, since want's tool registry (types.GlobalRegistry) and agent loader
-// are process-global.
-//
-// Tool names are only guaranteed unique within a single app's YAML file
-// (see toolschema.LoadFile); if two apps declare the same tool name, the
-// second registration below wins silently. Fine for today's small tool
-// count, but worth a cross-app uniqueness check if the tool surface grows.
+// RegisterPlatformTools registers every app loaded at startup (see
+// RegisterAppRole for what registration actually does and why it's
+// per-app). This alone is NOT enough to keep want in sync for the process's
+// whole lifetime: apps created/edited afterward through the console API
+// (internal/console) exist only in the database and this process's in-memory
+// toolschema.Registry until something calls RegisterAppRole again for them
+// — which is why every console handler that creates or mutates an app's
+// tools or Thought (createApp, saveTools, setThought) also calls
+// RegisterAppRole directly after a successful toolschema.Registry write.
+// Skipping that call is exactly the bug this comment exists to prevent:
+// want's AgentLoader.GetAgent silently returns an error for an unregistered
+// role (see want internal/run_agent.go's RunAgent, which then returns an
+// empty Experience with no event ever published), which surfaces here as
+// WantService.Complete hanging until its 90s timeout — not as a clean
+// error close to the actual cause.
 func RegisterPlatformTools(apps map[string]*toolschema.App) {
-	var toolNames []string
 	for _, app := range apps {
-		for _, t := range app.Tools {
-			toolNames = append(toolNames, t.Name)
-			registerForwardingTool(t)
-		}
+		RegisterAppRole(app)
+	}
+}
+
+// RegisterAppRole (re-)registers app's tools into want's global registry and
+// a want agent role scoped to exactly that app (agentRoleFor(app.AppID)),
+// whitelisting only its own tool names and using its custom Thought (or
+// defaultThought if unset). Per-app roles — rather than one role shared by
+// every app — are what keep app A's LLM from ever seeing or selecting app
+// B's tools, and let each app's Thought be customized independently.
+//
+// Must be called after every change to app's tools or Thought that should
+// take effect immediately (see RegisterPlatformTools) — want has no
+// mechanism to unregister a role, but re-registering the same role name
+// simply overwrites its AgentDefinition, so calling this again for an
+// existing app is exactly how an edit takes effect.
+//
+// Tool names are only guaranteed unique within a single app (see
+// toolschema.LoadFile's per-file uniqueness check); registering the same
+// name from two different apps overwrites the global tool declaration, but
+// each app's own whitelist still only ever contains that app's names, so
+// cross-app tool leakage isn't possible even if the underlying
+// types.RegisterTool call for a shared name was last won by another app.
+func RegisterAppRole(app *toolschema.App) {
+	toolNames := make([]string, 0, len(app.Tools))
+	for _, t := range app.Tools {
+		toolNames = append(toolNames, t.Name)
+		registerForwardingTool(t)
 	}
 
-	agentreg.Register(agentreg.DefaultLoader(), platformAgentRole, &agentreg.AgentDefinition{
-		Role:  platformAgentRole,
+	thought := app.Thought
+	if thought == "" {
+		thought = defaultThought
+	}
+
+	agentreg.Register(agentreg.DefaultLoader(), agentRoleFor(app.AppID), &agentreg.AgentDefinition{
+		Role:  agentRoleFor(app.AppID),
 		Tools: toolNames,
 		WhenToUse: "Selects and fills arguments for tools that a connected " +
 			"web page has declared; it never executes them itself.",
-		Thought: "You are a tool-selection assistant embedded in a web page. " +
-			"The user is talking to the page, not to you directly. When their " +
-			"message calls for an action the page can perform, call the single " +
-			"matching tool with well-formed arguments; the page executes it, " +
-			"not you. If nothing needs doing, just reply in plain text. Never " +
-			"ask the user to wait or claim you performed an action yourself — " +
-			"the tool call itself is the action.",
+		Thought: thought,
+		// Replace want's default prompt assembly (agentreg.DefaultPromptBuilder,
+		// which prepends generic environment info, tool-usage rules, etc.
+		// around Thought) entirely: the final system prompt sent to the LLM
+		// is exactly app.Thought (or defaultThought), nothing appended or
+		// prepended. Same approach as shuttle's assistant_agent.go. This
+		// gives a developer who sets a custom Thought full control over
+		// what the model sees — but it's also now entirely on them to
+		// mention the tool-selection behavior defaultThought used to
+		// guarantee (e.g. "call the matching tool, don't claim you did it
+		// yourself") if they want that preserved.
+		PromptBuilder: agentreg.PromptBuilderFunc(func(a *agentreg.Agent, c *agentreg.ToolUseContext) string {
+			return a.SystemPrompt
+		}),
 	})
 }
 
