@@ -33,7 +33,9 @@ export interface CurrentUser {
   email: string
 }
 
-const BASE: string = import.meta.env.VITE_CONSOLE_API_URL ?? 'http://localhost:8080'
+// Exported so Playground.tsx can derive the playground WebSocket's URL
+// from the same source of truth rather than duplicating the env var lookup.
+export const BASE: string = import.meta.env.VITE_CONSOLE_API_URL ?? 'http://localhost:8080'
 
 export class ApiError extends Error {
   readonly status: number

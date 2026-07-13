@@ -11,9 +11,11 @@ export function Sidebar({
   tools,
   activeToolIndex,
   agentSelected,
+  playgroundSelected,
   issuesByTool,
   onSelectTool,
   onSelectAgent,
+  onSelectPlayground,
   onAddTool,
   onDeleteApp,
   onLogout,
@@ -26,9 +28,11 @@ export function Sidebar({
   tools: Tool[] | null // null when no app is selected
   activeToolIndex: number | null
   agentSelected: boolean
+  playgroundSelected: boolean
   issuesByTool: Map<number, ValidationIssue[]>
   onSelectTool: (index: number) => void
   onSelectAgent: () => void
+  onSelectPlayground: () => void
   onAddTool: () => void
   onDeleteApp: () => void
   onLogout: () => void
@@ -84,6 +88,15 @@ export function Sidebar({
                 onClick={onSelectAgent}
               >
                 <span className="sidebar-item-label">Thought</span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className={`sidebar-item${playgroundSelected ? ' active' : ''}`}
+                onClick={onSelectPlayground}
+              >
+                <span className="sidebar-item-label">Playground</span>
               </button>
             </li>
           </ul>

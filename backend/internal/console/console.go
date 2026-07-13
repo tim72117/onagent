@@ -34,15 +34,24 @@ import (
 
 // Handler serves the /console/* and /auth/* APIs.
 type Handler struct {
-	Apps    *toolschema.Registry
-	Auth    *auth.Store
-	Session *session.Store
-	Tokens  *usertoken.Store
-	CliAuth *cliauth.Store
+	Apps      *toolschema.Registry
+	Auth      *auth.Store
+	Session   *session.Store
+	Tokens    *usertoken.Store
+	CliAuth   *cliauth.Store
+	Inference inference.Service // used only by playground.go's test-prompt endpoint
+	// ConsoleOrigins is the set of origins the console front-end itself is
+	// served from (e.g. http://localhost:5173 in dev). Used only by
+	// playground.go to accept the Playground WebSocket's cross-origin
+	// handshake — the console (this API's own frontend) and this backend
+	// almost never share a host:port, even in dev, so gorilla/websocket's
+	// same-origin default rejects every real Playground connection unless
+	// these are explicitly trusted. See playground.go's playgroundUpgrader.
+	ConsoleOrigins []string
 }
 
-func NewHandler(apps *toolschema.Registry, authStore *auth.Store, sessionStore *session.Store, tokenStore *usertoken.Store, cliAuthStore *cliauth.Store) *Handler {
-	return &Handler{Apps: apps, Auth: authStore, Session: sessionStore, Tokens: tokenStore, CliAuth: cliAuthStore}
+func NewHandler(apps *toolschema.Registry, authStore *auth.Store, sessionStore *session.Store, tokenStore *usertoken.Store, cliAuthStore *cliauth.Store, inferSvc inference.Service, consoleOrigins []string) *Handler {
+	return &Handler{Apps: apps, Auth: authStore, Session: sessionStore, Tokens: tokenStore, CliAuth: cliAuthStore, Inference: inferSvc, ConsoleOrigins: consoleOrigins}
 }
 
 // syncWantRole re-registers appID's want agent role (tool whitelist +
@@ -77,6 +86,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /console/apps/{appId}", h.withOwnedApp(h.deleteApp))
 	mux.HandleFunc("POST /console/apps/{appId}/key", h.withOwnedApp(h.issueKey))
 	mux.HandleFunc("DELETE /console/apps/{appId}/key", h.withOwnedApp(h.revokeKey))
+	mux.HandleFunc("GET /console/apps/{appId}/playground", h.withOwnedApp(h.playgroundWS))
 
 	// issueToken and approveCliAuth are withCookieAuth, not withAuth: both
 	// mint a new bearer token, and if a bearer token itself could
@@ -230,7 +240,7 @@ type appSummary struct {
 	ToolCount     int    `json:"toolCount"`
 	HasKey        bool   `json:"hasKey"`
 	AllowedOrigin string `json:"allowedOrigin"` // "" means unset (fail-closed — see ws.Handler.ServeHTTP)
-	Thought       string `json:"thought"`       // "" means the platform default applies (want_tools.go's defaultThought)
+	Thought       string `json:"thought"`       // "" means the platform default applies (agent_roles.go's defaultThought)
 }
 
 func (h *Handler) listApps(w http.ResponseWriter, r *http.Request, user *session.User) {

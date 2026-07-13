@@ -35,6 +35,14 @@ func main() {
 		log.Debug("no .env file loaded", "err", err)
 	}
 
+	// APP_ENV=production turns the insecure-default warnings below into
+	// startup failures. Unset (or any other value) keeps today's dev-mode
+	// behavior of warning and continuing, since local dev and CI never set
+	// this. Cloud Run must set APP_ENV=production so a forgotten
+	// ALLOWED_ORIGINS/COOKIE_SECURE fails loudly at deploy time instead of
+	// silently running open in front of real users.
+	isProd := os.Getenv("APP_ENV") == "production"
+
 	dsn := envOr("DATABASE_URL", "postgres://platform:platform@localhost:5434/platform?sslmode=disable")
 	conn, err := db.Open(dsn)
 	if err != nil {
@@ -60,6 +68,9 @@ func main() {
 	if len(originAllowlist) > 0 {
 		originChecker = allowlistChecker(originAllowlist)
 		log.Info("origin allowlist enabled", "origins", originAllowlist)
+	} else if isProd {
+		log.Error("APP_ENV=production but ALLOWED_ORIGINS is not set; refusing to start open to any origin")
+		os.Exit(1)
 	} else {
 		log.Warn("no ALLOWED_ORIGINS set; accepting WebSocket handshakes AND credentialed /console, /auth CORS requests from any origin (dev mode only — set this before any real deployment)")
 	}
@@ -73,6 +84,10 @@ func main() {
 	// over plain HTTP is as bad as sending the password on every request.
 	cookieSecure := envOr("COOKIE_SECURE", "false") == "true"
 	if !cookieSecure {
+		if isProd {
+			log.Error("APP_ENV=production but COOKIE_SECURE is not \"true\"; refusing to start with session cookies sent over plain HTTP")
+			os.Exit(1)
+		}
 		log.Warn("COOKIE_SECURE not set to \"true\"; session cookie will be sent over plain HTTP (dev mode only)")
 	}
 	sessionStore := session.New(conn, cookieSecure)
@@ -93,9 +108,21 @@ func main() {
 		log.Info("API key auth enabled (no keys issued yet)")
 	}
 
+	// Separate from ALLOWED_ORIGINS above: that setting is about developer
+	// apps' own sites talking to /ws. This is the console frontend itself
+	// (a single app this project ships, not a developer's), needed only so
+	// internal/console/playground.go can accept its cross-origin WebSocket
+	// handshake — see Handler.ConsoleOrigins. Defaults to the console's
+	// standard local dev port so a fresh checkout works with zero config.
+	consoleOrigins := parseOrigins(envOr("CONSOLE_ORIGIN", "http://localhost:5173"))
+	if isProd && len(consoleOrigins) == 0 {
+		log.Error("APP_ENV=production but CONSOLE_ORIGIN is not set; refusing to start with the Playground WebSocket unreachable")
+		os.Exit(1)
+	}
+
 	inferSvc := newInferenceService(log, apps.All())
 	wsHandler := ws.NewHandler(apps, inferSvc, log, originChecker, wsAuth)
-	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore)
+	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore, inferSvc, consoleOrigins)
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", wsHandler)

@@ -550,6 +550,139 @@ select:focus-visible {
   }
 }
 
+.workspace-body-single {
+  grid-template-columns: 1fr;
+}
+
+.editor-pane-wide {
+  border-right: none;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Playground                                                               */
+/* ---------------------------------------------------------------------- */
+
+.playground {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.playground-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.playground-status {
+  font-size: 11px;
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--ink-faint);
+  background: var(--sidebar-bg);
+}
+
+.playground-status-open {
+  color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.playground-status-closed {
+  color: var(--danger);
+  background: var(--danger-wash);
+}
+
+.playground-transcript {
+  flex: 1;
+  min-height: 240px;
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.playground-empty {
+  margin: auto;
+  text-align: center;
+}
+
+.playground-msg {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.playground-msg-user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.playground-msg-assistant {
+  align-self: flex-start;
+  background: var(--sidebar-bg);
+  color: var(--ink);
+}
+
+.playground-msg-tool_call {
+  align-self: flex-start;
+  background: var(--bg-raised);
+  border: 1px dashed var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.playground-msg-error {
+  align-self: flex-start;
+  background: var(--danger-wash);
+  color: var(--danger);
+}
+
+.playground-msg-pending {
+  align-self: flex-start;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  font-style: italic;
+}
+
+.playground-msg-label {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  margin-bottom: 3px;
+}
+
+.playground-input-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.playground-input {
+  flex: 1;
+}
+
 /* ---------------------------------------------------------------------- */
 /* Empty state                                                              */
 /* ---------------------------------------------------------------------- */
@@ -1045,4 +1178,77 @@ button.primary:disabled {
 
 .modal-input {
   width: 100%;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Toasts                                                                   */
+/* ---------------------------------------------------------------------- */
+
+.toast-stack {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  z-index: 100;
+  max-width: min(420px, calc(100vw - 40px));
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-panel);
+  font-size: 12.5px;
+  line-height: 1.5;
+  animation: toast-in 160ms ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.toast-error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border-strong));
+  background: var(--danger-wash);
+  color: var(--danger);
+}
+
+.toast-info {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+.toast-message {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.toast-dismiss {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.toast-dismiss:hover {
+  opacity: 1;
 }

@@ -9,8 +9,10 @@ import { AddAppModal } from './AddAppModal'
 import { Sidebar } from './Sidebar'
 import { ToolForm } from './ToolForm'
 import { ThoughtEditor } from './ThoughtEditor'
+import { Playground } from './Playground'
 import { PreviewPanel } from './PreviewPanel'
 import { validateApp } from './validate'
+import { useToast } from './Toast'
 
 type AuthState = 'checking' | 'anonymous' | 'authenticated'
 
@@ -30,6 +32,7 @@ export default function App() {
   const [dirty, setDirty] = useState(false)
   const [activeToolIndex, setActiveToolIndex] = useState<number | null>(null)
   const [agentSelected, setAgentSelected] = useState(false)
+  const [playgroundSelected, setPlaygroundSelected] = useState(false)
   const [issuedKey, setIssuedKey] = useState<IssuedKey | null>(null)
   const [showAddApp, setShowAddApp] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -51,20 +54,25 @@ export default function App() {
     setDirty(false)
     setActiveToolIndex(null)
     setAgentSelected(false)
+    setPlaygroundSelected(false)
     setLoginError(message)
   }, [])
 
+  const { showToast } = useToast()
+
   // Any API failure funnels through here: auth problems end the session,
-  // everything else surfaces in place.
+  // everything else surfaces as a dismissible toast rather than a
+  // blocking native alert() (which stalls the whole tab and can't be
+  // styled or auto-dismissed).
   const reportError = useCallback(
     (err: unknown) => {
       if (err instanceof ApiError && err.status === 401) {
         logout('Your session expired. Sign in again.')
         return
       }
-      alert(err instanceof Error ? err.message : String(err))
+      showToast(err instanceof Error ? err.message : String(err), 'error')
     },
-    [logout],
+    [logout, showToast],
   )
 
   const refreshSummaries = useCallback(async () => {
@@ -140,6 +148,7 @@ export default function App() {
       setDirty(false)
       setActiveToolIndex(null)
       setAgentSelected(false)
+      setPlaygroundSelected(false)
     } catch (err) {
       reportError(err)
     }
@@ -159,6 +168,7 @@ export default function App() {
       setDirty(false)
       setActiveToolIndex(null)
       setAgentSelected(false)
+      setPlaygroundSelected(false)
       setShowAddApp(false)
     } catch (err) {
       reportError(err)
@@ -175,6 +185,7 @@ export default function App() {
       setDirty(false)
       setActiveToolIndex(null)
       setAgentSelected(false)
+      setPlaygroundSelected(false)
     } catch (err) {
       reportError(err)
     }
@@ -260,6 +271,7 @@ export default function App() {
     updateDraft({ ...draft, tools: [...draft.tools, emptyTool()] })
     setActiveToolIndex(draft.tools.length)
     setAgentSelected(false)
+    setPlaygroundSelected(false)
   }
 
   function updateTool(index: number, next: Tool) {
@@ -278,11 +290,19 @@ export default function App() {
   function selectTool(index: number) {
     setActiveToolIndex(index)
     setAgentSelected(false)
+    setPlaygroundSelected(false)
   }
 
   function selectAgent() {
     setActiveToolIndex(null)
     setAgentSelected(true)
+    setPlaygroundSelected(false)
+  }
+
+  function selectPlayground() {
+    setActiveToolIndex(null)
+    setAgentSelected(false)
+    setPlaygroundSelected(true)
   }
 
   async function doLogout() {
@@ -330,9 +350,11 @@ export default function App() {
         tools={draft?.tools ?? null}
         activeToolIndex={activeToolIndex}
         agentSelected={agentSelected}
+        playgroundSelected={playgroundSelected}
         issuesByTool={issuesByTool}
         onSelectTool={selectTool}
         onSelectAgent={selectAgent}
+        onSelectPlayground={selectPlayground}
         onAddTool={addTool}
         onDeleteApp={deleteApp}
         onLogout={doLogout}
@@ -394,42 +416,50 @@ export default function App() {
               )}
             </header>
 
-            <div className="workspace-body">
-              <section className="editor-pane">
-                {agentSelected ? (
-                  <ThoughtEditor
-                    value={thoughtDraft}
-                    defaultPreview={DEFAULT_THOUGHT}
-                    busy={thoughtBusy}
-                    dirty={thoughtDraft.trim() !== (activeSummary?.thought ?? '')}
-                    onChange={setThoughtDraft}
-                    onSave={saveThought}
-                  />
-                ) : selectedTool ? (
-                  <ToolForm
-                    key={activeToolIndex}
-                    tool={selectedTool}
-                    issues={issuesByTool.get(activeToolIndex!) ?? []}
-                    onChange={(next) => updateTool(activeToolIndex!, next)}
-                    onRemove={() => removeTool(activeToolIndex!)}
-                  />
-                ) : (
-                  <div className="empty-state">
-                    <p className="empty-state-title">No tool selected</p>
-                    <p className="empty-state-body">
-                      Choose a tool from the sidebar, or add a new one to define its parameters.
-                    </p>
-                    <button type="button" className="primary" onClick={addTool}>
-                      + New tool
-                    </button>
-                  </div>
-                )}
-              </section>
+            {playgroundSelected ? (
+              <div className="workspace-body workspace-body-single">
+                <section className="editor-pane editor-pane-wide">
+                  <Playground appId={draft.appId} />
+                </section>
+              </div>
+            ) : (
+              <div className="workspace-body">
+                <section className="editor-pane">
+                  {agentSelected ? (
+                    <ThoughtEditor
+                      value={thoughtDraft}
+                      defaultPreview={DEFAULT_THOUGHT}
+                      busy={thoughtBusy}
+                      dirty={thoughtDraft.trim() !== (activeSummary?.thought ?? '')}
+                      onChange={setThoughtDraft}
+                      onSave={saveThought}
+                    />
+                  ) : selectedTool ? (
+                    <ToolForm
+                      key={activeToolIndex}
+                      tool={selectedTool}
+                      issues={issuesByTool.get(activeToolIndex!) ?? []}
+                      onChange={(next) => updateTool(activeToolIndex!, next)}
+                      onRemove={() => removeTool(activeToolIndex!)}
+                    />
+                  ) : (
+                    <div className="empty-state">
+                      <p className="empty-state-title">No tool selected</p>
+                      <p className="empty-state-body">
+                        Choose a tool from the sidebar, or add a new one to define its parameters.
+                      </p>
+                      <button type="button" className="primary" onClick={addTool}>
+                        + New tool
+                      </button>
+                    </div>
+                  )}
+                </section>
 
-              <section className="preview-pane">
-                <PreviewPanel app={draft} />
-              </section>
-            </div>
+                <section className="preview-pane">
+                  <PreviewPanel app={draft} />
+                </section>
+              </div>
+            )}
           </>
         ) : (
           <div className="empty-state workspace-empty">
