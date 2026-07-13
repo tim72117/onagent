@@ -7,12 +7,18 @@ web page to a backend inference service over WebSocket: it pushes page
 context/state, and dispatches `tool_call`s the inference service returns
 back into the page (fill a form, navigate, highlight an element, etc.).
 
-The actual LLM reasoning/inference backend is not part of this repo yet —
-`internal/inference.MockService` stands in for it so the rest of the
-pipeline (tool loading, codegen, WebSocket protocol, SDK, demo app) can be
-built and exercised end-to-end today. Swapping in a real inference service
-means implementing `inference.Service` and wiring it in
-`cmd/server/main.go`; nothing else changes.
+LLM reasoning/inference is provided by want (a private LLM orchestration
+library)'s `orchestrator.Orchestrator`: `internal/inference.NewWant` wires
+a provider (Anthropic, Ollama, vLLM, Google) into the `inference.Service`
+boundary and does real tool-calling inference against the app's tool
+schema. For local/demo setups without any LLM credentials,
+`internal/inference.MockService` is a fallback that echoes a plausible
+`tool_call` for whichever tool name appears in the prompt, so the rest of
+the pipeline (tool loading, codegen, WebSocket protocol, SDK, demo app)
+still works end-to-end without a real model. `cmd/server/main.go` picks
+between them based on `AI_PROVIDER`/`configs/settings.json` (unset or
+`mock` uses `MockService`; any other provider boots the want
+orchestrator).
 
 ## Layout
 
@@ -23,7 +29,7 @@ backend/                     Go backend
   internal/codegen/           tool defs -> LLM tool JSON, and -> TypeScript
   internal/protocol/          WebSocket message envelope types
   internal/ws/                WebSocket session/handler (Origin allowlist, dispatch)
-  internal/inference/         Boundary to the real inference service (mock for now)
+  internal/inference/         Boundary to the inference service (want orchestrator; mock fallback for local dev)
   tools/                      Developer tool-definition YAML files (one per app)
 
 packages/agent-bridge-sdk/   Browser SDK developers embed in their site
@@ -77,10 +83,13 @@ echo "VITE_AGENT_WS_URL=ws://localhost:8080/ws" > .env.local
 npm run dev
 ```
 
-Open the demo app, type a prompt containing a tool name (e.g. "please
-fill_search_form for me") — the mock inference service echoes back a
-matching `tool_call`, which the SDK dispatches to the handler registered
-in `examples/react-demo/src/App.tsx`.
+Open the demo app and type a prompt — with an `AI_PROVIDER` configured,
+the want orchestrator reasons over the prompt and the app's tool schema
+and returns real `tool_call`s; with no provider configured, the mock
+inference service echoes back a matching `tool_call` for any tool name
+mentioned in the prompt (e.g. "please fill_search_form for me"). Either
+way, the SDK dispatches the resulting `tool_call` to the handler
+registered in `examples/react-demo/src/App.tsx`.
 
 ## Adding a new tool
 
@@ -94,7 +103,9 @@ in `examples/react-demo/src/App.tsx`.
 
 ## Status / what's not built yet
 
-- No real inference service — see `internal/inference.MockService`.
+- Real inference is wired up via want's `orchestrator.Orchestrator` (see
+  `internal/inference.NewWant`); `internal/inference.MockService` remains
+  as an opt-in fallback for local dev without LLM credentials.
 - No per-session auth (token issuance/verification) — currently identity
   is just whatever `appId` the client claims in `hello`. See
   `docs/security-and-transport.md` for what's needed before this is
