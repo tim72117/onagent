@@ -1,0 +1,114 @@
+name: Release atp CLI
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  # backend/go.mod 的 github.com/tim72117/want 是私有 repo,跟
+  # deploy-cloudrun.yml build Docker image 時一樣,需要 GH_PAT + GOPRIVATE
+  # 才抓得到(見 Dockerfile build 階段的註解)。
+  GOPRIVATE: "github.com/tim72117/want"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 先只保留 Mac 跟 Windows;Linux 之後有需要再加回來。
+        include:
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+
+      - name: Configure git for private module access
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Download dependencies
+        working-directory: backend
+        run: go mod download
+
+      - name: Build atp binary
+        working-directory: backend
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          # 靜態編譯,跟 Dockerfile build server 一樣關 CGO,產出不依賴
+          # libc 的單一執行檔,跨平台交叉編譯才不會需要對應平台的 C toolchain。
+          mkdir -p ../dist
+          BINARY_NAME=atp-${{ matrix.goos }}-${{ matrix.goarch }}
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            BINARY_NAME="${BINARY_NAME}.exe"
+          fi
+          go build -trimpath -ldflags="-s -w" -o "../dist/${BINARY_NAME}" ./cmd/atp
+          echo "BINARY_NAME=${BINARY_NAME}" >> "$GITHUB_ENV"
+
+      - name: Package release asset
+        working-directory: dist
+        run: |
+          # linux/darwin 慣例用 tar.gz,windows 慣例用 zip。
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            ASSET_NAME="atp-${{ matrix.goos }}-${{ matrix.goarch }}.zip"
+            zip "${ASSET_NAME}" "${BINARY_NAME}"
+          else
+            ASSET_NAME="atp-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
+            tar -czf "${ASSET_NAME}" "${BINARY_NAME}"
+          fi
+          echo "ASSET_NAME=${ASSET_NAME}" >> "$GITHUB_ENV"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: atp-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/${{ env.ASSET_NAME }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          # workflow_dispatch 手動觸發(非 push tag)時 github.ref 不是
+          # refs/tags/*,action-gh-release 會找不到 tag 而失敗,所以這裡
+          # 明確指定 tag_name:是 tag push 就用該 tag,手動觸發則 fallback
+          # 成 "manual-<run number>" 草稿,方便事後自行整理成正式 release。
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('manual-{0}', github.run_number) }}
+          draft: ${{ !startsWith(github.ref, 'refs/tags/') }}
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ---
+            **注意 / Note**: 這些是未簽章(unsigned)、未經 notarize 的執行檔。
+            - macOS:直接執行可能會被 Gatekeeper 擋下,需要到「系統設定 > 隱私權與安全性」允許,或執行 `xattr -d com.apple.quarantine <binary>` 移除隔離屬性。
+            - Windows:SmartScreen 可能會顯示「Windows 已保護您的電腦」的警告,需點選「其他資訊」→「仍要執行」。
+            使用前請自行評估來源信任度。
