@@ -25,3 +25,18 @@ dist/
 # Local LLM provider config (base URLs, model names, and historically API
 # keys) — machine-specific, not meant to be shared/committed.
 /backend/configs/
+
+# apps/landing and apps/console build straight into these two directories
+# (see apps/console/vite.config.ts's outDir and cmd/server/web.go's
+# //go:embed all:web/{landing,console} — Go's embed can't reach outside its
+# own package directory, so this is the only place a build can land for
+# go:embed to pick it up). assets/ is pure generated build output and
+# never meant to be committed. index.html is trickier: a checked-in
+# placeholder must stay tracked (cmd/server/web.go's go:embed fails
+# outright on a fully empty directory, and it's how a fresh checkout
+# builds at all before anyone runs a frontend build) — but a real
+# `npm run build` overwrites that same file locally, so avoid `git add`ing
+# it after building unless you specifically mean to update the checked-in
+# placeholder's own content (e.g. its explanatory comment).
+/backend/cmd/server/web/landing/assets/
+/backend/cmd/server/web/console/assets/
