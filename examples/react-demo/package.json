@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@onagent/agent-bridge-sdk": "file:../../packages/agent-bridge-sdk",
+    "@onagent/bridge": "file:../../packages/bridge",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

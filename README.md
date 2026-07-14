@@ -32,7 +32,7 @@ backend/                     Go backend
   internal/inference/         Boundary to the inference service (want orchestrator; mock fallback for local dev)
   tools/                      Developer tool-definition YAML files (one per app)
 
-packages/agent-bridge-sdk/   Browser SDK developers embed in their site
+packages/bridge/             Browser SDK developers embed in their site
 examples/react-demo/         Vite + React app demonstrating the SDK end-to-end
 docs/security-and-transport.md   Cross-site transport design notes (GA-derived)
 ```
@@ -47,7 +47,7 @@ docs/security-and-transport.md   Cross-site transport design notes (GA-derived)
      inference service.
    - `GET /apps/{appId}/tools.ts` — generated TypeScript (`ToolHandlers`
      interface + arg/result types) the developer implements against.
-3. The developer's page embeds `@onagent/agent-bridge-sdk`,
+3. The developer's page embeds `@onagent/bridge`,
    constructs an `AgentBridge` with `appId` + a `tools` object implementing
    the generated `ToolHandlers` interface, and calls `sendContext()` /
    `prompt()`.
@@ -72,7 +72,7 @@ go run ./cmd/server                      # serves on :8080 by default
 # any origin accepted (a warning is logged).
 
 # SDK (build once so examples/react-demo can import it)
-cd packages/agent-bridge-sdk
+cd packages/bridge
 npm install
 npm run build
 

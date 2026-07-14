@@ -8,7 +8,7 @@
         "preview": "vite preview --config vite.preview.config.js"
     },
     "dependencies": {
-        "@onagent/agent-bridge-sdk": "file:../../../packages/agent-bridge-sdk"
+        "@onagent/bridge": "file:../../../packages/bridge"
     },
     "devDependencies": {
         "@mdi/font": "^7.4.47",

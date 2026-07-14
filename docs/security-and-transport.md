@@ -15,7 +15,7 @@ project's WebSocket-based design.
   the library drains the queue once ready. `AgentBridge` does the same
   thing internally — `sendContext()`/`prompt()` calls made before the
   WebSocket reaches `ack` are buffered and flushed on connect (see
-  `packages/agent-bridge-sdk/src/client.ts`). Callers never need to check
+  `packages/bridge/src/client.ts`). Callers never need to check
   a "ready" flag.
 - **`sendBeacon` fallback on unload.** GA uses `sendBeacon`/keepalive
   `fetch` so the last hit survives page teardown. Since a WebSocket

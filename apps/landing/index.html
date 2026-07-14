@@ -497,7 +497,7 @@
 demo-app        1 tool, has key</pre>
               </div>
               <div class="code-pane" data-pane="2">
-<pre><span class="t-kw">import</span> <span class="t-punc">{</span> AgentBridge <span class="t-punc">}</span> <span class="t-kw">from</span> <span class="t-str">"@onagent/agent-bridge-sdk"</span><span class="t-punc">;</span>
+<pre><span class="t-kw">import</span> <span class="t-punc">{</span> AgentBridge <span class="t-punc">}</span> <span class="t-kw">from</span> <span class="t-str">"@onagent/bridge"</span><span class="t-punc">;</span>
 
 <span class="t-kw">const</span> bridge <span class="t-punc">=</span> <span class="t-kw">new</span> <span class="t-fn">AgentBridge</span><span class="t-punc">({</span>
   <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://your-backend/ws"</span><span class="t-punc">,</span>
@@ -603,7 +603,7 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
       { t: 'ok', text: '✓ Saved 1 tool to "demo-app"' },
       { t: 'gap' },
       { t: 'comment', text: '# 2. 前端嵌入 SDK' },
-      { t: 'prompt', cmd: 'npm i @onagent/agent-bridge-sdk' },
+      { t: 'prompt', cmd: 'npm i @onagent/bridge' },
       { t: 'gap' },
       { t: 'comment', text: '# 3. 用一句話讓 AI 操作介面' },
       { t: 'code', text: 'const bridge = new AgentBridge({ tools: { select_item } })' },
