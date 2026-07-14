@@ -1,0 +1,22 @@
+appId: analysis-app
+thought: ""
+tools:
+  - name: select_question
+    description: >-
+      Select or deselect analysis questions/columns by name in the census
+      question checklist, or clear the entire selection. Use the names from
+      the availableQuestions context sent by the page.
+    parameters:
+      type: object
+      properties:
+        names:
+          type: array
+          items:
+            type: string
+          description: Question names to select or deselect.
+        selected:
+          type: boolean
+          description: True to select the named questions, false to deselect them.
+        clear:
+          type: boolean
+          description: If true, clears the entire selection and ignores names/selected.
