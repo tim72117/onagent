@@ -809,6 +809,17 @@ textarea {
   margin-bottom: 18px;
 }
 
+/* The base input/textarea/select rule (below) deliberately has no width —
+   plenty of inputs in this app (inline filters, etc.) are meant to stay
+   their native size. .field is specifically the labeled full-width form
+   field convention (Login, AddAppModal, ToolForm), so it opts in here
+   rather than the width living on the global rule. */
+.field input,
+.field textarea,
+.field select {
+  width: 100%;
+}
+
 .checkbox-row {
   display: flex;
   align-items: center;

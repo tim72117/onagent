@@ -2,9 +2,15 @@
 # 注意:backend/、apps/landing/、apps/console/ 必須保留(build 需要),
 # 這裡只排除產物與機密。
 
-# 機密:.env 含 DB 連線字串/密碼,絕不進映像(env 改用 --env-file / Cloud Run 變數注入)
+# 機密:.env* 含 DB 連線字串/密碼、或本機專用的 localhost 網址設定,絕不進映像
+# (env 改用 --env-file / Cloud Run 變數注入)。.env.local 特別重要:之前漏排除
+# 導致 apps/console/.env.local 的 VITE_CONSOLE_API_URL=http://localhost:8080
+# 被 Vite 直接烤進正式站的 console 前端 bundle 裡,讓瀏覽器把公開網站誤判成
+# 想連本機、跳出 Local Network Access 權限警告。
 .env
+.env.*
 **/.env
+**/.env.*
 backend/.env
 
 # Go 執行期產物與本機二進位

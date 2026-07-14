@@ -34,8 +34,20 @@ export interface CurrentUser {
 }
 
 // Exported so Playground.tsx can derive the playground WebSocket's URL
-// from the same source of truth rather than duplicating the env var lookup.
-export const BASE: string = import.meta.env.VITE_CONSOLE_API_URL ?? 'http://localhost:8080'
+// from the same source of truth rather than duplicating the env var lookup
+// (that's also why this falls back to window.location.origin rather than
+// a relative "" — Playground.tsx does BASE.replace(/^http/, 'ws') to build
+// an absolute ws(s):// URL, which needs a real origin to replace from).
+// When VITE_CONSOLE_API_URL isn't set at build time (the Docker/production
+// build has no env file providing it — only .env.local does, for local dev
+// against a separately-running backend on a different port), this resolves
+// against whatever origin actually served the page. Console is embedded
+// same-origin in production (backend/cmd/server/web.go), so that's correct
+// there; a hardcoded localhost fallback baked into the production bundle
+// was also triggering the browser's Local Network Access permission
+// prompt, since a public page reaching for localhost looks identical to
+// an attack from the browser's perspective.
+export const BASE: string = import.meta.env.VITE_CONSOLE_API_URL ?? window.location.origin
 
 export class ApiError extends Error {
   readonly status: number
