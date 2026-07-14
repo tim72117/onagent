@@ -101,6 +101,13 @@ CREATE TABLE IF NOT EXISTS tools (
     description TEXT NOT NULL,
     parameters  JSONB NOT NULL, -- toolschema.ParameterSchema, serialized
     returns     JSONB,          -- toolschema.ParameterSchema, serialized; NULL if undeclared
+    kind        TEXT NOT NULL DEFAULT 'action', -- toolschema.ToolKind: "action" (default) or "query"
     position    INTEGER NOT NULL, -- preserves declaration order within an app
     PRIMARY KEY (app_id, name)
 );
+
+-- CREATE TABLE IF NOT EXISTS is a no-op against an already-existing table,
+-- so a column added after the table's first deployment (like `kind` above)
+-- needs its own idempotent migration here — this runs on every startup
+-- (see internal/db.Open), so it must stay safe to re-run indefinitely.
+ALTER TABLE tools ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'action';

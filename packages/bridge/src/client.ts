@@ -160,6 +160,16 @@ export class AgentBridge {
         break;
       }
       case "tool_call":
+      case "tool_query":
+        // Mechanically identical from here: run the registered handler,
+        // await it, send back a tool_result. The two only differ in
+        // whether the backend actually waits on that tool_result — for
+        // "tool_call" it's discarded (fire-and-forget); for "tool_query"
+        // it blocks the LLM's reasoning until this arrives (see backend's
+        // internal/inference queryTool/askPage and toolschema.ToolKind).
+        // That distinction lives entirely server-side; a tool handler here
+        // is written exactly the same way regardless of which one invokes
+        // it.
         this.handleToolCall(env.requestId, env.payload as ToolCallPayload);
         break;
       case "assistant_message":

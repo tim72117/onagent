@@ -6,6 +6,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -57,11 +58,19 @@ func NewSession(ctx context.Context, conn *websocket.Conn, apps *toolschema.Regi
 		authAppID:    authAppID,
 		pendingCalls: make(map[string]chan protocol.ToolResultPayload),
 	}
+	// Makes s reachable from a ToolKindQuery tool's Call, which runs inside
+	// want's own goroutine with no reference to this Session — see
+	// inference.RegisterAsker's doc comment for the full path back here.
+	// Must be deregistered on close (in run's defer below): a lingering
+	// entry would let a later query tool call reach a closed connection and
+	// hang until want's own interaction timeout.
+	inference.RegisterAsker(s.id, s)
 	s.run(ctx)
 }
 
 func (s *Session) run(ctx context.Context) {
 	defer s.conn.Close()
+	defer inference.UnregisterAsker(s.id)
 
 	s.conn.SetReadLimit(1 << 20) // 1MB: generous for page-state context payloads, bounded against abuse.
 	_ = s.conn.SetReadDeadline(time.Now().Add(pongTimeout))
@@ -125,7 +134,23 @@ func (s *Session) handle(ctx context.Context, env protocol.Envelope) {
 	case protocol.TypeContext:
 		s.handleContext(env)
 	case protocol.TypePrompt:
-		s.handlePrompt(ctx, env)
+		// Dispatched onto its own goroutine, unlike every other case here —
+		// this is the one handler that can legitimately take a long time
+		// (s.infer.Complete blocks for the whole inference turn, up to
+		// completeTimeout). run's read loop must stay free to call
+		// ReadMessage again while a prompt is in flight, specifically so it
+		// can read a TypeToolResult answering a ToolKindQuery tool that
+		// prompt's own inference call is blocked waiting on (see
+		// AskInteraction) — otherwise the read loop can never read the
+		// answer to a question the in-flight prompt is itself asking,
+		// deadlocking (in practice: stalling) until AskInteraction's own
+		// interactionTimeout gives up and unblocks Complete from the other
+		// side. Every other message type here is fast/non-blocking already
+		// (map/field writes, or itself just a channel send in
+		// handleToolResult's case), so keeping them synchronous in the read
+		// loop is fine and preserves their relative ordering — only prompt
+		// needed to be pulled out.
+		go s.handlePrompt(ctx, env)
 	case protocol.TypeToolResult:
 		s.handleToolResult(env)
 	default:
@@ -251,6 +276,59 @@ func (s *Session) handleToolResult(env protocol.Envelope) {
 	}
 
 	s.log.Info("tool_result with no pending caller", "session", s.id, "tool", p.ToolName, "ok", p.OK)
+}
+
+// interactionTimeout bounds how long AskInteraction waits for the browser to
+// answer a TypeToolQuery before giving up. Deliberately shorter than want's
+// own 60s RequestInteraction timeout (which this bypasses entirely — see
+// queryTool's doc comment in internal/inference/agent_roles.go) and well
+// under WantService's 90s completeTimeout, so a page that never answers
+// fails with a clear "the page didn't answer in time" rather than the
+// caller instead seeing whichever of those two unrelated timeouts happens
+// to fire first.
+const interactionTimeout = 20 * time.Second
+
+// AskInteraction implements inference.InteractionAsker: sends toolName/args
+// to the browser as a TypeToolQuery and blocks until it answers with a
+// matching TypeToolResult (handleToolResult delivers it onto the channel
+// this registers in s.pendingCalls, the same map/mechanism a regular
+// TypeToolCall's eventual TypeToolResult would use — the two are
+// distinguished only by which message type the client originally received,
+// not by anything server-side), the request times out, or ctx representing
+// this call is otherwise abandoned.
+//
+// Runs on whatever goroutine want's dispatch called queryTool.Call from —
+// never the Session's own read loop — so it must not touch s.pendingCalls
+// or s.app/s.lastContext without s.mu, same as every other Session method
+// reachable from outside run's single-goroutine loop.
+func (s *Session) AskInteraction(toolName string, args json.RawMessage) (json.RawMessage, error) {
+	requestID := randomID()
+	ch := make(chan protocol.ToolResultPayload, 1)
+
+	s.mu.Lock()
+	s.pendingCalls[requestID] = ch
+	s.mu.Unlock()
+
+	s.send(protocol.TypeToolQuery, requestID, protocol.ToolCallPayload{
+		ToolName: toolName,
+		Args:     args,
+	})
+
+	select {
+	case result := <-ch:
+		if !result.OK {
+			if result.Error != "" {
+				return nil, fmt.Errorf("page reported an error answering %q: %s", toolName, result.Error)
+			}
+			return nil, fmt.Errorf("page reported failure answering %q", toolName)
+		}
+		return result.Result, nil
+	case <-time.After(interactionTimeout):
+		s.mu.Lock()
+		delete(s.pendingCalls, requestID)
+		s.mu.Unlock()
+		return nil, fmt.Errorf("page didn't answer %q within %s", toolName, interactionTimeout)
+	}
 }
 
 func (s *Session) send(typ protocol.MessageType, requestID string, payload any) {

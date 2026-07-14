@@ -280,7 +280,6 @@ func openBrowser(url string) error {
 	}
 }
 
-
 // --- list-apps -----------------------------------------------------------
 
 func runListApps(args []string) error {

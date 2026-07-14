@@ -10,6 +10,7 @@ export type MessageType =
   | "tool_result"
   | "ack"
   | "tool_call"
+  | "tool_query"
   | "assistant_message"
   | "error";
 

@@ -100,6 +100,14 @@ func (a *App) Validate() error {
 		if t.Parameters.Type == "" {
 			return fmt.Errorf("tool %q is missing parameters.type", t.Name)
 		}
+		switch t.Kind {
+		case "", ToolKindAction, ToolKindQuery:
+		default:
+			return fmt.Errorf("tool %q has invalid kind %q (must be %q or %q)", t.Name, t.Kind, ToolKindAction, ToolKindQuery)
+		}
+		if t.Kind == ToolKindQuery && t.Returns == nil {
+			return fmt.Errorf("tool %q is kind %q but has no returns schema — a query tool must declare the shape of the frontend's answer", t.Name, ToolKindQuery)
+		}
 	}
 
 	return nil

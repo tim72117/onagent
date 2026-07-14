@@ -145,16 +145,21 @@ func RegisterAppRole(app *toolschema.App) {
 }
 
 // registerForwardingTool registers one platform tool into want's global
-// registry. Its Call does not perform the action — it records the
-// tool name/args into callSink for WantService.Complete to translate into a
-// Result.ToolCalls entry, which the WS session then sends to the browser to
-// actually execute.
+// registry, choosing between the two Call behaviors toolschema.ToolKind
+// selects — see forwardingTool and queryTool's own doc comments for what
+// each does.
 func registerForwardingTool(t toolschema.Tool) {
 	decl := types.ToolDeclaration{
 		Name:        t.Name,
 		Description: t.Description,
 		Type:        "sync",
 		Parameters:  parameterSchemaToWant(t.Parameters),
+	}
+	if t.Kind == toolschema.ToolKindQuery {
+		types.RegisterTool(decl, func() types.ToolInterface {
+			return &queryTool{name: t.Name}
+		})
+		return
 	}
 	types.RegisterTool(decl, func() types.ToolInterface {
 		return &forwardingTool{name: t.Name}
@@ -195,6 +200,59 @@ func (f *forwardingTool) RenderToolResult(data map[string]interface{}) string {
 	return "Forwarded to page"
 }
 
+// queryTool is the ToolKindQuery counterpart to forwardingTool: instead of
+// firing the call to the page and immediately telling want it's done, Call
+// blocks until the connected browser answers.
+//
+// This deliberately does NOT go through want's own
+// ToolContext.RequestInteraction/orch.ResolveInteraction machinery — that
+// exists for want's own UI (e.g. a CLI or web frontend want ships) to ask
+// *want's own user* something mid-run, which isn't what's happening here:
+// there is no want UI in this platform at all, want runs headless behind
+// this backend. Routing through it would mean building this exact same
+// "reach the WS session and block" bridge a second time, just relayed
+// through want's EventBus first for no benefit. askPage (interaction.go) is
+// that bridge directly: it resolves ctx.GetAgentID() back to the raw WS
+// session id and calls the session's own AskInteraction, registered via
+// RegisterAsker when the session started.
+type queryTool struct {
+	types.BaseToolConfig
+	name string
+}
+
+func (q *queryTool) ValidateInput(types.ToolArguments, types.ToolContext) error { return nil }
+
+func (q *queryTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]types.ResultContentBlock, error) {
+	raw, err := json.Marshal(args)
+	if err != nil {
+		return nil, fmt.Errorf("marshal args for %s: %w", q.name, err)
+	}
+
+	answerJSON, err := askPage(ctx.GetAgentID(), q.name, raw)
+	if err != nil {
+		return nil, fmt.Errorf("query %s: %w", q.name, err)
+	}
+
+	var answer interface{}
+	if err := json.Unmarshal(answerJSON, &answer); err != nil {
+		answer = string(answerJSON) // not JSON — surface it as-is rather than failing the whole call
+	}
+	ctx.EmitToolResult(map[string]interface{}{"answer": answer})
+	return []types.ResultContentBlock{types.TextBlock(string(answerJSON))}, nil
+}
+
+func (q *queryTool) RenderToolUse(args types.ToolArguments) string {
+	return fmt.Sprintf("Asking the page: %s", q.name)
+}
+
+func (q *queryTool) RenderToolUseError(err error) string {
+	return fmt.Sprintf("Failed to query %s: %v", q.name, err)
+}
+
+func (q *queryTool) RenderToolResult(data map[string]interface{}) string {
+	return fmt.Sprintf("Page answered %s", q.name)
+}
+
 // parameterSchemaToWant converts our JSON-Schema subset into the
 // map[string]interface{} shape want's ToolDeclaration.Parameters expects
 // (mirrors the OpenAI/Anthropic tool schema convention want's providers
@@ -206,7 +264,16 @@ func parameterSchemaToWant(p toolschema.ParameterSchema) map[string]interface{} 
 	if p.Description != "" {
 		out["description"] = p.Description
 	}
-	if len(p.Properties) > 0 {
+	// Always emit "properties" for an object type, even when there are none
+	// (e.g. a ToolKindQuery tool that just asks a yes/no question with no
+	// arguments) — omitting the key entirely for an empty map produces
+	// {"type":"object"} with no properties, which is valid JSON Schema but
+	// confused google/gemma-4-12b-it (via vLLM) into returning an
+	// unparseable null response instead of calling the tool with {}. Every
+	// other tool in this project happened to have at least one property
+	// until the first ToolKindQuery tool with zero parameters surfaced
+	// this. An explicit {} is unambiguous either way.
+	if p.Type == "object" {
 		props := make(map[string]interface{}, len(p.Properties))
 		for name, sub := range p.Properties {
 			if sub == nil {

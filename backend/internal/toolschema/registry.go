@@ -205,7 +205,7 @@ func loadAllApps(db *sql.DB) (map[string]*App, error) {
 	}
 
 	toolRows, err := db.Query(`
-		SELECT app_id, name, description, parameters, returns
+		SELECT app_id, name, description, parameters, returns, kind
 		  FROM tools
 		 ORDER BY app_id, position`)
 	if err != nil {
@@ -218,8 +218,9 @@ func loadAllApps(db *sql.DB) (map[string]*App, error) {
 			appID, name, description string
 			parametersJSON           []byte
 			returnsJSON              []byte // NULL-able
+			kind                     string
 		)
-		if err := toolRows.Scan(&appID, &name, &description, &parametersJSON, &returnsJSON); err != nil {
+		if err := toolRows.Scan(&appID, &name, &description, &parametersJSON, &returnsJSON, &kind); err != nil {
 			return nil, fmt.Errorf("toolschema: scan tool: %w", err)
 		}
 
@@ -228,7 +229,7 @@ func loadAllApps(db *sql.DB) (map[string]*App, error) {
 			return nil, fmt.Errorf("toolschema: unmarshal parameters for %s.%s: %w", appID, name, err)
 		}
 
-		tool := Tool{Name: name, Description: description, Parameters: params}
+		tool := Tool{Name: name, Description: description, Parameters: params, Kind: ToolKind(kind)}
 		if returnsJSON != nil {
 			var ret ParameterSchema
 			if err := json.Unmarshal(returnsJSON, &ret); err != nil {
@@ -289,10 +290,14 @@ func saveApp(db *sql.DB, app *App) error {
 				return fmt.Errorf("toolschema: marshal returns for %s: %w", t.Name, err)
 			}
 		}
+		kind := t.Kind
+		if kind == "" {
+			kind = ToolKindAction
+		}
 		if _, err := tx.Exec(
-			`INSERT INTO tools (app_id, name, description, parameters, returns, position)
-			 VALUES ($1, $2, $3, $4, $5, $6)`,
-			app.AppID, t.Name, t.Description, paramsJSON, returnsJSON, i,
+			`INSERT INTO tools (app_id, name, description, parameters, returns, kind, position)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			app.AppID, t.Name, t.Description, paramsJSON, returnsJSON, string(kind), i,
 		); err != nil {
 			return fmt.Errorf("toolschema: insert tool %s: %w", t.Name, err)
 		}

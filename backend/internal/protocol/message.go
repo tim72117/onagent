@@ -33,8 +33,19 @@ const (
 	TypeAck MessageType = "ack"
 
 	// TypeToolCall instructs the client to execute a named tool with
-	// arguments produced by the inference service.
+	// arguments produced by the inference service. Fire-and-forget from the
+	// inference service's perspective: whatever the client does locally
+	// (fill a form, navigate) never flows back into the conversation — see
+	// toolschema.ToolKindAction.
 	TypeToolCall MessageType = "tool_call"
+
+	// TypeToolQuery instructs the client to run a named tool's handler and
+	// report its return value back via TypeToolResult — unlike
+	// TypeToolCall, the inference service is actually blocked waiting for
+	// that TypeToolResult and feeds the answer back into the LLM's
+	// reasoning. See toolschema.ToolKindQuery and internal/inference's
+	// queryTool/askPage for the server-side half of this round trip.
+	TypeToolQuery MessageType = "tool_query"
 
 	// TypeAssistantMessage carries a natural-language message meant for
 	// display to the end user (no DOM side effect).
