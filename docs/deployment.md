@@ -24,10 +24,9 @@
   4. 編譯 Go（`CGO_ENABLED=0`，`GOPRIVATE=github.com/tim72117/want` +
      `GH_PAT` 抓私有模組)
   5. Runtime image 用 `gcr.io/distroless/static-debian12:nonroot`
-- **cloudbuild.yaml**：Cloud Build 用，build image → push 到
-  Artifact Registry → `gcloud run deploy`
-- **.github/workflows/deploy-cloudrun.yml**：push 到 `main` 時自動走
-  GitHub Actions，用 Workload Identity Federation（WIF）認證，不需要
+- **.github/workflows/deploy-cloudrun.yml**：push 版號 tag（`v*`）時觸發，
+  或用 `workflow_dispatch` 手動觸發（可選擇跳過重新 build，直接部署現有
+  `:latest` image）。用 Workload Identity Federation（WIF）認證，不需要
   在 GitHub 存放長期 service account JSON key
 - **deploy/setup.sh**：一次性的 GCP 專案 / API / secrets / domain
   mapping 建置腳本
@@ -63,7 +62,7 @@ bash deploy/setup.sh
 這支腳本會依序：
 
 1. 建立 GCP 專案、掛 billing account
-2. 啟用 `run`、`artifactregistry`、`secretmanager`、`cloudbuild` API
+2. 啟用 `run`、`artifactregistry`、`secretmanager` API
 3. 建立 Artifact Registry docker repo
 4. 建立**空的** Secret Manager secrets 容器（`DATABASE_URL`、
    `ALLOWED_ORIGINS`、`GH_PAT`）—— 不含真實值
@@ -111,17 +110,17 @@ WIF 的 provider / service account 需要你自己在 GCP 專案裡建立
 [google-github-actions/auth](https://github.com/google-github-actions/auth)
 官方文件。
 
-設定完成後，push 到 `main` 分支且變更到 `backend/**`、`apps/**`、
-`Dockerfile` 等路徑就會自動觸發部署，也可以用 GitHub Actions 的
-`workflow_dispatch` 手動觸發。
+設定完成後，push 一個版號 tag（例如 `git tag v1.0.0 && git push origin
+v1.0.0`）就會觸發部署；也可以在 GitHub Actions 頁面用
+`workflow_dispatch` 手動觸發，並可勾選「只部署不重新 build」直接用現有
+`:latest` image 重新套用最新的環境變數/secret 設定，不需要等一次完整
+build。
 
 ### 4. 首次部署 Cloud Run service
 
-第一次部署可以直接推一個 commit 到 `main` 觸發 GitHub Actions，或手動跑：
-
-```bash
-gcloud builds submit --config=cloudbuild.yaml --project=<你的 PROJECT_ID>
-```
+第一次部署可以推一個版號 tag 觸發 GitHub Actions（見上一節），或直接在
+GitHub Actions 頁面手動跑一次 `workflow_dispatch`（第一次記得不要勾
+「只部署不重新 build」，這時候還沒有任何 image 可以重用）。
 
 部署完成後，用以下指令確認 service 正常：
 

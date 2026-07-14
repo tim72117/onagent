@@ -65,11 +65,10 @@ gcloud services enable \
   run.googleapis.com \
   artifactregistry.googleapis.com \
   secretmanager.googleapis.com \
-  cloudbuild.googleapis.com \
   --project="${PROJECT_ID}"
 
 # -----------------------------------------------------------------------------
-# 3. 建立 Artifact Registry repo(cloudbuild.yaml / GitHub Actions 推 image 用）
+# 3. 建立 Artifact Registry repo(GitHub Actions 推 image 用）
 # -----------------------------------------------------------------------------
 gcloud artifacts repositories create "${AR_REPO}" \
   --repository-format=docker \
@@ -102,7 +101,7 @@ echo
 
 # -----------------------------------------------------------------------------
 # 5. Cloud Run domain mapping（前提：service 至少已成功部署過一次，
-#    否則 domain-mappings create 會失敗；先跑過 cloudbuild.yaml 或
+#    否則 domain-mappings create 會失敗；先跑過
 #    .github/workflows/deploy-cloudrun.yml 部署一次 onagent-server 再執行這步）
 # -----------------------------------------------------------------------------
 gcloud beta run domain-mappings create \
