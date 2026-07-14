@@ -28,7 +28,7 @@ import (
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
-	"github.com/tim72117/agent-tool-platform/internal/toolschema"
+	"github.com/tim72117/agent/internal/toolschema"
 )
 
 func main() {
@@ -46,6 +46,12 @@ func main() {
 		err = runLogin(args)
 	case "list-apps":
 		err = runListApps(args)
+	case "create-app":
+		err = runCreateApp(args)
+	case "issue-key":
+		err = runIssueKey(args)
+	case "set-origin":
+		err = runSetOrigin(args)
 	case "save-tools":
 		err = runSaveTools(args)
 	default:
@@ -65,13 +71,17 @@ func usage() {
   atp login --web [-api <url>] [-console <url>]
                                        sign in via a browser tab instead (see below)
   atp list-apps [-api <url>]
+  atp create-app [-api <url>] <appId>
+  atp issue-key [-api <url>] <appId>
+  atp set-origin [-api <url>] <appId> <origin>
   atp save-tools [-api <url>] <appId> <tools.yaml>
 
-  -api defaults to $ATP_API_URL, or http://localhost:8080 if unset.
-  -console (login --web only) defaults to $ATP_CONSOLE_URL, or
-  http://localhost:5173 if unset — the origin the console front-end (not
-  the API) is served from; the CLI appends /app/cli-auth itself, since
-  that's the path prefix the console is mounted under.`)
+  -api and -console both default to https://agent.shuttle.tools (the
+  deployed onagent service). -console (login --web only) is the origin
+  the console front-end is served from — the CLI appends /app/cli-auth
+  itself, since that's the path prefix the console is mounted under.
+  Point either at a local onagent dev server with e.g. -api
+  http://localhost:8080 -console http://localhost:8080.`)
 }
 
 // --- login -------------------------------------------------------------
@@ -303,6 +313,77 @@ func runListApps(args []string) error {
 	return nil
 }
 
+// --- create-app ------------------------------------------------------------
+
+func runCreateApp(args []string) error {
+	base, rest := apiFlag(args)
+	if len(rest) != 1 {
+		return fmt.Errorf("usage: atp create-app [-api <url>] <appId>")
+	}
+	appID := rest[0]
+
+	client, err := authenticatedClient(base)
+	if err != nil {
+		return err
+	}
+
+	if _, err := client.createApp(appID); err != nil {
+		return fmt.Errorf("create app: %w", err)
+	}
+
+	fmt.Printf("Created app %q.\n", appID)
+	return nil
+}
+
+// --- issue-key ---------------------------------------------------------
+
+func runIssueKey(args []string) error {
+	base, rest := apiFlag(args)
+	if len(rest) != 1 {
+		return fmt.Errorf("usage: atp issue-key [-api <url>] <appId>")
+	}
+	appID := rest[0]
+
+	client, err := authenticatedClient(base)
+	if err != nil {
+		return err
+	}
+
+	key, err := client.issueKey(appID)
+	if err != nil {
+		return fmt.Errorf("issue key: %w", err)
+	}
+
+	// Printed once, same as the console UI's KeyModal — the backend stores
+	// only a hash, so this is the only chance to see the plaintext value.
+	fmt.Printf("API key for %q (shown once — copy it now, it can't be retrieved again):\n", appID)
+	fmt.Println(" ", key)
+	fmt.Println("Issuing a new key later immediately revokes this one.")
+	return nil
+}
+
+// --- set-origin ----------------------------------------------------------
+
+func runSetOrigin(args []string) error {
+	base, rest := apiFlag(args)
+	if len(rest) != 2 {
+		return fmt.Errorf("usage: atp set-origin [-api <url>] <appId> <origin>")
+	}
+	appID, origin := rest[0], rest[1]
+
+	client, err := authenticatedClient(base)
+	if err != nil {
+		return err
+	}
+
+	if _, err := client.setOrigin(appID, origin); err != nil {
+		return fmt.Errorf("set origin: %w", err)
+	}
+
+	fmt.Printf("Set %q's allowed origin to %q.\n", appID, origin)
+	return nil
+}
+
 // --- save-tools ----------------------------------------------------------
 
 func runSaveTools(args []string) error {
@@ -482,6 +563,63 @@ func (c *apiClient) exchangeCliAuth(id string) (token string, err error) {
 	return out.Token, nil
 }
 
+func (c *apiClient) createApp(appID string) (appSummary, error) {
+	body, err := json.Marshal(map[string]string{"appId": appID})
+	if err != nil {
+		return appSummary{}, err
+	}
+
+	res, err := c.do(http.MethodPost, "/console/apps", bytes.NewReader(body))
+	if err != nil {
+		return appSummary{}, err
+	}
+	defer res.Body.Close()
+
+	var out appSummary
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return appSummary{}, fmt.Errorf("decode response: %w", err)
+	}
+	return out, nil
+}
+
+// issueKey returns the plaintext apiKey — the backend stores only its hash,
+// so this is the caller's one and only chance to read it, same as the
+// console UI's KeyModal.
+func (c *apiClient) issueKey(appID string) (apiKey string, err error) {
+	res, err := c.do(http.MethodPost, "/console/apps/"+pathEscape(appID)+"/key", nil)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+
+	var out struct {
+		ApiKey string `json:"apiKey"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+	return out.ApiKey, nil
+}
+
+func (c *apiClient) setOrigin(appID, origin string) (appSummary, error) {
+	body, err := json.Marshal(map[string]string{"origin": origin})
+	if err != nil {
+		return appSummary{}, err
+	}
+
+	res, err := c.do(http.MethodPut, "/console/apps/"+pathEscape(appID)+"/origin", bytes.NewReader(body))
+	if err != nil {
+		return appSummary{}, err
+	}
+	defer res.Body.Close()
+
+	var out appSummary
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return appSummary{}, fmt.Errorf("decode response: %w", err)
+	}
+	return out, nil
+}
+
 func (c *apiClient) listApps() ([]appSummary, error) {
 	res, err := c.do(http.MethodGet, "/console/apps", nil)
 	if err != nil {
@@ -594,13 +732,23 @@ func loadToken() (string, error) {
 
 // --- small input/flag helpers -----------------------------------------------
 
+// defaultServerURL is where atp talks by default: the deployed onagent
+// backend, not localhost — most people running this CLI are talking to the
+// real service, not developing onagent itself. Both apiFlag and
+// consoleFlag default here since the console front-end is embedded
+// same-origin with the API in production (backend/cmd/server/web.go).
+const defaultServerURL = "https://agent.shuttle.tools"
+
 // apiFlag pulls an optional "-api <url>" out of args, wherever it appears
 // (a hand-rolled parse, not the stdlib flag package, since flag doesn't
 // compose with the "flags then positional args" subcommand shape used
 // here), and returns the resolved base URL plus whatever args remain.
+// Override with -api only — no environment variable, so there's exactly
+// one way to point this somewhere else (e.g. -api http://localhost:8080
+// for local onagent development).
 func apiFlag(args []string) (base string, rest []string) {
 	val, rest := extractFlag(args, "-api")
-	base = envOr("ATP_API_URL", "http://localhost:8080")
+	base = defaultServerURL
 	if val != "" {
 		base = val
 	}
@@ -609,10 +757,11 @@ func apiFlag(args []string) (base string, rest []string) {
 
 // consoleFlag is apiFlag's counterpart for login --web: where the console
 // front-end (not the API) is served, since that's what actually opens in
-// the browser for the user to approve.
+// the browser for the user to approve. Override with -console only — see
+// apiFlag's comment for why there's no environment variable form.
 func consoleFlag(args []string) (base string, rest []string) {
 	val, rest := extractFlag(args, "-console")
-	base = envOr("ATP_CONSOLE_URL", "http://localhost:5173")
+	base = defaultServerURL
 	if val != "" {
 		base = val
 	}
@@ -654,11 +803,4 @@ func readPassword(prompt string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(bytes)), nil
-}
-
-func envOr(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
