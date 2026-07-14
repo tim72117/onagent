@@ -20,3 +20,28 @@ tools:
         clear:
           type: boolean
           description: If true, clears the entire selection and ignores names/selected.
+      required:
+        - selected
+
+  - name: get_current_selection
+    description: >-
+      Ask the page what questions/columns are currently selected right now.
+      Use this before deciding what to select/deselect if you're not sure
+      of the current state.
+    kind: query
+    parameters:
+      type: object
+      properties:
+        limit:
+          type: integer
+          description: >-
+            Max number of selected question names to return. Always provide
+            a value — pass 100 if you want effectively all of them (there
+            are never more than a handful of questions on this page).
+      required:
+        - limit
+    returns:
+      type: array
+      items:
+        type: string
+      description: The names of currently-selected questions.
