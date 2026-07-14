@@ -2,13 +2,8 @@ name: Deploy to Cloud Run
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'backend/**'
-      - 'apps/**'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - '.github/workflows/deploy-cloudrun.yml'
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       skip_build:
@@ -44,6 +39,7 @@ jobs:
         run: gcloud auth configure-docker asia-east1-docker.pkg.dev --quiet
 
       - name: Build Docker image
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_build != true }}
         env:
           DOCKER_BUILDKIT: "1"
           GH_PAT: ${{ secrets.GH_PAT }}
@@ -58,17 +54,23 @@ jobs:
             .
 
       - name: Push image
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.skip_build != true }}
         run: |
           docker push ${{ env.IMAGE }}:${{ github.sha }}
           docker push ${{ env.IMAGE }}:latest
 
       - name: Deploy to Cloud Run
+        env:
+          # skip_build reuses whatever :latest already points to — there's
+          # no fresh :${{ github.sha }} image for this run since the build
+          # step above didn't run.
+          DEPLOY_TAG: ${{ (github.event_name == 'workflow_dispatch' && inputs.skip_build == true) && 'latest' || github.sha }}
         run: |
           gcloud run deploy ${{ env.CLOUD_RUN_SERVICE }} \
-            --image=${{ env.IMAGE }}:${{ github.sha }} \
+            --image=${{ env.IMAGE }}:${{ env.DEPLOY_TAG }} \
             --region=${{ env.CLOUD_RUN_REGION }} \
-            --update-env-vars=APP_ENV=production,COOKIE_SECURE=true \
-            --update-secrets=DATABASE_URL=DATABASE_URL:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest \
+            --update-env-vars=APP_ENV=production,COOKIE_SECURE=true,AI_PROVIDER=google,AI_MODEL=gemini-2.5-flash-lite \
+            --update-secrets=DATABASE_URL=DATABASE_URL:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest \
             --quiet
 
       - name: Show Cloud Run URL
