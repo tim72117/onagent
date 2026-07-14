@@ -51,6 +51,22 @@ func NewHandler(apps *toolschema.Registry, infer inference.Service, log *slog.Lo
 		ReadBufferSize:  4096,
 		WriteBufferSize: 4096,
 		CheckOrigin: func(r *http.Request) bool {
+			if h.Auth != nil {
+				// Per-app origin binding (ServeHTTP, above) already ran and
+				// fully decided this by the time Upgrade() gets here: it
+				// fail-closed-rejects unless the Origin header matches
+				// exactly what this app's developer configured via
+				// set-origin. That's strictly narrower and self-service
+				// (each developer controls their own app's value) —
+				// layering the global AllowedOrigins allowlist on top
+				// doesn't add security, it only adds a second,
+				// operator-maintained list every new developer origin
+				// would also have to be added to before their app could
+				// ever connect. AllowedOrigins stays the real gate for
+				// /console and /auth (withCORS), and for the no-auth
+				// fallback below.
+				return true
+			}
 			origin := r.Header.Get("Origin")
 			if origin == "" {
 				// Non-browser clients (curl, server-to-server) send no
