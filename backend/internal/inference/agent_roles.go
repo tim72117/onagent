@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/tim72117/agent-tool-platform/internal/toolschema"
+	"github.com/tim72117/agent/internal/toolschema"
 	"github.com/tim72117/want/pkg/agentreg"
 	"github.com/tim72117/want/types"
 )

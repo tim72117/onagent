@@ -1,6 +1,6 @@
 package codegen
 
-import "github.com/tim72117/agent-tool-platform/internal/toolschema"
+import "github.com/tim72117/agent/internal/toolschema"
 
 // LLMTool is the shape most LLM tool-calling APIs (OpenAI, Anthropic)
 // expect: a flat list of {name, description, input_schema}.

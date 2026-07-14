@@ -1,4 +1,4 @@
-module github.com/tim72117/agent-tool-platform
+module github.com/tim72117/agent
 
 go 1.26.4
 

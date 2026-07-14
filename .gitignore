@@ -6,7 +6,6 @@ dist/
 .env.*.local
 
 # Go
-/backend/agent-tool-platform
 /backend/server
 /backend/*.exe
 

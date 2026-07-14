@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/tim72117/agent-tool-platform/internal/codegen"
-	"github.com/tim72117/agent-tool-platform/internal/inference"
-	"github.com/tim72117/agent-tool-platform/internal/session"
+	"github.com/tim72117/agent/internal/codegen"
+	"github.com/tim72117/agent/internal/inference"
+	"github.com/tim72117/agent/internal/session"
 )
 
 // Package playground: lets a developer test-drive their app's agent from

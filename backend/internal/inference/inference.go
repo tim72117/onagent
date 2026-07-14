@@ -8,7 +8,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/tim72117/agent-tool-platform/internal/codegen"
+	"github.com/tim72117/agent/internal/codegen"
 )
 
 // ToolCall is one tool invocation the inference service wants the front-end

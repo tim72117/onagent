@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/tim72117/agent-tool-platform/internal/toolschema"
+	"github.com/tim72117/agent/internal/toolschema"
 )
 
 // TypeScript renders a .ts source file for one app: a `ToolHandlers`

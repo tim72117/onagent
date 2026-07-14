@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/tim72117/agent-tool-platform/internal/codegen"
-	"github.com/tim72117/agent-tool-platform/internal/inference"
-	"github.com/tim72117/agent-tool-platform/internal/protocol"
-	"github.com/tim72117/agent-tool-platform/internal/toolschema"
+	"github.com/tim72117/agent/internal/codegen"
+	"github.com/tim72117/agent/internal/inference"
+	"github.com/tim72117/agent/internal/protocol"
+	"github.com/tim72117/agent/internal/toolschema"
 )
 
 const (
