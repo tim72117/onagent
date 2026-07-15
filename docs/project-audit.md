@@ -112,9 +112,9 @@
 - **位置**：`client.ts:126-135`——close handler 完全忽略 `event.code`/`reason`，error 是純 no-op。撤銷 key 產生的 auth 拒絕 close 與暫時性斷線無法區分，兩者都無限重試、零信號。
 - **修法**：檢查 `ev.code`，把 4xxx auth 類 code 當終端、停止重試（需先確認 `internal/ws` 實際用什麼 code 關閉）。
 
-### 🟠 E1. `examples/analysis/frontend/vite.config.js` 出廠即壞
-- **位置**：`examples/analysis/frontend/vite.config.js:1-6`——import 了 `laravel-vite-plugin`、`./multiHtmlPlugin.js`、`./devMockPlugin.js`，這三個在此目錄**都不存在**（Laravel 專案抽取殘留）。這正是 `npm run build`/`watch` 實際呼叫的檔案——**範例自己的 build 出廠就 crash**，只有 `npm run dev`（指向 `vite.dev.config.js`）能動。`preview` 指向的 `vite.preview.config.js` 也不存在。第三方照抄跑 `npm run build` 立刻撞牆。
-- **修法**：刪掉 `vite.config.js`、把 `build`/`watch`/`preview` 指向 `vite.dev.config.js` 的變體，或明確標記為 legacy/unused。
+### ✅ E1. `examples/analysis/vite.config.js` 出廠即壞 —— 已解決
+- **位置**（修法當時，路徑已隨目錄扁平化更新）：`examples/analysis/vite.config.js:1-6`——import 了 `laravel-vite-plugin`、`./multiHtmlPlugin.js`、`./devMockPlugin.js`，這三個在此目錄**都不存在**（Laravel 專案抽取殘留）。這正是 `npm run build`/`watch` 實際呼叫的檔案——**範例自己的 build 出廠就 crash**，只有 `npm run dev`（指向 `vite.dev.config.js`）能動。連同它唯一引用者 `analysis.js`（import 路徑本身也對不上、指向的 `Census.vue`/`CensusInfo.vue` 兩層斷鏈，還打一個已移除後端的 `allCensus` API）一起，確認整條路徑在目前 repo 從未真正執行過。
+- **解法**：`vite.config.js`、`analysis.js`、`Census.vue` 三個檔案已直接刪除（`multiHtmlPlugin.js`/`devMockPlugin.js` 原本就不存在，無需另外處理）。`build`/`watch`/`preview` 目前仍是舊的、指向已刪設定的 script，尚未重新接上 `vite.dev.config.js` 變體 —— 若要讓 `npm run build` 真正可用，仍是待辦。
 
 ### 🟠 E2. `select_question` schema 在 live YAML 與範例 YAML 之間漂移（活的行為 bug）
 - **位置**：`backend/tools/analysis-app.yaml`（實際載入的）**沒有** `required` array；`examples/analysis/frontend/tools.yaml`（本 session 已補 `required: [selected]`）的修正**沒有同步進 backend live 副本**。

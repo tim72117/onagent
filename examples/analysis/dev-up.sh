@@ -141,12 +141,13 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# 3. analysis 前端 (:5175) —— npm run dev 用的是 vite.dev.config.js（不是
-#    build 用、目前缺依賴的 vite.config.js，見 package.json 的 dev script）。
-#    --mode production 讓 Vite 改讀 .env.production（真正的 AgentBridge 連線
-#    目標）。問卷題目資料現在是 examples/analysis/data/questions.js 裡的靜態
-#    資料（原本 mock 後端回應的快照），不再需要任何後端 API，所以不管哪個
-#    mode 都不用額外啟動什麼來提供這份資料。
+# 3. analysis 前端 (:5175) —— npm run dev 用的是 vite.dev.config.js（唯一能動
+#    的 Vite 設定；原本 build 用的 vite.config.js 出廠即壞、已整個移除，見
+#    docs/project-audit.md 的 E1）。--mode production 讓 Vite 改讀
+#    .env.production（真正的 AgentBridge 連線目標）。問卷題目資料現在是
+#    examples/analysis/data/questions.js 裡的靜態資料（原本 mock 後端回應的
+#    快照），不再需要任何後端 API，所以不管哪個 mode 都不用額外啟動什麼來
+#    提供這份資料。
 # -----------------------------------------------------------------------------
 (
   cd "${REPO_ROOT}/examples/analysis" && \
