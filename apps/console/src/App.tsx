@@ -287,19 +287,42 @@ export default function App() {
     setActiveToolIndex(null)
   }
 
-  function selectTool(index: number) {
+  // Re-fetches draft (and, via refreshSummaries, the thought/origin/key
+  // fields selectApp's fetch doesn't cover) before switching sub-views
+  // within the same app — so e.g. a Thought edit saved from another tab
+  // shows up here without a full app reselect. Gated by the same
+  // confirmDiscard() every other draft-replacing action here uses: if
+  // there are unsaved local edits, ask before overwriting them with the
+  // server's copy, rather than either silently discarding or silently
+  // skipping the refresh.
+  async function refreshDraftForSwitch() {
+    if (!draft || !confirmDiscard()) return
+    try {
+      const app = await api.getApp(draft.appId)
+      setDraft({ appId: app.appId, tools: app.tools ?? [] })
+      setDirty(false)
+      await refreshSummaries()
+    } catch (err) {
+      reportError(err)
+    }
+  }
+
+  async function selectTool(index: number) {
+    await refreshDraftForSwitch()
     setActiveToolIndex(index)
     setAgentSelected(false)
     setPlaygroundSelected(false)
   }
 
-  function selectAgent() {
+  async function selectAgent() {
+    await refreshDraftForSwitch()
     setActiveToolIndex(null)
     setAgentSelected(true)
     setPlaygroundSelected(false)
   }
 
-  function selectPlayground() {
+  async function selectPlayground() {
+    await refreshDraftForSwitch()
     setActiveToolIndex(null)
     setAgentSelected(false)
     setPlaygroundSelected(true)
