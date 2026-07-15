@@ -29,7 +29,6 @@ const App = {
         const connecting = ref(true)
         const questions = ref([])
         const selectQuestionHandler = ref(null)
-        const getSelectionFn = ref(null)
         let bridge = null
 
         function connect() {
@@ -54,17 +53,17 @@ const App = {
                     // kind: query on the backend (see tools.yaml) — this
                     // return value is awaited and fed back into the LLM's
                     // reasoning, not fire-and-forget like select_question
-                    // above. limit is required (not just declared optional)
-                    // because of a vLLM streaming quirk: a tool call whose
-                    // arguments end up empty ("{}") loses its name/id in the
-                    // first streamed chunk, making it unparseable — see
-                    // docs/TODO-want-registry-append-only.md's "附帶發現"
-                    // section for the full writeup. Menu.vue registers
-                    // getSelectionFn via the 'getSelection' provide below;
-                    // no page has mounted it yet returns [].
-                    get_current_selection: ({ limit }) => {
-                        const names = getSelectionFn.value?.() ?? []
-                        return names.slice(0, limit ?? names.length)
+                    // above. Reads the same availableQuestions the page
+                    // pushed via setQuestions/sendContext, so the LLM can map
+                    // a user's natural-language request to a question's name.
+                    // limit is required (not just declared optional) because
+                    // of a vLLM streaming quirk: a tool call whose arguments
+                    // end up empty ("{}") loses its name/id in the first
+                    // streamed chunk, making it unparseable — see
+                    // docs/TODO-want-registry-append-only.md's "附帶發現".
+                    list_questions: ({ limit }) => {
+                        const all = questions.value.map(q => ({ name: q.name, title: q.title }))
+                        return all.slice(0, limit ?? all.length)
                     },
                 },
             })
@@ -90,12 +89,6 @@ const App = {
             bridge?.sendContext({ availableQuestions: qs.map(q => ({ name: q.name, title: q.title })) })
         })
         provide('onSelectQuestion', (handler) => { selectQuestionHandler.value = handler })
-        // Mirror image of onSelectQuestion: instead of the page giving this
-        // a callback to invoke, the page gives this a getter it can call to
-        // read current state on demand — for get_current_selection above,
-        // which needs to read Menu.vue's own `selected` whenever the LLM
-        // asks, not just react to a push.
-        provide('getSelection', (getter) => { getSelectionFn.value = getter })
 
         return { input, messages, send, connecting }
     },

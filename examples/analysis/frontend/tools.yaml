@@ -23,11 +23,12 @@ tools:
       required:
         - selected
 
-  - name: get_current_selection
+  - name: list_questions
     description: >-
-      Ask the page what questions/columns are currently selected right now.
-      Use this before deciding what to select/deselect if you're not sure
-      of the current state.
+      Ask the page for the list of all available analysis questions/columns
+      right now, each with its name (the id to pass to select_question) and
+      its human-readable title. Use this to find which question matches what
+      the user is describing before selecting it.
     kind: query
     parameters:
       type: object
@@ -35,13 +36,20 @@ tools:
         limit:
           type: integer
           description: >-
-            Max number of selected question names to return. Always provide
-            a value — pass 100 if you want effectively all of them (there
-            are never more than a handful of questions on this page).
+            Max number of questions to return. Always provide a value — pass
+            100 if you want effectively all of them (there are never more
+            than a handful of questions on this page).
       required:
         - limit
     returns:
       type: array
       items:
-        type: string
-      description: The names of currently-selected questions.
+        type: object
+        properties:
+          name:
+            type: string
+            description: The question's id, to pass to select_question.
+          title:
+            type: string
+            description: The human-readable question title.
+      description: All available questions, each with name and title.

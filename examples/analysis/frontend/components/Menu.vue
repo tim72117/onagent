@@ -88,8 +88,7 @@ export default {
     components: { CensusFooter, OptionDefinitionDialog },
     setup() {
         const onSelectQuestion = inject('onSelectQuestion', null)
-        const getSelection = inject('getSelection', null)
-        return { setQuestions: inject('setQuestions', null), onSelectQuestion, getSelection }
+        return { setQuestions: inject('setQuestions', null), onSelectQuestion }
     },
     data() {
         return {
@@ -133,7 +132,6 @@ export default {
                 this.selected = this.selected.filter(q => !nameSet.has(q.name))
             }
         })
-        this.getSelection?.(() => this.selected.map(q => q.name))
     },
     methods: {
         getColumns() {
