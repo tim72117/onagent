@@ -52,6 +52,8 @@ func main() {
 		err = runIssueKey(args)
 	case "set-origin":
 		err = runSetOrigin(args)
+	case "set-thought":
+		err = runSetThought(args)
 	case "save-tools":
 		err = runSaveTools(args)
 	case "get-tools":
@@ -76,6 +78,7 @@ func usage() {
   atp create-app [-api <url>] <appId>
   atp issue-key [-api <url>] <appId>
   atp set-origin [-api <url>] <appId> <origin>
+  atp set-thought [-api <url>] <appId> <thought>
   atp save-tools [-api <url>] <appId> <tools.yaml>
   atp get-tools [-api <url>] <appId>
 
@@ -386,6 +389,32 @@ func runSetOrigin(args []string) error {
 	return nil
 }
 
+// --- set-thought -----------------------------------------------------------
+
+func runSetThought(args []string) error {
+	base, rest := apiFlag(args)
+	if len(rest) != 2 {
+		return fmt.Errorf("usage: atp set-thought [-api <url>] <appId> <thought>")
+	}
+	appID, thought := rest[0], rest[1]
+
+	client, err := authenticatedClient(base)
+	if err != nil {
+		return err
+	}
+
+	if _, err := client.setThought(appID, thought); err != nil {
+		return fmt.Errorf("set thought: %w", err)
+	}
+
+	if thought == "" {
+		fmt.Printf("Cleared %q's thought (using the platform default).\n", appID)
+	} else {
+		fmt.Printf("Set %q's thought.\n", appID)
+	}
+	return nil
+}
+
 // --- save-tools ----------------------------------------------------------
 
 func runSaveTools(args []string) error {
@@ -640,6 +669,25 @@ func (c *apiClient) setOrigin(appID, origin string) (appSummary, error) {
 	}
 
 	res, err := c.do(http.MethodPut, "/console/apps/"+pathEscape(appID)+"/origin", bytes.NewReader(body))
+	if err != nil {
+		return appSummary{}, err
+	}
+	defer res.Body.Close()
+
+	var out appSummary
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return appSummary{}, fmt.Errorf("decode response: %w", err)
+	}
+	return out, nil
+}
+
+func (c *apiClient) setThought(appID, thought string) (appSummary, error) {
+	body, err := json.Marshal(map[string]string{"thought": thought})
+	if err != nil {
+		return appSummary{}, err
+	}
+
+	res, err := c.do(http.MethodPut, "/console/apps/"+pathEscape(appID)+"/thought", bytes.NewReader(body))
 	if err != nil {
 		return appSummary{}, err
 	}
