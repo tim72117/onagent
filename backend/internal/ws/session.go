@@ -40,7 +40,6 @@ type Session struct {
 
 	mu           sync.Mutex
 	app          *toolschema.App
-	lastContext  json.RawMessage
 	pendingCalls map[string]chan protocol.ToolResultPayload
 }
 
@@ -72,7 +71,7 @@ func (s *Session) run(ctx context.Context) {
 	defer s.conn.Close()
 	defer inference.UnregisterAsker(s.id)
 
-	s.conn.SetReadLimit(1 << 20) // 1MB: generous for page-state context payloads, bounded against abuse.
+	s.conn.SetReadLimit(1 << 20) // 1MB: generous for large tool-call payloads, bounded against abuse.
 	_ = s.conn.SetReadDeadline(time.Now().Add(pongTimeout))
 	s.conn.SetPongHandler(func(string) error {
 		return s.conn.SetReadDeadline(time.Now().Add(pongTimeout))
@@ -131,8 +130,6 @@ func (s *Session) handle(ctx context.Context, env protocol.Envelope) {
 	switch env.Type {
 	case protocol.TypeHello:
 		s.handleHello(env)
-	case protocol.TypeContext:
-		s.handleContext(env)
 	case protocol.TypePrompt:
 		// Dispatched onto its own goroutine, unlike every other case here —
 		// this is the one handler that can legitimately take a long time
@@ -196,17 +193,6 @@ func (s *Session) handleHello(env protocol.Envelope) {
 	})
 }
 
-func (s *Session) handleContext(env protocol.Envelope) {
-	var p protocol.ContextPayload
-	if err := json.Unmarshal(env.Payload, &p); err != nil {
-		s.sendError(env.RequestID, "invalid context payload")
-		return
-	}
-	s.mu.Lock()
-	s.lastContext = p.Data
-	s.mu.Unlock()
-}
-
 func (s *Session) handlePrompt(ctx context.Context, env protocol.Envelope) {
 	var p protocol.PromptPayload
 	if err := json.Unmarshal(env.Payload, &p); err != nil {
@@ -216,7 +202,6 @@ func (s *Session) handlePrompt(ctx context.Context, env protocol.Envelope) {
 
 	s.mu.Lock()
 	app := s.app
-	lastContext := s.lastContext
 	s.mu.Unlock()
 
 	if app == nil {
@@ -224,14 +209,8 @@ func (s *Session) handlePrompt(ctx context.Context, env protocol.Envelope) {
 		return
 	}
 
-	promptContext := p.Context
-	if promptContext == nil {
-		promptContext = lastContext
-	}
-
 	result, err := s.infer.Complete(ctx, inference.Request{
 		Prompt:    p.Text,
-		Context:   promptContext,
 		Tools:     codegen.ToLLMTools(app),
 		AppID:     app.AppID,
 		SessionID: s.id,
@@ -299,9 +278,9 @@ const interactionTimeout = 20 * time.Second
 //
 // Runs on whatever goroutine want's dispatch called queryTool.Call from —
 // never the Session's own read loop — so it must not touch s.pendingCalls
-// or s.app/s.lastContext without s.mu, same as every other Session method
+// or s.app without s.mu, same as every other Session method
 // reachable from outside run's single-goroutine loop.
-func (s *Session) AskInteraction(toolName string, args json.RawMessage) (json.RawMessage, error) {
+func (s *Session) AskInteraction(toolName string, args json.RawMessage, kind toolschema.ToolKind) (json.RawMessage, error) {
 	requestID := randomID()
 	ch := make(chan protocol.ToolResultPayload, 1)
 
@@ -309,7 +288,16 @@ func (s *Session) AskInteraction(toolName string, args json.RawMessage) (json.Ra
 	s.pendingCalls[requestID] = ch
 	s.mu.Unlock()
 
-	s.send(protocol.TypeToolQuery, requestID, protocol.ToolCallPayload{
+	// Both message types reach the same SDK handler (see
+	// packages/bridge/src/client.ts) and answer the same way; the type
+	// itself is just a hint of which ToolKind triggered this, for anyone
+	// reading the wire traffic or a future SDK that wants to treat them
+	// differently.
+	msgType := protocol.TypeToolQuery
+	if kind == toolschema.ToolKindAction {
+		msgType = protocol.TypeToolCall
+	}
+	s.send(msgType, requestID, protocol.ToolCallPayload{
 		ToolName: toolName,
 		Args:     args,
 	})

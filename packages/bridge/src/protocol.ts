@@ -5,7 +5,6 @@
 
 export type MessageType =
   | "hello"
-  | "context"
   | "prompt"
   | "tool_result"
   | "ack"
@@ -32,13 +31,8 @@ export interface AckPayload {
   toolNames: string[];
 }
 
-export interface ContextPayload {
-  data: unknown;
-}
-
 export interface PromptPayload {
   text: string;
-  context?: unknown;
 }
 
 export interface ToolCallPayload {

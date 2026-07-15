@@ -4,24 +4,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+
+	"github.com/tim72117/agent/internal/toolschema"
 )
 
-// InteractionAsker is what a WS session implements to let a ToolKindQuery
-// tool (see queryTool in agent_roles.go) reach the actual connected
-// browser: send it a request, block until the browser answers (or the
-// session decides to time out/error), return the answer.
+// InteractionAsker is what a WS session implements to let a tool (either
+// ToolKind — see forwardingTool/queryTool in agent_roles.go) reach the
+// actual connected browser: send it a request, block until the browser
+// answers (or the session decides to time out/error), return the answer.
+// kind only affects which wire message type the browser receives
+// (tool_call vs tool_query, both handled identically by the SDK — see
+// packages/bridge/src/client.ts) — the blocking/bridging behavior here is
+// otherwise the same for both kinds.
 //
-// queryTool.Call runs inside want's own goroutine (via
+// The tool's Call runs inside want's own goroutine (via
 // ToolContext.RequestInteraction — see want/orchestrator/dispatch), with no
 // direct reference to the ws.Session that owns the connection this
 // conversation belongs to. RegisterAsker/lookupAsker is the bridge: each
 // Session registers itself here (keyed by its own id, the same id
 // WantService.Complete derives orch.AgentID from — see sanitizeSessionID)
-// when it starts, and deregisters when the connection closes. queryTool
-// recovers the session id from ctx.GetAgentID() (strips the "WS-"/"PG-..."
-// prefix WantService.Complete added) and looks up the matching asker.
+// when it starts, and deregisters when the connection closes. The calling
+// tool recovers the session id from ctx.GetAgentID() (strips the
+// "WS-"/"PG-..." prefix WantService.Complete added) and looks up the
+// matching asker.
 type InteractionAsker interface {
-	AskInteraction(toolName string, args json.RawMessage) (json.RawMessage, error)
+	AskInteraction(toolName string, args json.RawMessage, kind toolschema.ToolKind) (json.RawMessage, error)
 }
 
 var (
@@ -71,17 +78,18 @@ func AgentIDToSessionID(agentID string) (sessionID string, ok bool) {
 	return "", false
 }
 
-// askPage is queryTool.Call's actual bridge to the browser: resolve the
-// current want call's session from ctx.GetAgentID(), find its registered
-// asker, and block on it.
-func askPage(agentID, toolName string, args json.RawMessage) (json.RawMessage, error) {
+// askPage is forwardingTool.Call's and queryTool.Call's shared bridge to
+// the browser: resolve the current want call's session from
+// ctx.GetAgentID(), find its registered asker, and block on it. kind is
+// passed straight through to AskInteraction to pick the wire message type.
+func askPage(agentID, toolName string, args json.RawMessage, kind toolschema.ToolKind) (json.RawMessage, error) {
 	sessionID, ok := AgentIDToSessionID(agentID)
 	if !ok {
-		return nil, fmt.Errorf("query tools aren't available in this context (no page connection behind agent %q)", agentID)
+		return nil, fmt.Errorf("tools that wait for the page aren't available in this context (no page connection behind agent %q)", agentID)
 	}
 	asker, ok := lookupAsker(sessionID)
 	if !ok {
 		return nil, fmt.Errorf("no connected page for session %q (it may have disconnected)", sessionID)
 	}
-	return asker.AskInteraction(toolName, args)
+	return asker.AskInteraction(toolName, args, kind)
 }

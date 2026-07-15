@@ -3,7 +3,6 @@ package inference
 import (
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	"github.com/tim72117/agent/internal/toolschema"
 	"github.com/tim72117/want/pkg/agentreg"
@@ -31,44 +30,6 @@ const defaultThought = "You are a tool-selection assistant embedded in a web pag
 	"not you. If nothing needs doing, just reply in plain text. Never " +
 	"ask the user to wait or claim you performed an action yourself — " +
 	"the tool call itself is the action."
-
-// forwardedCall is one tool invocation the want LLM decided to make against
-// a platform-defined (front-end-executed) tool during a single Complete()
-// run.
-type forwardedCall struct {
-	ToolName string
-	Args     json.RawMessage
-}
-
-// callSink collects forwardedCalls for the one in-flight Complete() call.
-// WantService.Complete holds callSinkMu for its entire duration (want's
-// orchestrator processes one submission at a time regardless), so a single
-// package-level slice is safe: reset at the start of each call, drained at
-// the end.
-var (
-	callSinkMu sync.Mutex
-	callSink   []forwardedCall
-)
-
-func resetCallSink() {
-	callSinkMu.Lock()
-	callSink = nil
-	callSinkMu.Unlock()
-}
-
-func drainCallSink() []forwardedCall {
-	callSinkMu.Lock()
-	defer callSinkMu.Unlock()
-	out := callSink
-	callSink = nil
-	return out
-}
-
-func addToCallSink(name string, args json.RawMessage) {
-	callSinkMu.Lock()
-	callSink = append(callSink, forwardedCall{ToolName: name, Args: args})
-	callSinkMu.Unlock()
-}
 
 // RegisterPlatformTools registers every app loaded at startup (see
 // RegisterAppRole for what registration actually does and why it's
@@ -166,6 +127,16 @@ func registerForwardingTool(t toolschema.Tool) {
 	})
 }
 
+// forwardingTool blocks until the page actually executes the call and
+// reports back — same askPage bridge queryTool uses (see queryTool's doc
+// comment for why this doesn't go through want's own
+// ToolContext.RequestInteraction) — but unlike queryTool, only the
+// success/failure of that report ever reaches the LLM, never the page's
+// actual returned data. An error return here (from askPage: the page
+// reported failure, disconnected, or never answered within
+// interactionTimeout) is itself the validation step: want only ever sees
+// "done" once the page has actually confirmed it, not the instant the call
+// was forwarded.
 type forwardingTool struct {
 	types.BaseToolConfig
 	name string
@@ -178,9 +149,12 @@ func (f *forwardingTool) Call(args types.ToolArguments, ctx types.ToolContext) (
 	if err != nil {
 		return nil, fmt.Errorf("marshal args for %s: %w", f.name, err)
 	}
-	addToCallSink(f.name, raw)
 
-	msg := fmt.Sprintf("Forwarded %q to the page to execute.", f.name)
+	if _, err := askPage(ctx.GetAgentID(), f.name, raw, toolschema.ToolKindAction); err != nil {
+		return nil, fmt.Errorf("execute %s: %w", f.name, err)
+	}
+
+	msg := fmt.Sprintf("%q executed successfully.", f.name)
 	ctx.EmitToolResult(map[string]interface{}{"message": msg})
 	return []types.ResultContentBlock{types.TextBlock(msg)}, nil
 }
@@ -197,12 +171,13 @@ func (f *forwardingTool) RenderToolResult(data map[string]interface{}) string {
 	if msg, ok := data["message"].(string); ok {
 		return msg
 	}
-	return "Forwarded to page"
+	return "Executed on the page"
 }
 
-// queryTool is the ToolKindQuery counterpart to forwardingTool: instead of
-// firing the call to the page and immediately telling want it's done, Call
-// blocks until the connected browser answers.
+// queryTool is the ToolKindQuery counterpart to forwardingTool: both block
+// until the page answers (see forwardingTool's doc comment), but where
+// forwardingTool only surfaces success/failure to the LLM, queryTool feeds
+// the page's actual answer data back into its reasoning.
 //
 // This deliberately does NOT go through want's own
 // ToolContext.RequestInteraction/orch.ResolveInteraction machinery — that
@@ -228,7 +203,7 @@ func (q *queryTool) Call(args types.ToolArguments, ctx types.ToolContext) ([]typ
 		return nil, fmt.Errorf("marshal args for %s: %w", q.name, err)
 	}
 
-	answerJSON, err := askPage(ctx.GetAgentID(), q.name, raw)
+	answerJSON, err := askPage(ctx.GetAgentID(), q.name, raw, toolschema.ToolKindQuery)
 	if err != nil {
 		return nil, fmt.Errorf("query %s: %w", q.name, err)
 	}

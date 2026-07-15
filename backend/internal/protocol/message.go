@@ -14,12 +14,8 @@ const (
 	// developer's app/site identifier and optional initial page context.
 	TypeHello MessageType = "hello"
 
-	// TypeContext pushes a snapshot (or diff) of front-end state/data that
-	// the inference service may use as grounding for the next completion.
-	TypeContext MessageType = "context"
-
 	// TypePrompt sends a user-initiated (or automatic) request for the
-	// inference service to reason about, optionally with attached context.
+	// inference service to reason about.
 	TypePrompt MessageType = "prompt"
 
 	// TypeToolResult returns the outcome of a tool call the client executed
@@ -78,17 +74,9 @@ type AckPayload struct {
 	ToolNames []string `json:"toolNames"`
 }
 
-// ContextPayload is the Payload of a TypeContext message.
-type ContextPayload struct {
-	// Data is an arbitrary JSON snapshot of front-end state the developer
-	// chooses to expose (e.g. current form values, selected records).
-	Data json.RawMessage `json:"data"`
-}
-
 // PromptPayload is the Payload of a TypePrompt message.
 type PromptPayload struct {
-	Text    string          `json:"text"`
-	Context json.RawMessage `json:"context,omitempty"`
+	Text string `json:"text"`
 }
 
 // ToolCallPayload is the Payload of a TypeToolCall message.

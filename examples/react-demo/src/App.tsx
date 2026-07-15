@@ -58,10 +58,6 @@ function App() {
     return () => bridge.close();
   }, []);
 
-  useEffect(() => {
-    bridgeRef.current?.sendContext({ query, path });
-  }, [query, path]);
-
   return (
     <section id="demo-root">
       <h1>Agent Bridge SDK Demo</h1>
@@ -90,7 +86,7 @@ function App() {
           e.preventDefault();
           if (!prompt.trim()) return;
           appendLog(`prompt: ${prompt}`);
-          bridgeRef.current?.prompt(prompt, { query, path });
+          bridgeRef.current?.prompt(prompt);
           setPrompt("");
         }}
       >

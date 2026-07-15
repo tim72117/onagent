@@ -27,12 +27,11 @@ type Result struct {
 }
 
 // Request bundles everything the inference service needs to reason about
-// one prompt: the user's text, arbitrary front-end context/state, and the
-// tool set available for this session's app.
+// one prompt: the user's text and the tool set available for this session's
+// app.
 type Request struct {
-	Prompt  string
-	Context json.RawMessage
-	Tools   []codegen.LLMTool
+	Prompt string
+	Tools  []codegen.LLMTool
 
 	// AppID identifies which developer app this prompt belongs to.
 	// Implementations use it to select app-specific reasoning behavior

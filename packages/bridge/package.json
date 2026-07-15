@@ -1,6 +1,6 @@
 {
   "name": "@onagent/bridge",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Browser SDK that bridges front-end apps to the onagent inference backend: pushes page context/state over WebSocket and dispatches tool calls back into the page.",
   "type": "module",
   "main": "dist/index.js",

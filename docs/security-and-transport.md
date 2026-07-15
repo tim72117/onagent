@@ -13,7 +13,7 @@ project's WebSocket-based design.
 - **Stub-function + queue buffering.** `gtag()` is a stub that pushes
   arguments onto `window.dataLayer` before the real library has loaded;
   the library drains the queue once ready. `AgentBridge` does the same
-  thing internally — `sendContext()`/`prompt()` calls made before the
+  thing internally — `prompt()` calls made before the
   WebSocket reaches `ack` are buffered and flushed on connect (see
   `packages/bridge/src/client.ts`). Callers never need to check
   a "ready" flag.

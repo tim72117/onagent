@@ -49,10 +49,9 @@ docs/security-and-transport.md   Cross-site transport design notes (GA-derived)
      interface + arg/result types) the developer implements against.
 3. The developer's page embeds `@onagent/bridge`,
    constructs an `AgentBridge` with `appId` + a `tools` object implementing
-   the generated `ToolHandlers` interface, and calls `sendContext()` /
-   `prompt()`.
+   the generated `ToolHandlers` interface, and calls `prompt()`.
 4. The backend's `/ws` endpoint receives `hello` (selects the app's tool
-   set), `context`, and `prompt` messages; forwards prompts to
+   set) and `prompt` messages; forwards prompts to
    `inference.Service` along with the app's tool schema; and relays any
    resulting `tool_call`s back to the browser, which dispatches them to
    the registered handler and returns a `tool_result`.

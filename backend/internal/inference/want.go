@@ -116,8 +116,6 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 		s.orch.Role = agentRoleFor(req.AppID)
 	}
 
-	resetCallSink()
-
 	state := ui.NewCommonInferenceState()
 	var textMu sync.Mutex
 	var text strings.Builder
@@ -151,7 +149,7 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 	})
 	defer unsub()
 
-	s.orch.Submit(buildPrompt(req))
+	s.orch.Submit(req.Prompt)
 
 	select {
 	case <-done:
@@ -166,41 +164,14 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 	assistantMessage := text.String()
 	textMu.Unlock()
 
-	res := &Result{AssistantMessage: assistantMessage}
-	for _, call := range drainCallSink() {
-		res.ToolCalls = append(res.ToolCalls, ToolCall{
-			ToolName: call.ToolName,
-			Args:     call.Args,
-		})
-	}
-	return res, nil
-}
-
-// buildPrompt appends req.Context (arbitrary front-end state — e.g. the
-// real list of selectable items a tool's args must reference) to the user's
-// prompt text before submitting it to want.
-//
-// want's orchestrator (see orchestrator.go's dispatch/RunAgent) only takes a
-// plain prompt string per Submit call — there is no separate structured
-// "grounding data" channel — so this is the one place that data can reach
-// the LLM at all. Without it, the model has no real values to draw
-// arguments from and free-associates plausible-looking ones instead (e.g.
-// inventing a question name that reads correctly but doesn't exist in the
-// page's actual data), which the front-end tool handler then silently fails
-// to match against anything.
-func buildPrompt(req Request) string {
-	if len(req.Context) == 0 {
-		return req.Prompt
-	}
-	var b strings.Builder
-	b.WriteString(req.Prompt)
-	b.WriteString("\n\n<page_context>\n")
-	b.WriteString("The following is the current state of the web page, as JSON. ")
-	b.WriteString("When a tool argument should reference an existing item (e.g. a name or id), ")
-	b.WriteString("use the exact value found here — never invent one that merely sounds plausible.\n")
-	b.Write(req.Context)
-	b.WriteString("\n</page_context>")
-	return b.String()
+	// ToolCalls stays empty here on purpose: forwardingTool/queryTool
+	// (agent_roles.go) both now report their call to the browser directly
+	// via askPage/AskInteraction, immediately and synchronously, rather
+	// than being collected here and relayed after the whole turn finishes
+	// — see ws.Session.AskInteraction. MockService.Complete is the only
+	// remaining populator of Result.ToolCalls, for its own simpler,
+	// non-blocking simulation.
+	return &Result{AssistantMessage: assistantMessage}, nil
 }
 
 // sessionIDRE matches what ws.randomID produces (hex), with room for other

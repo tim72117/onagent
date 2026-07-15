@@ -5,7 +5,7 @@ import type {
   ErrorPayload,
   ToolCallPayload,
   ToolResultPayload,
-} from "./protocol";
+} from "./protocol.js";
 
 const SDK_VERSION = "0.1.0";
 
@@ -82,15 +82,10 @@ export class AgentBridge {
     this.connect();
   }
 
-  /** Push a snapshot of front-end state/data as grounding for future prompts. */
-  sendContext(data: unknown): void {
-    this.enqueue({ type: "context", payload: { data } });
-  }
-
-  /** Ask the inference service to reason about a prompt, with optional context. */
-  prompt(text: string, context?: unknown): void {
+  /** Ask the inference service to reason about a prompt. */
+  prompt(text: string): void {
     const requestId = randomRequestId();
-    this.enqueue({ type: "prompt", requestId, payload: { text, context } });
+    this.enqueue({ type: "prompt", requestId, payload: { text } });
   }
 
   /** Tear down the connection. No further reconnect attempts will be made. */
@@ -251,7 +246,7 @@ export class AgentBridge {
   }
 
   /**
-   * Best-effort delivery of the last known context on page unload, since
+   * Best-effort delivery of whatever's still queued on page unload, since
    * the WebSocket connection is torn down before an in-flight message can
    * be flushed. Mirrors the sendBeacon fallback pattern analytics SDKs use
    * for the same reason. Requires opts.beaconUrl to be set; a no-op
