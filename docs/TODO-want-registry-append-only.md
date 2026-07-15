@@ -2,7 +2,7 @@
 
 ## 現況
 
-`atp save-tools`（或 console 網頁存檔）改一個既有 tool 的 `parameters`/`returns` schema
+`onagent save-tools`（或 console 網頁存檔）改一個既有 tool 的 `parameters`/`returns` schema
 後，**同一個後端 process 生命週期內不會生效**——vLLM 實際收到的 tool 宣告，永遠是
 這個 process 第一次註冊該 tool 名稱時的那一版，不管之後改幾次、推幾次都沒用。
 
@@ -21,13 +21,13 @@
 ## 目前的 workaround
 
 **改完 tool schema 後，重啟後端 process。** 沒有更輕量的繞法——這個 bug 在 want
-內部，agent-tool-platform 這邊的程式碼碰不到那層。
+內部，onagent 這邊的程式碼碰不到那層。
 
 ## 待辦
 
 - [ ] 修 `want`：`RegisterTool` 改成依名稱去重/替換 `Declarations`，而不是無條件
       `append`（見 tool-registry-append-only-bug.md 的「修法方向」，方案 1 較根本）
-- [ ] 修完後，反過來驗證 agent-tool-platform 這邊「edit tool 立即生效」的承諾
+- [ ] 修完後，反過來驗證 onagent 這邊「edit tool 立即生效」的承諾
       （`internal/inference/agent_roles.go` 的 `RegisterAppRole` 文件註解）是否
       真的兌現——目前那段註解描述的行為，因為這個 bug，實際上從來沒有被驗證過
 - [ ] 修完後，回頭確認今天（2026-07-15）對 `get_current_selection` 做的

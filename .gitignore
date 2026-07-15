@@ -7,12 +7,12 @@ dist/
 
 # Go
 /backend/server
-/backend/atp
+/backend/onagent
 /backend/*.exe
 
-# Compiled atp binaries bundled into the Skill for zero-setup use — built
-# locally per-platform (see SKILL.md), not meant to accumulate in git
-# history as opaque, non-delta-compressible blobs every time atp changes.
+# Compiled onagent CLI binaries bundled into the Skill for zero-setup use —
+# built locally per-platform (see SKILL.md), not meant to accumulate in git
+# history as opaque, non-delta-compressible blobs every time the CLI changes.
 /.claude/skills/onagent-cli-setup/bin/
 
 # Backend runtime artifacts — sessions/ holds end-user conversation

@@ -1,6 +1,6 @@
 # 完整版 OAuth：開放給第三方客戶端註冊（未實作，設計文件）
 
-尚未實作。這份文件記錄「如果之後要開放讓**別人寫的工具**（不是我們自己的 `atp` CLI）也能用瀏覽器授權流程存取使用者帳號」時的完整設計。目前實作的簡化版（`atp login --web`，見 `backend/cmd/atp/main.go`、`backend/internal/console/console.go` 的 `approveCliAuth`、`apps/console/src/CliAuthPage.tsx`）刻意省略了這裡的機制，因為目前只有一個第一方客戶端（我們自己的 CLI），核准畫面不需要分辨「是誰在請求」。
+尚未實作。這份文件記錄「如果之後要開放讓**別人寫的工具**（不是我們自己的 `onagent` CLI）也能用瀏覽器授權流程存取使用者帳號」時的完整設計。目前實作的簡化版（`onagent login --web`，見 `backend/cmd/onagent/main.go`、`backend/internal/console/console.go` 的 `approveCliAuth`、`apps/console/src/CliAuthPage.tsx`）刻意省略了這裡的機制，因為目前只有一個第一方客戶端（我們自己的 CLI），核准畫面不需要分辨「是誰在請求」。
 
 ## 現在的簡化版 vs. 完整版差在哪
 

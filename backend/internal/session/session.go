@@ -24,7 +24,7 @@ import (
 // CookieName is the cookie the console API's session id travels in. httpOnly
 // so page JavaScript can't read it (XSS can't exfiltrate the session even
 // if it can run arbitrary code), Secure in production (see Store.Secure).
-const CookieName = "atp_session"
+const CookieName = "onagent_session"
 
 const sessionTTL = 30 * 24 * time.Hour
 

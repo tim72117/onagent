@@ -1,10 +1,10 @@
 # CLI auth: OAuth Device Authorization Grant (future work)
 
-Not implemented. This documents the design for a second `atp login` mode,
+Not implemented. This documents the design for a second `onagent login` mode,
 to build if/when the CLI needs to authenticate from a machine with no
 browser and no way to receive a localhost callback — an SSH session, a CI
-job, a container. The browser-redirect flow (`atp login --web`, see
-`backend/cmd/atp/main.go` / `backend/internal/console/console.go`) can't
+job, a container. The browser-redirect flow (`onagent login --web`, see
+`backend/cmd/onagent/main.go` / `backend/internal/console/console.go`) can't
 work there: it needs to open a browser on the *same* machine and receive an
 HTTP callback on a local port, both of which assume an interactive desktop
 session.
@@ -124,9 +124,9 @@ collection should 404/expire, not re-serve the same token).
   column (single-collection). Expired/unknown device_code: `400`/`404` so
   the CLI stops polling and tells the user to restart.
 
-## CLI side (`backend/cmd/atp`)
+## CLI side (`backend/cmd/onagent`)
 
-New subcommand, e.g. `atp login --device` (keeping plain `atp login` as
+New subcommand, e.g. `onagent login --device` (keeping plain `onagent login` as
 the password flow, `--web` as the browser-redirect flow once that's
 built):
 
@@ -154,7 +154,7 @@ scale this platform runs at.
 ## Why this is worth building later, not now
 
 The browser-redirect flow (variant A, implemented) covers the common
-case — a developer running `atp` on their own laptop, browser already
+case — a developer running `onagent` on their own laptop, browser already
 open. Device flow only earns its complexity once there's a real
 CI/headless use case for the CLI; build it when that need actually shows
 up rather than speculatively now.

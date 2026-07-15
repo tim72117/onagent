@@ -1,4 +1,4 @@
-// Package cliauth backs the browser-redirect CLI login flow (atp login
+// Package cliauth backs the browser-redirect CLI login flow (onagent login
 // --web): the CLI registers its local callback intent server-side first
 // and gets back an opaque, single-use session id — that id is the only
 // thing that ever needs to appear in a URL from then on. The actual

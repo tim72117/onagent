@@ -51,7 +51,7 @@ CREATE INDEX IF NOT EXISTS user_tokens_user_id_idx ON user_tokens (user_id);
 -- primary key a caller addresses a token by.
 CREATE UNIQUE INDEX IF NOT EXISTS user_tokens_token_hash_idx ON user_tokens (token_hash);
 
--- Backs the browser-redirect CLI login flow (atp login --web): a
+-- Backs the browser-redirect CLI login flow (onagent login --web): a
 -- short-lived, single-use, opaque handoff between the CLI's local
 -- callback server and the console page the user approves in. The id
 -- itself (32 random bytes) is the only thing that ever appears in the

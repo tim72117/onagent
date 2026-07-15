@@ -5,7 +5,7 @@ import { Login } from './Login'
 
 type Status = 'checking' | 'anonymous' | 'ready' | 'approving' | 'approved' | 'error'
 
-// CliAuthPage is what a browser lands on when `atp login --web` opens it.
+// CliAuthPage is what a browser lands on when `onagent login --web` opens it.
 // The URL only ever carries one thing — an opaque session id from
 // POST /console/cli-auth/start (see backend/internal/cliauth's package
 // doc) — never the CLI's actual redirect target. That's registered
@@ -15,7 +15,7 @@ type Status = 'checking' | 'anonymous' | 'ready' | 'approving' | 'approved' | 'e
 // browser-redirect variant of CLI auth — see docs/cli-device-flow-design.md
 // for the alternative device-code flow, and
 // docs/oauth-third-party-clients-design.md for what this would need to
-// become to support third-party clients, not just our own atp CLI.)
+// become to support third-party clients, not just our own onagent CLI.)
 export function CliAuthPage() {
   const [status, setStatus] = useState<Status>('checking')
   const [user, setUser] = useState<CurrentUser | null>(null)

@@ -384,7 +384,7 @@
                 <span class="term-dot" style="background:#ff5f57"></span>
                 <span class="term-dot" style="background:#febc2e"></span>
                 <span class="term-dot" style="background:#28c840"></span>
-                <span class="term-title">~/my-app — atp</span>
+                <span class="term-title">~/my-app — onagent</span>
               </div>
               <div class="term-body" id="term"></div>
             </div>
@@ -456,7 +456,7 @@
               </button>
               <button class="step" data-step="1">
                 <span class="step-num">02</span>
-                <span class="step-txt"><h3>Push to the platform</h3><p>Sign in with the <code style="font-family:var(--mono);color:var(--accent-2)">atp</code> CLI and upload; or edit directly in the console.</p></span>
+                <span class="step-txt"><h3>Push to the platform</h3><p>Sign in with the <code style="font-family:var(--mono);color:var(--accent-2)">onagent</code> CLI and upload; or edit directly in the console.</p></span>
               </button>
               <button class="step" data-step="2">
                 <span class="step-num">03</span>
@@ -487,14 +487,14 @@
               </div>
               <div class="code-pane" data-pane="1">
 <pre><span class="t-com"># Sign in (opens a browser to authorize; the URL only carries a one-time code)</span>
-<span class="t-prompt">$</span> atp login <span class="t-kw">--web</span>
+<span class="t-prompt">$</span> onagent login <span class="t-kw">--web</span>
 
 <span class="t-com"># Push your tool definitions</span>
-<span class="t-prompt">$</span> atp save-tools demo-app tools
+<span class="t-prompt">$</span> onagent save-tools demo-app tools
 <span class="t-ok">✓</span> Saved 1 tool to <span class="t-str">"demo-app"</span>
 
 <span class="t-com"># List your apps any time</span>
-<span class="t-prompt">$</span> atp list-apps
+<span class="t-prompt">$</span> onagent list-apps
 demo-app        1 tool, has key</pre>
               </div>
               <div class="code-pane" data-pane="2">
@@ -569,7 +569,7 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
           <p>Describe front-end capabilities as tools, and let an LLM operate your web page safely in natural language. Built for developers, type-safe throughout.</p>
         </div>
         <div class="foot-col"><h4>Product</h4><a href="#" data-console>Console</a><a href="#how">How it works</a><a href="#features">Features</a></div>
-        <div class="foot-col"><h4>Resources</h4><a href="#cases">Examples</a><a href="#how">Agent Bridge SDK</a><a href="#how">atp CLI</a></div>
+        <div class="foot-col"><h4>Resources</h4><a href="#cases">Examples</a><a href="#how">Agent Bridge SDK</a><a href="#how">onagent CLI</a></div>
         <div class="foot-col"><h4>Get started</h4><a href="#" data-console>Create an app</a><a href="#" data-console>Get an API key</a><a href="#how">Embed the SDK</a></div>
       </div>
       <div class="foot-bottom">
@@ -599,7 +599,7 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
     var term = document.getElementById('term');
     var lines = [
       { t: 'comment', text: '# 1. Define a tool, push it to the platform' },
-      { t: 'prompt', cmd: 'atp save-tools demo-app tools' },
+      { t: 'prompt', cmd: 'onagent save-tools demo-app tools' },
       { t: 'ok', text: '✓ Saved 1 tool to "demo-app"' },
       { t: 'gap' },
       { t: 'comment', text: '# 2. Embed the SDK in your front end' },

@@ -471,7 +471,7 @@ func (h *Handler) revokeToken(w http.ResponseWriter, r *http.Request, user *sess
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// --- CLI browser login (atp login --web) -----------------------------------
+// --- CLI browser login (onagent login --web) -----------------------------------
 //
 // Four routes implement the handoff described in internal/cliauth's
 // package doc: the CLI registers its (validated, loopback-only)

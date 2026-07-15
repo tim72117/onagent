@@ -2,7 +2,7 @@
 
 > **文件性質**：這是一份**策略草案**，不是已經拍板執行的計畫。onagent 目前是
 > pre-launch / early access 階段的個人（或極小團隊）專案——真實的 production
-> 環境已經跑在 Cloud Run（`agent.shuttle.tools`），console、CLI（`atp`）、
+> 環境已經跑在 Cloud Run（`agent.shuttle.tools`），console、CLI（`onagent`）、
 > Agent Bridge SDK 都是可以真的動手串接的東西，但計費 / 訂閱 / 用量配額
 > 完全還沒做（見 `docs/subscription-usage-quota-design.md`）。這份文件據此
 > 假設：**現階段目標是社群心智佔有率與早期採用者，不是營收**，所有建議都
@@ -40,7 +40,7 @@
   Editor 定義 tool 參數、**Playground**（不用寫任何前端程式碼，直接在
   console 裡跟自己定義的 tool 對話測試，`apps/console/src/Playground.tsx`
   有清楚註解說明這是刻意設計成「不需要真實前端站台就能先感受一次」）。
-- CLI（`atp`）：`go install github.com/tim72117/agent/backend/cmd/atp@latest`
+- CLI（`onagent`）：`go install github.com/tim72117/agent/backend/cmd/onagent@latest`
   可用（module path 問題已修好），且已經有一個**內建 Claude Code Skill**
   （`.claude/skills/onagent-cli-setup`）——對於本來就在用 Claude Code
   的開發者，這是零安裝門檻：不需要裝 Go 工具鏈、不需要等編譯，直接請
@@ -76,7 +76,7 @@
   討論這件事（開發者受眾其實會因為誠實而加分），但行銷文案不該做出
   「企業級安全」這種現在還撐不住的承諾。
 - 沒有自動化測試套件、沒有多平台編譯好的 CLI（目前只內建
-  `atp-windows-amd64.exe`，其他平台的開發者要嘛用 `go install`、要嘛自己
+  `onagent-windows-amd64.exe`，其他平台的開發者要嘛用 `go install`、要嘛自己
   `git clone` + `go build`）。這代表任何「三分鐘上手」的 demo 素材，最
   穩妥的做法是先用 Windows 或已經有 Go 工具鏈的環境錄，或是明確走
   Claude Code Skill 那條路（那條路才是真正接近零安裝）。

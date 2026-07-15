@@ -383,7 +383,7 @@
                 <span class="term-dot" style="background:#ff5f57"></span>
                 <span class="term-dot" style="background:#febc2e"></span>
                 <span class="term-dot" style="background:#28c840"></span>
-                <span class="term-title">~/my-app — atp</span>
+                <span class="term-title">~/my-app — onagent</span>
               </div>
               <div class="term-body" id="term"></div>
             </div>
@@ -455,7 +455,7 @@
               </button>
               <button class="step" data-step="1">
                 <span class="step-num">02</span>
-                <span class="step-txt"><h3>推送到平台</h3><p>用 <code style="font-family:var(--mono);color:var(--accent-2)">atp</code> CLI 登入並上傳；或直接在 console 編輯。</p></span>
+                <span class="step-txt"><h3>推送到平台</h3><p>用 <code style="font-family:var(--mono);color:var(--accent-2)">onagent</code> CLI 登入並上傳；或直接在 console 編輯。</p></span>
               </button>
               <button class="step" data-step="2">
                 <span class="step-num">03</span>
@@ -486,14 +486,14 @@
               </div>
               <div class="code-pane" data-pane="1">
 <pre><span class="t-com"># 登入（會開瀏覽器授權，網址只帶一個一次性代碼）</span>
-<span class="t-prompt">$</span> atp login <span class="t-kw">--web</span>
+<span class="t-prompt">$</span> onagent login <span class="t-kw">--web</span>
 
 <span class="t-com"># 把 tool 定義推上去</span>
-<span class="t-prompt">$</span> atp save-tools demo-app tools
+<span class="t-prompt">$</span> onagent save-tools demo-app tools
 <span class="t-ok">✓</span> Saved 1 tool to <span class="t-str">"demo-app"</span>
 
 <span class="t-com"># 隨時列出你的 app</span>
-<span class="t-prompt">$</span> atp list-apps
+<span class="t-prompt">$</span> onagent list-apps
 demo-app        1 tool, has key</pre>
               </div>
               <div class="code-pane" data-pane="2">
@@ -568,7 +568,7 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
           <p>把前端能力描述成 tool，讓 LLM 用自然語言安全地操作你的網頁。開發者導向、型別安全。</p>
         </div>
         <div class="foot-col"><h4>產品</h4><a href="#" data-console>Console</a><a href="#how">運作方式</a><a href="#features">功能特色</a></div>
-        <div class="foot-col"><h4>資源</h4><a href="#cases">範例應用</a><a href="#how">Agent Bridge SDK</a><a href="#how">atp CLI</a></div>
+        <div class="foot-col"><h4>資源</h4><a href="#cases">範例應用</a><a href="#how">Agent Bridge SDK</a><a href="#how">onagent CLI</a></div>
         <div class="foot-col"><h4>開始</h4><a href="#" data-console>建立 App</a><a href="#" data-console>取得 API Key</a><a href="#how">嵌入 SDK</a></div>
       </div>
       <div class="foot-bottom">
@@ -598,7 +598,7 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
     var term = document.getElementById('term');
     var lines = [
       { t: 'comment', text: '# 1. 定義一個 tool，推上平台' },
-      { t: 'prompt', cmd: 'atp save-tools demo-app tools' },
+      { t: 'prompt', cmd: 'onagent save-tools demo-app tools' },
       { t: 'ok', text: '✓ Saved 1 tool to "demo-app"' },
       { t: 'gap' },
       { t: 'comment', text: '# 2. 前端嵌入 SDK' },

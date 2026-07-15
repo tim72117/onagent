@@ -18,14 +18,14 @@
 - **怎麼運作**：每次 dispatch 記錄完整決策脈絡：使用者 prompt、LLM 實際看到的候選工具清單（含送出當下的 description）、選中的工具+參數、query 工具的回傳資料與延遲。console 以 per-session timeline 呈現，附「replay」按鈕——用**當前**工具定義重送同一個 prompt，讓你拿失敗的那個 case 直接 A/B 一次 description 修改。
 - **為何重要**：這是**其他所有 DX 功能都預設存在的除錯基礎**。本 session 花大量時間讀 `tmp/logs/*.json` 手動追 LLM 決策，正是這個功能該自動化的東西。
 
-### 3. `atp dev` — 本機工具 shadowing 的即時開發迴圈
+### 3. `onagent dev` — 本機工具 shadowing 的即時開發迴圈
 - **要解的痛**：現在測一個工具改動要「console 編輯 → 存檔 → 重整目標網站 → 祈禱 WS 抓到新 schema」，慢，而且很難拿未發佈的工具去測真實 page state。
-- **怎麼運作**：`atp dev` 跑一個本機 process，攔截你 app 的 WS session，讓你在本機 YAML/TS 檔案裡「shadow」已發佈的工具——SDK 連 prod，但被 shadow 的名稱其定義與 dispatch 從你筆電供應。改本機檔案，下一個 prompt 就生效，不用 console 存檔、不用發佈。
+- **怎麼運作**：`onagent dev` 跑一個本機 process，攔截你 app 的 WS session，讓你在本機 YAML/TS 檔案裡「shadow」已發佈的工具——SDK 連 prod，但被 shadow 的名稱其定義與 dispatch 從你筆電供應。改本機檔案，下一個 prompt 就生效，不用 console 存檔、不用發佈。
 - **為何重要**：action/query 型別讓工具與 live DOM 緊密耦合，你需要對**真實**嵌入網站的快速迴圈，不是 mock。把最大的開發稅（改 schema → alt-tab → 重打 → 重整）變成即時迭代。
 
 ### 4. Schema-First 型別產生 + 型別安全的 handler 契約
 - **要解的痛**：工具參數在 console 是 JSON Schema，但 SDK 端 handler 是手寫 JS/TS——兩者漂移造成 call 當下才爆的靜默不匹配（欄位改名 → dispatch 壞掉但只在呼叫時才發現）。直接對應審計 F4。
-- **怎麼運作**：`atp generate` 拉出 app 的工具定義，產生強型別 `handlers.d.ts`——每個工具一個 callback 簽名（參數型別由 JSON Schema 推導、query 工具**強制**回傳型別、action 工具**強制** void）。開發者 import 進 `registerHandlers({...})`，TypeScript 自己就會拒絕不符當前 schema 的 handler。
+- **怎麼運作**：`onagent generate` 拉出 app 的工具定義，產生強型別 `handlers.d.ts`——每個工具一個 callback 簽名（參數型別由 JSON Schema 推導、query 工具**強制**回傳型別、action 工具**強制** void）。開發者 import 進 `registerHandlers({...})`，TypeScript 自己就會拒絕不符當前 schema 的 handler。
 - **為何重要**：action/query 之別本身是型別層的真實契約（fire-and-forget vs 必須回傳資料），目前在「bug 最貴的邊界」（嵌入頁面內）完全沒被強制。把一整類 runtime dispatch bug 變成編譯錯誤。
 
 ---
@@ -74,4 +74,4 @@
 - **#8**（query 串流）與本 session 剛修的 query 工具阻塞架構（`ws/session.go` 的 goroutine 分派）相關。
 - **#10**（quota/rate limit）對應審計 S2/S6 的 DoS 與濫用面。
 
-**其他被納入但未進前 10 的構想**（來自三個 brainstorm，可作後續參考）：Playground Scenario Recorder / `atp test` 回歸測試、工具選擇準確度的自動 regression eval、Tool Description Linter（同名工具語意重疊偵測）、Origin-Scoped 本機預覽 snippet（首次上手 <1 分鐘跑起來）、Tool Template Marketplace、Session Memory + 主動 nudge、Rich Context（DOM/accessibility tree + context delta）、PII redaction 與資料留存控制。
+**其他被納入但未進前 10 的構想**（來自三個 brainstorm，可作後續參考）：Playground Scenario Recorder / `onagent test` 回歸測試、工具選擇準確度的自動 regression eval、Tool Description Linter（同名工具語意重疊偵測）、Origin-Scoped 本機預覽 snippet（首次上手 <1 分鐘跑起來）、Tool Template Marketplace、Session Memory + 主動 nudge、Rich Context（DOM/accessibility tree + context delta）、PII redaction 與資料留存控制。

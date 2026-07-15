@@ -6,7 +6,7 @@
   <title>onagent docs — integrate the platform</title>
   <meta
     name="description"
-    content="Get the atp CLI, create an app, define tools, and embed the browser SDK — the full onagent integration guide for third-party developers."
+    content="Get the onagent CLI, create an app, define tools, and embed the browser SDK — the full onagent integration guide for third-party developers."
   />
   <style>
     :root {
@@ -287,7 +287,7 @@
       </div>
       <div class="side-group">
         <div class="side-title">1. CLI</div>
-        <a href="#cli-install">Install the atp CLI</a>
+        <a href="#cli-install">Install the onagent CLI</a>
         <a class="sub" href="#cli-login">Log in</a>
         <a class="sub" href="#cli-reference">Command reference</a>
       </div>
@@ -345,7 +345,7 @@
           Four things make up an integration, and they map directly onto the four sections of this page.
         </p>
         <ol class="doc-list">
-          <li><strong>The <code>atp</code> CLI</strong> — a command-line tool you use to authenticate and manage your apps from a terminal (or a script/CI job) instead of only through the browser console.</li>
+          <li><strong>The <code>onagent</code> CLI</strong> — a command-line tool you use to authenticate and manage your apps from a terminal (or a script/CI job) instead of only through the browser console.</li>
           <li><strong>An app in the console</strong> — a namespace (<code>appId</code>) that owns one API key, one allowed origin, one set of tools, and an optional custom system prompt.</li>
           <li><strong>A tool definition</strong> — a YAML file (or the console's tool editor) describing each capability your page exposes: its name, a description the LLM uses to decide when to call it, and a JSON-Schema parameter shape.</li>
           <li><strong>The browser SDK (<code>@onagent/bridge</code>)</strong> — embedded in your page, it opens a WebSocket to the backend, registers your tool handlers, and lets you call <code>bridge.prompt(text)</code> to have the LLM reason about a request and dispatch tool calls back into your page in response.</li>
@@ -360,9 +360,9 @@
       <!-- ============================================================ -->
       <section class="doc-section" id="cli-install">
         <div class="sec-kicker">Step 1 — CLI</div>
-        <h2>Get the <code>atp</code> CLI and log in</h2>
+        <h2>Get the <code>onagent</code> CLI and log in</h2>
         <p class="intro">
-          <code>atp</code> is the command-line client for the console API. Everything it does can also be done
+          <code>onagent</code> is the command-line client for the console API. Everything it does can also be done
           through the browser console — use whichever fits your workflow. It's the faster path once you're
           scripting things (CI, bulk tool pushes, etc.).
         </p>
@@ -376,10 +376,10 @@
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> go install github.com/tim72117/agent/backend/cmd/atp@latest</pre>
+          <pre><span class="t-prompt">$</span> go install github.com/tim72117/agent/backend/cmd/onagent@latest</pre>
         </div>
         <p class="body-text">
-          This drops an <code>atp</code> binary in your Go bin directory. No separate download or package registry —
+          This drops an <code>onagent</code> binary in your Go bin directory. No separate download or package registry —
           the CLI lives in the same repository as the backend it talks to.
         </p>
 
@@ -389,19 +389,19 @@
             <h4>Using Claude Code?</h4>
             <p>
               See <a href="#claude-code">the Claude Code skill note</a> further down — it bundles a prebuilt
-              <code>atp</code> binary and can drive this entire setup for you, no local install required.
+              <code>onagent</code> binary and can drive this entire setup for you, no local install required.
             </p>
           </div>
         </div>
 
         <h3 class="sub-head" id="cli-login">Log in</h3>
         <p class="body-text">
-          <code>atp</code> supports two sign-in flows. Both end with a bearer token cached locally (in your
+          <code>onagent</code> supports two sign-in flows. Both end with a bearer token cached locally (in your
           per-user config directory), so every later command runs without asking again.
         </p>
 
         <div class="cmd-card">
-          <div class="cmd-sig">atp login --web <span class="opt">[-api &lt;url&gt;] [-console &lt;url&gt;]</span></div>
+          <div class="cmd-sig">onagent login --web <span class="opt">[-api &lt;url&gt;] [-console &lt;url&gt;]</span></div>
           <p>
             Opens a browser tab for you to approve the sign-in, then a local one-shot callback server on your
             machine receives the token — the token itself never appears in the URL or the browser. This is the
@@ -410,7 +410,7 @@
           </p>
         </div>
         <div class="cmd-card">
-          <div class="cmd-sig">atp login <span class="opt">[-api &lt;url&gt;]</span></div>
+          <div class="cmd-sig">onagent login <span class="opt">[-api &lt;url&gt;]</span></div>
           <p>
             Prompts for email and password directly in the terminal, no browser involved. Use this for headless
             environments (SSH-only boxes, CI runners) where a browser isn't available.
@@ -423,10 +423,10 @@
             <button class="copy-btn" data-copy>Copy</button>
           </div>
           <pre><span class="t-com"># recommended for interactive use</span>
-<span class="t-prompt">$</span> atp login --web
+<span class="t-prompt">$</span> onagent login --web
 
 <span class="t-com"># headless / no browser available</span>
-<span class="t-prompt">$</span> atp login</pre>
+<span class="t-prompt">$</span> onagent login</pre>
         </div>
 
         <p class="body-text">Confirm it worked with:</p>
@@ -435,9 +435,9 @@
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> atp list-apps
+          <pre><span class="t-prompt">$</span> onagent list-apps
 <span class="t-com"># a list of apps (even an empty one) means you're logged in.</span>
-<span class="t-com"># "not logged in" means atp login hasn't succeeded yet.</span></pre>
+<span class="t-com"># "not logged in" means onagent login hasn't succeeded yet.</span></pre>
         </div>
 
         <div class="callout info">
@@ -445,7 +445,7 @@
           <div class="ct">
             <h4>Default server</h4>
             <p>
-              Every <code>atp</code> command talks to <code>https://agent.shuttle.tools</code> by default (both
+              Every <code>onagent</code> command talks to <code>https://agent.shuttle.tools</code> by default (both
               <code>-api</code> and, for <code>login --web</code>, <code>-console</code>). Point at a local dev
               server with e.g. <code>-api http://localhost:8080 -console http://localhost:8080</code>. There's no
               environment-variable override — <code>-api</code>/<code>-console</code> flags are the only way to
@@ -497,7 +497,7 @@
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> atp create-app my-app
+          <pre><span class="t-prompt">$</span> onagent create-app my-app
 Created app <span class="t-str">"my-app"</span>.</pre>
         </div>
         <p class="body-text">Or in the console: sign in at <code>/app</code> and click <strong style="color:var(--text)">+ New app</strong>.</p>
@@ -508,7 +508,7 @@ Created app <span class="t-str">"my-app"</span>.</pre>
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> atp issue-key my-app
+          <pre><span class="t-prompt">$</span> onagent issue-key my-app
 API key for <span class="t-str">"my-app"</span> (shown once — copy it now, it can't be retrieved again):
   <span class="t-str">sk_live_ab12cd34...</span>
 Issuing a new key later immediately revokes this one.</pre>
@@ -533,7 +533,7 @@ Issuing a new key later immediately revokes this one.</pre>
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> atp set-origin my-app https://your-site.example.com
+          <pre><span class="t-prompt">$</span> onagent set-origin my-app https://your-site.example.com
 Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">"https://your-site.example.com"</span>.</pre>
         </div>
         <p class="body-text">
@@ -567,7 +567,7 @@ Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">
         <p class="intro">
           A tool is one capability your page exposes to the LLM: a name it calls, a description that tells the
           model when to use it, and a JSON-Schema-shaped set of parameters. You can define tools two ways —
-          hand-write a <code>tools.yaml</code> and push it with <code>atp save-tools</code>, or use the console's
+          hand-write a <code>tools.yaml</code> and push it with <code>onagent save-tools</code>, or use the console's
           built-in tool editor. Both write to the exact same underlying definition; use whichever fits how many
           tools you have and whether you want them under version control.
         </p>
@@ -578,7 +578,7 @@ Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">
           <table class="doc-table">
             <thead><tr><th>Field</th><th>Required</th><th>Notes</th></tr></thead>
             <tbody>
-              <tr><td>appId</td><td>No</td><td>May be present but is ignored by <code>atp save-tools</code> — the <code>appId</code> given as a command-line argument always wins. This lets one <code>tools.yaml</code> be reused verbatim across multiple apps.</td></tr>
+              <tr><td>appId</td><td>No</td><td>May be present but is ignored by <code>onagent save-tools</code> — the <code>appId</code> given as a command-line argument always wins. This lets one <code>tools.yaml</code> be reused verbatim across multiple apps.</td></tr>
               <tr><td>thought</td><td>No</td><td>The app's custom system prompt for the agent that selects tools (see <a href="#tool-kind">below</a>). Omit to use the platform default.</td></tr>
               <tr><td>tools</td><td>Yes</td><td>Array of tool definitions — see below. This is the only part of the file <code>save-tools</code> actually sends.</td></tr>
             </tbody>
@@ -680,11 +680,11 @@ Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> atp save-tools my-app tools.yaml
+          <pre><span class="t-prompt">$</span> onagent save-tools my-app tools.yaml
 Saved 2 tools to <span class="t-str">"my-app"</span>.</pre>
         </div>
         <p class="body-text">
-          <code>atp</code> validates the file locally before sending anything. The most common validation failures:
+          <code>onagent</code> validates the file locally before sending anything. The most common validation failures:
         </p>
         <ul class="doc-list">
           <li><strong>Invalid tool name</strong> — doesn't match <code>^[a-zA-Z_][a-zA-Z0-9_]*$</code> (no hyphens, no leading digit, no spaces).</li>
@@ -701,7 +701,7 @@ Saved 2 tools to <span class="t-str">"my-app"</span>.</pre>
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> atp get-tools my-app <span class="t-com">> tools.yaml</span></pre>
+          <pre><span class="t-prompt">$</span> onagent get-tools my-app <span class="t-com">> tools.yaml</span></pre>
         </div>
 
         <h4 class="micro-head">Setting a custom thought (system prompt)</h4>
@@ -714,7 +714,7 @@ Saved 2 tools to <span class="t-str">"my-app"</span>.</pre>
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> atp set-thought my-app <span class="t-str">"Always confirm destructive actions before calling them."</span>
+          <pre><span class="t-prompt">$</span> onagent set-thought my-app <span class="t-str">"Always confirm destructive actions before calling them."</span>
 Set <span class="t-str">"my-app"</span>'s thought.</pre>
         </div>
         <p class="body-text">Pass an empty string to clear it and fall back to the platform default; this can also be embedded as the top-level <code>thought</code> field in <code>tools.yaml</code>.</p>
@@ -775,7 +775,7 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
             <tbody>
               <tr><td>url</td><td>Yes</td><td>WebSocket endpoint, e.g. <code>wss://agent.shuttle.tools/ws</code>. Always use <code>wss://</code>, never <code>ws://</code> — the API key rides in a URL query parameter on the handshake (browsers can't attach custom headers to a WebSocket upgrade), so an unencrypted connection puts it on the wire, and often in server access logs, in plaintext.</td></tr>
               <tr><td>appId</td><td>Yes</td><td>The app whose tool set this session loads.</td></tr>
-              <tr><td>apiKey</td><td>No</td><td>The key from <code>atp issue-key</code>. When set, it always overrides <code>appId</code> for authorization (the backend resolves the real appId server-side from the key). Omit only when connecting to a backend explicitly configured to allow its dev/no-auth mode.</td></tr>
+              <tr><td>apiKey</td><td>No</td><td>The key from <code>onagent issue-key</code>. When set, it always overrides <code>appId</code> for authorization (the backend resolves the real appId server-side from the key). Omit only when connecting to a backend explicitly configured to allow its dev/no-auth mode.</td></tr>
               <tr><td>tools</td><td>Yes</td><td>Map of tool name → handler function. See <a href="#tool-handlers">below</a>.</td></tr>
               <tr><td>onAssistantMessage</td><td>No</td><td><code>(text: string) =&gt; void</code> — called with natural-language messages meant for display to the user (e.g. render into a chat panel).</td></tr>
               <tr><td>onError</td><td>No</td><td><code>(err) =&gt; void</code> — called on protocol/inference errors not tied to one specific call.</td></tr>
@@ -842,7 +842,7 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
           If you're integrating onagent from inside Claude Code, the <code>onagent-cli-setup</code> skill
           (<code>.claude/skills/onagent-cli-setup/</code>) can walk through this entire flow for you — install
           detection, login, app creation, key issuance, origin setup, and pushing a <code>tools.yaml</code> — using
-          a bundled prebuilt <code>atp</code> binary, so there's nothing to install manually first. It's a
+          a bundled prebuilt <code>onagent</code> binary, so there's nothing to install manually first. It's a
           complementary path to everything above, not a replacement: the underlying CLI commands and
           <code>tools.yaml</code> schema are identical either way, so it's worth reading this page regardless of
           whether Claude Code drives the mechanics for you.
@@ -860,7 +860,7 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
             <thead><tr><th>Symptom</th><th>Likely cause</th></tr></thead>
             <tbody>
               <tr><td>WebSocket won't connect, API key looks correct</td><td>The app's allowed origin is unset or doesn't exactly match the page's origin. See <a href="#set-origin">Origin is fail-closed</a> above — this is the most common cause by far.</td></tr>
-              <tr><td><code>atp</code> says "not logged in"</td><td>Run <code>atp login --web</code> (or <code>atp login</code>) again; the cached token may be missing or expired.</td></tr>
+              <tr><td><code>onagent</code> says "not logged in"</td><td>Run <code>onagent login --web</code> (or <code>onagent login</code>) again; the cached token may be missing or expired.</td></tr>
               <tr><td><code>save-tools</code> fails validation</td><td>Check, in order: tool name regex, missing <code>description</code>, missing <code>parameters.type</code>, duplicate tool names. See <a href="#push-tools">Push tools</a> above.</td></tr>
               <tr><td>Console warning: "backend declares tools with no registered handler"</td><td>A tool exists on the platform (pushed via <code>save-tools</code> or the console editor) that your <code>tools</code> map doesn't have a matching handler key for. Add the missing handler or remove the unused tool definition.</td></tr>
               <tr><td>Issued a new key and everything broke</td><td>Expected — issuing a key immediately revokes the previous one. Update every deployed copy of the old key to the new one.</td></tr>

@@ -153,7 +153,7 @@
 2. **Rate limiting / quota**：per-app、per-user、per-IP 的速率與並發限制，含每 key 同時 WS 連線上限（直接對應 S2/S6）。
 3. **短效 WS ticket**：取代長效 API key 直接進 URL（對應 S4）——HTTPS 認證後換發單次 ticket、WS 一次兌換。
 4. **console 的 `kind: query` 編輯 UI**：讓 query 工具能在網頁管理，不必手改 YAML（對應 F 低優先項）。
-5. **`atp get-tools <appId>` CLI 指令**：目前 CLI 只能推、不能拉，確認「實際存了什麼」只能查 DB 或開 console。後端已有 `GET /console/apps/{appId}` API，CLI 加一個指令即可。
+5. **`onagent get-tools <appId>` CLI 指令**：目前 CLI 只能推、不能拉，確認「實際存了什麼」只能查 DB 或開 console。後端已有 `GET /console/apps/{appId}` API，CLI 加一個指令即可。
 6. **串流回覆**：目前 `Complete()` 是一次性回傳，前端等整輪推論結束。串流可大幅改善體感延遲（但要注意跟 A1 序列化的互動）。
 7. **部署設定 fail-fast 擴充**：`AI_PROVIDER=googleapis` 但 `GOOGLE_API_KEY` 未設時、production 缺關鍵 secret 時，啟動即拒絕（延續現有 `APP_ENV=production` 機制）。
 

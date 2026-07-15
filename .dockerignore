@@ -15,7 +15,7 @@ backend/.env
 
 # Go 執行期產物與本機二進位
 backend/server.exe
-backend/atp.exe
+backend/onagent.exe
 **/*.exe
 backend/logs/
 backend/sessions/
