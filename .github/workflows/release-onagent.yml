@@ -1,4 +1,4 @@
-name: Release atp CLI
+name: Release onagent CLI
 
 on:
   push:
@@ -45,7 +45,7 @@ jobs:
         working-directory: backend
         run: go mod download
 
-      - name: Build atp binary
+      - name: Build onagent binary
         working-directory: backend
         env:
           GOOS: ${{ matrix.goos }}
@@ -55,11 +55,11 @@ jobs:
           # 靜態編譯,跟 Dockerfile build server 一樣關 CGO,產出不依賴
           # libc 的單一執行檔,跨平台交叉編譯才不會需要對應平台的 C toolchain。
           mkdir -p ../dist
-          BINARY_NAME=atp-${{ matrix.goos }}-${{ matrix.goarch }}
+          BINARY_NAME=onagent-${{ matrix.goos }}-${{ matrix.goarch }}
           if [ "${{ matrix.goos }}" = "windows" ]; then
             BINARY_NAME="${BINARY_NAME}.exe"
           fi
-          go build -trimpath -ldflags="-s -w" -o "../dist/${BINARY_NAME}" ./cmd/atp
+          go build -trimpath -ldflags="-s -w" -o "../dist/${BINARY_NAME}" ./cmd/onagent
           echo "BINARY_NAME=${BINARY_NAME}" >> "$GITHUB_ENV"
 
       - name: Package release asset
@@ -67,10 +67,10 @@ jobs:
         run: |
           # linux/darwin 慣例用 tar.gz,windows 慣例用 zip。
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            ASSET_NAME="atp-${{ matrix.goos }}-${{ matrix.goarch }}.zip"
+            ASSET_NAME="onagent-${{ matrix.goos }}-${{ matrix.goarch }}.zip"
             zip "${ASSET_NAME}" "${BINARY_NAME}"
           else
-            ASSET_NAME="atp-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
+            ASSET_NAME="onagent-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
             tar -czf "${ASSET_NAME}" "${BINARY_NAME}"
           fi
           echo "ASSET_NAME=${ASSET_NAME}" >> "$GITHUB_ENV"
@@ -78,7 +78,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: atp-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: onagent-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/${{ env.ASSET_NAME }}
           if-no-files-found: error
 
