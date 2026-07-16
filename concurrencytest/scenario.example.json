@@ -1,0 +1,6 @@
+{
+  "groups": [
+    { "app": "cli-test-app",   "token": "<issue via backend/cmd/genkey cli-test-app>",   "origin": "http://localhost:9999", "users": 3 },
+    { "app": "cli-test-app-2", "token": "<issue via backend/cmd/genkey cli-test-app-2>", "origin": "http://localhost:9998", "users": 3 }
+  ]
+}
