@@ -115,18 +115,20 @@ func main() {
 	// Seed the first admin from the environment — the ONLY way an admin comes
 	// into being (there is no admin-signup endpoint), so the trust root is
 	// whoever controls the deployment's env, never an API caller. No-op when
-	// the vars are unset or the admin already exists. In production, require
-	// the bootstrap vars so a deploy can never come up with an admin console
-	// that has no way to log in.
+	// the vars are unset or the admin already exists. A genuine bootstrap
+	// failure (a DB write error) is still fatal; but simply having no admin
+	// configured is NOT — it only means the admin back-office has no login
+	// yet, which must not take down the whole service (developer console,
+	// quota, the public API) with it. So that case warns loudly and keeps
+	// serving; set ADMIN_BOOTSTRAP_EMAIL/PASSWORD and redeploy to seed one.
 	if created, err := adminAuthStore.Bootstrap(os.Getenv("ADMIN_BOOTSTRAP_EMAIL"), os.Getenv("ADMIN_BOOTSTRAP_PASSWORD")); err != nil {
 		log.Error("admin bootstrap failed", "err", err)
 		os.Exit(1)
 	} else if created {
 		log.Info("bootstrapped first admin from ADMIN_BOOTSTRAP_EMAIL")
 	}
-	if isProd && adminAuthStore.Count() == 0 {
-		log.Error("APP_ENV=production but no admin exists and ADMIN_BOOTSTRAP_EMAIL/PASSWORD were not set; refusing to start an admin console no one can log into")
-		os.Exit(1)
+	if adminAuthStore.Count() == 0 {
+		log.Warn("no admin account exists and ADMIN_BOOTSTRAP_EMAIL/PASSWORD were not set; the admin back-office (/admin) has no way to log in until you set them and redeploy. The rest of the service is unaffected.")
 	}
 
 	// wsAuth == nil is what tells ws.Handler to skip verification entirely
