@@ -149,9 +149,22 @@ func main() {
 	// apps' own sites talking to /ws. This is the console frontend itself
 	// (a single app this project ships, not a developer's), needed only so
 	// internal/console/playground.go can accept its cross-origin WebSocket
-	// handshake — see Handler.ConsoleOrigins. Defaults to the console's
-	// standard local dev port so a fresh checkout works with zero config.
-	consoleOrigins := parseOrigins(envOr("CONSOLE_ORIGIN", "http://localhost:5173"))
+	// handshake — see Handler.ConsoleOrigins.
+	//
+	// The fallback to localhost:5173 (the console's standard dev port) only
+	// applies outside production, so a fresh checkout works with zero
+	// config. In production, CONSOLE_ORIGIN must be set explicitly — an
+	// unset var used to silently default to localhost:5173 even in prod
+	// (parseOrigins(envOr(..., "http://localhost:5173")) is never empty, so
+	// the len==0 guard below could never fire), which meant a forgotten
+	// CONSOLE_ORIGIN failed *quietly*: the server started fine but every
+	// Playground WebSocket and credentialed CORS check trusted only
+	// localhost, never the real deployed console origin.
+	consoleOriginRaw := os.Getenv("CONSOLE_ORIGIN")
+	if consoleOriginRaw == "" && !isProd {
+		consoleOriginRaw = "http://localhost:5173"
+	}
+	consoleOrigins := parseOrigins(consoleOriginRaw)
 	if isProd && len(consoleOrigins) == 0 {
 		log.Error("APP_ENV=production but CONSOLE_ORIGIN is not set; refusing to start with the Playground WebSocket unreachable")
 		os.Exit(1)
