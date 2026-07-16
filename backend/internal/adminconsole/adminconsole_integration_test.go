@@ -17,9 +17,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tim72117/agent/internal/adminauth"
-	"github.com/tim72117/agent/internal/db"
-	"github.com/tim72117/agent/internal/quota"
+	"github.com/tim72117/onagent/internal/adminauth"
+	"github.com/tim72117/onagent/internal/db"
+	"github.com/tim72117/onagent/internal/quota"
 )
 
 var dsn = flag.String("dsn", "postgres://platform:platform@localhost:5434/platform?sslmode=disable", "Postgres DSN")

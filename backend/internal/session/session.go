@@ -20,7 +20,7 @@ import (
 	"github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/tim72117/agent/internal/quota"
+	"github.com/tim72117/onagent/internal/quota"
 )
 
 // CookieName is the cookie the console API's session id travels in. httpOnly

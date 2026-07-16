@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tim72117/agent/internal/auth"
-	"github.com/tim72117/agent/internal/db"
+	"github.com/tim72117/onagent/internal/auth"
+	"github.com/tim72117/onagent/internal/db"
 )
 
 func main() {

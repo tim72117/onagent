@@ -14,8 +14,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/tim72117/agent/internal/adminauth"
-	"github.com/tim72117/agent/internal/quota"
+	"github.com/tim72117/onagent/internal/adminauth"
+	"github.com/tim72117/onagent/internal/quota"
 )
 
 // Handler serves /admin/api/*. Auth is the admin identity/session store;

@@ -24,13 +24,13 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/tim72117/agent/internal/auth"
-	"github.com/tim72117/agent/internal/cliauth"
-	"github.com/tim72117/agent/internal/inference"
-	"github.com/tim72117/agent/internal/quota"
-	"github.com/tim72117/agent/internal/session"
-	"github.com/tim72117/agent/internal/toolschema"
-	"github.com/tim72117/agent/internal/usertoken"
+	"github.com/tim72117/onagent/internal/auth"
+	"github.com/tim72117/onagent/internal/cliauth"
+	"github.com/tim72117/onagent/internal/inference"
+	"github.com/tim72117/onagent/internal/quota"
+	"github.com/tim72117/onagent/internal/session"
+	"github.com/tim72117/onagent/internal/toolschema"
+	"github.com/tim72117/onagent/internal/usertoken"
 )
 
 // Handler serves the /console/* and /auth/* APIs.

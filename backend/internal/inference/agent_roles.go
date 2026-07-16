@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/tim72117/agent/internal/toolschema"
+	"github.com/tim72117/onagent/internal/toolschema"
 	"github.com/tim72117/want/pkg/agentreg"
 	"github.com/tim72117/want/types"
 )

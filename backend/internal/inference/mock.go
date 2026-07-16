@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/tim72117/agent/internal/toolschema"
+	"github.com/tim72117/onagent/internal/toolschema"
 )
 
 // MockService is a placeholder Service used until the real inference

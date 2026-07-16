@@ -11,7 +11,7 @@ import (
 	"flag"
 	"testing"
 
-	"github.com/tim72117/agent/internal/db"
+	"github.com/tim72117/onagent/internal/db"
 )
 
 var dsn = flag.String("dsn", "postgres://platform:platform@localhost:5434/platform?sslmode=disable", "Postgres DSN")

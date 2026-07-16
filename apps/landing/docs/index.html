@@ -376,7 +376,7 @@
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> go install github.com/tim72117/agent/backend/cmd/onagent@latest</pre>
+          <pre><span class="t-prompt">$</span> go install github.com/tim72117/onagent/backend/cmd/onagent@latest</pre>
         </div>
         <p class="body-text">
           This drops an <code>onagent</code> binary in your Go bin directory. No separate download or package registry —
@@ -445,7 +445,7 @@
           <div class="ct">
             <h4>Default server</h4>
             <p>
-              Every <code>onagent</code> command talks to <code>https://agent.shuttle.tools</code> by default (both
+              Every <code>onagent</code> command talks to <code>https://onagent.shuttle.tools</code> by default (both
               <code>-api</code> and, for <code>login --web</code>, <code>-console</code>). Point at a local dev
               server with e.g. <code>-api http://localhost:8080 -console http://localhost:8080</code>. There's no
               environment-variable override — <code>-api</code>/<code>-console</code> flags are the only way to
@@ -749,7 +749,7 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
           <pre><span class="t-kw">import</span> <span class="t-punc">{</span> AgentBridge <span class="t-punc">}</span> <span class="t-kw">from</span> <span class="t-str">"@onagent/bridge"</span><span class="t-punc">;</span>
 
 <span class="t-kw">const</span> bridge <span class="t-punc">=</span> <span class="t-kw">new</span> <span class="t-fn">AgentBridge</span><span class="t-punc">({</span>
-  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://agent.shuttle.tools/ws"</span><span class="t-punc">,</span>
+  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://onagent.shuttle.tools/ws"</span><span class="t-punc">,</span>
   <span class="t-key">appId</span><span class="t-punc">:</span> <span class="t-str">"my-app"</span><span class="t-punc">,</span>
   <span class="t-key">apiKey</span><span class="t-punc">:</span> <span class="t-str">"YOUR_APP_API_KEY"</span><span class="t-punc">,</span>
   <span class="t-key">tools</span><span class="t-punc">:</span> <span class="t-punc">{</span>
@@ -773,7 +773,7 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
           <table class="doc-table">
             <thead><tr><th>Option</th><th>Required</th><th>Notes</th></tr></thead>
             <tbody>
-              <tr><td>url</td><td>Yes</td><td>WebSocket endpoint, e.g. <code>wss://agent.shuttle.tools/ws</code>. Always use <code>wss://</code>, never <code>ws://</code> — the API key rides in a URL query parameter on the handshake (browsers can't attach custom headers to a WebSocket upgrade), so an unencrypted connection puts it on the wire, and often in server access logs, in plaintext.</td></tr>
+              <tr><td>url</td><td>Yes</td><td>WebSocket endpoint, e.g. <code>wss://onagent.shuttle.tools/ws</code>. Always use <code>wss://</code>, never <code>ws://</code> — the API key rides in a URL query parameter on the handshake (browsers can't attach custom headers to a WebSocket upgrade), so an unencrypted connection puts it on the wire, and often in server access logs, in plaintext.</td></tr>
               <tr><td>appId</td><td>Yes</td><td>The app whose tool set this session loads.</td></tr>
               <tr><td>apiKey</td><td>No</td><td>The key from <code>onagent issue-key</code>. When set, it always overrides <code>appId</code> for authorization (the backend resolves the real appId server-side from the key). Omit only when connecting to a backend explicitly configured to allow its dev/no-auth mode.</td></tr>
               <tr><td>tools</td><td>Yes</td><td>Map of tool name → handler function. See <a href="#tool-handlers">below</a>.</td></tr>

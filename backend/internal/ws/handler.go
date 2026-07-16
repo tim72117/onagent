@@ -5,10 +5,10 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
-	"github.com/tim72117/agent/internal/auth"
-	"github.com/tim72117/agent/internal/inference"
-	"github.com/tim72117/agent/internal/quota"
-	"github.com/tim72117/agent/internal/toolschema"
+	"github.com/tim72117/onagent/internal/auth"
+	"github.com/tim72117/onagent/internal/inference"
+	"github.com/tim72117/onagent/internal/quota"
+	"github.com/tim72117/onagent/internal/toolschema"
 )
 
 // Handler upgrades HTTP connections to WebSocket sessions for the Agent

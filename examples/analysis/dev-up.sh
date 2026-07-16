@@ -20,7 +20,7 @@
 # 拒絕啟動："local" cannot be used as a mode name because it conflicts with
 # the .local postfix for .env files"，這是 Vite 保留字，不是這支腳本能繞過的。
 #   --mode development   （預設）前端連本機的 onagent-backend + mock 後端
-#   --mode production     前端改連 wss://agent.shuttle.tools/ws（.env.production），
+#   --mode production     前端改連 wss://onagent.shuttle.tools/ws（.env.production），
 #                          這種情況下本機的 onagent-backend 用不到，不會啟動它
 #                          （反正本機沒有 Postgres 給它連，啟動也只會失敗）。
 #
@@ -104,7 +104,7 @@ echo
 
 # -----------------------------------------------------------------------------
 # 1. onagent 平台後端 (:8080) —— 只有 --mode development 才需要：production
-#    模式下前端改連 wss://agent.shuttle.tools/ws（見
+#    模式下前端改連 wss://onagent.shuttle.tools/ws（見
 #    examples/analysis/.env.production），本機這份後端完全用不到，啟動了也只是空跑
 #    （而且本機沒有它需要的 Postgres，啟動只會失敗），所以直接跳過。
 # -----------------------------------------------------------------------------

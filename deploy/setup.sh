@@ -28,7 +28,7 @@ PROJECT_ID="onagent-prod"          # EDIT THIS FIRST
 BILLING_ACCOUNT_ID=""              # EDIT THIS FIRST — gcloud billing accounts list
 REGION="asia-east1"
 SERVICE_NAME="onagent-server"
-DOMAIN="agent.shuttle.tools"
+DOMAIN="onagent.shuttle.tools"
 AR_REPO="cloud-run-source-deploy"
 
 echo "=============================================="

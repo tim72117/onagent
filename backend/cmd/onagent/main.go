@@ -1,8 +1,9 @@
-// Command atp is a CLI for developers to authenticate to the console API
-// (internal/console) and push local tool schema changes, without opening
-// the browser console for routine updates (e.g. from a script or CI job).
+// Command onagent is a CLI for developers to authenticate to the console
+// API (internal/console) and push local tool schema changes, without
+// opening the browser console for routine updates (e.g. from a script or
+// CI job).
 //
-// Auth is a token minted once via `atp login` (email/password, entered
+// Auth is a token minted once via `onagent login` (email/password, entered
 // interactively) and cached locally; every subsequent command reads that
 // cached token and sends it as a bearer token, exactly like the browser
 // console sends its session cookie — internal/console's withAuth accepts
@@ -28,7 +29,7 @@ import (
 	"golang.org/x/term"
 	"gopkg.in/yaml.v3"
 
-	"github.com/tim72117/agent/internal/toolschema"
+	"github.com/tim72117/onagent/internal/toolschema"
 )
 
 func main() {
@@ -64,25 +65,25 @@ func main() {
 	}
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "atp:", err)
+		fmt.Fprintln(os.Stderr, "onagent:", err)
 		os.Exit(1)
 	}
 }
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
-  atp login [-api <url>]              sign in with email/password, typed into this terminal
-  atp login --web [-api <url>] [-console <url>]
+  onagent login [-api <url>]          sign in with email/password, typed into this terminal
+  onagent login --web [-api <url>] [-console <url>]
                                        sign in via a browser tab instead (see below)
-  atp list-apps [-api <url>]
-  atp create-app [-api <url>] <appId>
-  atp issue-key [-api <url>] <appId>
-  atp set-origin [-api <url>] <appId> <origin>
-  atp set-thought [-api <url>] <appId> <thought>
-  atp save-tools [-api <url>] <appId> <tools.yaml>
-  atp get-tools [-api <url>] <appId>
+  onagent list-apps [-api <url>]
+  onagent create-app [-api <url>] <appId>
+  onagent issue-key [-api <url>] <appId>
+  onagent set-origin [-api <url>] <appId> <origin>
+  onagent set-thought [-api <url>] <appId> <thought>
+  onagent save-tools [-api <url>] <appId> <tools.yaml>
+  onagent get-tools [-api <url>] <appId>
 
-  -api and -console both default to https://agent.shuttle.tools (the
+  -api and -console both default to https://onagent.shuttle.tools (the
   deployed onagent service). -console (login --web only) is the origin
   the console front-end is served from — the CLI appends /app/cli-auth
   itself, since that's the path prefix the console is mounted under.
@@ -323,7 +324,7 @@ func runListApps(args []string) error {
 func runCreateApp(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: atp create-app [-api <url>] <appId>")
+		return fmt.Errorf("usage: onagent create-app [-api <url>] <appId>")
 	}
 	appID := rest[0]
 
@@ -345,7 +346,7 @@ func runCreateApp(args []string) error {
 func runIssueKey(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: atp issue-key [-api <url>] <appId>")
+		return fmt.Errorf("usage: onagent issue-key [-api <url>] <appId>")
 	}
 	appID := rest[0]
 
@@ -372,7 +373,7 @@ func runIssueKey(args []string) error {
 func runSetOrigin(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: atp set-origin [-api <url>] <appId> <origin>")
+		return fmt.Errorf("usage: onagent set-origin [-api <url>] <appId> <origin>")
 	}
 	appID, origin := rest[0], rest[1]
 
@@ -394,7 +395,7 @@ func runSetOrigin(args []string) error {
 func runSetThought(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: atp set-thought [-api <url>] <appId> <thought>")
+		return fmt.Errorf("usage: onagent set-thought [-api <url>] <appId> <thought>")
 	}
 	appID, thought := rest[0], rest[1]
 
@@ -420,7 +421,7 @@ func runSetThought(args []string) error {
 func runSaveTools(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: atp save-tools [-api <url>] <appId> <tools.yaml>")
+		return fmt.Errorf("usage: onagent save-tools [-api <url>] <appId> <tools.yaml>")
 	}
 	appID, path := rest[0], rest[1]
 
@@ -460,7 +461,7 @@ func runSaveTools(args []string) error {
 func runGetTools(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: atp get-tools [-api <url>] <appId>")
+		return fmt.Errorf("usage: onagent get-tools [-api <url>] <appId>")
 	}
 	appID := rest[0]
 
@@ -502,13 +503,13 @@ type apiClient struct {
 	token         string
 }
 
-// authenticatedClient loads the token saved by a prior `atp login` and
+// authenticatedClient loads the token saved by a prior `onagent login` and
 // fails with a clear next step if none exists yet, rather than letting
 // every subsequent request fail with an opaque 401.
 func authenticatedClient(base string) (*apiClient, error) {
 	token, err := loadToken()
 	if err != nil {
-		return nil, fmt.Errorf("not logged in (run `atp login` first): %w", err)
+		return nil, fmt.Errorf("not logged in (run `onagent login` first): %w", err)
 	}
 	return &apiClient{base: base, token: token}, nil
 }
@@ -531,7 +532,7 @@ func (c *apiClient) login(email, password string) (cookie string, err error) {
 	}
 
 	for _, ck := range res.Cookies() {
-		if ck.Name == "atp_session" {
+		if ck.Name == "onagent_session" {
 			return ck.Value, nil
 		}
 	}
@@ -545,7 +546,7 @@ func (c *apiClient) issueToken(name string) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(&http.Cookie{Name: "atp_session", Value: c.sessionCookie})
+	req.AddCookie(&http.Cookie{Name: "onagent_session", Value: c.sessionCookie})
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -830,12 +831,12 @@ func loadToken() (string, error) {
 
 // --- small input/flag helpers -----------------------------------------------
 
-// defaultServerURL is where atp talks by default: the deployed onagent
+// defaultServerURL is where onagent talks by default: the deployed onagent
 // backend, not localhost — most people running this CLI are talking to the
 // real service, not developing onagent itself. Both apiFlag and
 // consoleFlag default here since the console front-end is embedded
 // same-origin with the API in production (backend/cmd/server/web.go).
-const defaultServerURL = "https://agent.shuttle.tools"
+const defaultServerURL = "https://onagent.shuttle.tools"
 
 // apiFlag pulls an optional "-api <url>" out of args, wherever it appears
 // (a hand-rolled parse, not the stdlib flag package, since flag doesn't

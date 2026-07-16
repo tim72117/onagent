@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/tim72117/agent/internal/codegen"
-	"github.com/tim72117/agent/internal/inference"
-	"github.com/tim72117/agent/internal/protocol"
-	"github.com/tim72117/agent/internal/quota"
-	"github.com/tim72117/agent/internal/toolschema"
+	"github.com/tim72117/onagent/internal/codegen"
+	"github.com/tim72117/onagent/internal/inference"
+	"github.com/tim72117/onagent/internal/protocol"
+	"github.com/tim72117/onagent/internal/quota"
+	"github.com/tim72117/onagent/internal/toolschema"
 )
 
 const (

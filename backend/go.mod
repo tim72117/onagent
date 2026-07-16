@@ -1,4 +1,4 @@
-module github.com/tim72117/agent
+module github.com/tim72117/onagent
 
 go 1.26.4
 

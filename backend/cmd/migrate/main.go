@@ -24,8 +24,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/tim72117/agent/internal/db"
-	"github.com/tim72117/agent/internal/toolschema"
+	"github.com/tim72117/onagent/internal/db"
+	"github.com/tim72117/onagent/internal/toolschema"
 )
 
 type keyFile struct {

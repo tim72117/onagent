@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/tim72117/agent/internal/toolschema"
+	"github.com/tim72117/onagent/internal/toolschema"
 )
 
 // InteractionAsker is what a WS session implements to let a tool (either

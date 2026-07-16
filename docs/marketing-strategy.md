@@ -2,7 +2,7 @@
 
 > **文件性質**：這是一份**策略草案**，不是已經拍板執行的計畫。onagent 目前是
 > pre-launch / early access 階段的個人（或極小團隊）專案——真實的 production
-> 環境已經跑在 Cloud Run（`agent.shuttle.tools`），console、CLI（`onagent`）、
+> 環境已經跑在 Cloud Run（`onagent.shuttle.tools`），console、CLI（`onagent`）、
 > Agent Bridge SDK 都是可以真的動手串接的東西，但計費 / 訂閱 / 用量配額
 > 完全還沒做（見 `docs/subscription-usage-quota-design.md`）。這份文件據此
 > 假設：**現階段目標是社群心智佔有率與早期採用者，不是營收**，所有建議都
@@ -31,16 +31,16 @@
 **已經是真的、可以讓人動手試的部分：**
 
 - Production 環境：Go 後端 + `apps/landing`、`apps/console` 兩個內嵌前端，
-  跑在 Cloud Run，掛了自訂網域 `agent.shuttle.tools`（見
+  跑在 Cloud Run，掛了自訂網域 `onagent.shuttle.tools`（見
   `docs/deployment.md`）。這不是 staging，是會計費的真實雲端資源。
 - Landing page 已經有真實文案，標題是「幾分鐘，讓你的網站長出 AI 助手。」
   ——這句話本身已經是不錯的一句話定位，後面第 2 節會延伸討論。
-- Console（`agent.shuttle.tools/app`）有完整的開發者工作流程：登入
+- Console（`onagent.shuttle.tools/app`）有完整的開發者工作流程：登入
   （含 CLI device-code 授權頁 `CliAuthPage.tsx`）、建立 App、Schema
   Editor 定義 tool 參數、**Playground**（不用寫任何前端程式碼，直接在
   console 裡跟自己定義的 tool 對話測試，`apps/console/src/Playground.tsx`
   有清楚註解說明這是刻意設計成「不需要真實前端站台就能先感受一次」）。
-- CLI（`onagent`）：`go install github.com/tim72117/agent/backend/cmd/onagent@latest`
+- CLI（`onagent`）：`go install github.com/tim72117/onagent/backend/cmd/onagent@latest`
   可用（module path 問題已修好），且已經有一個**內建 Claude Code Skill**
   （`.claude/skills/onagent-cli-setup`）——對於本來就在用 Claude Code
   的開發者，這是零安裝門檻：不需要裝 Go 工具鏈、不需要等編譯，直接請
@@ -199,7 +199,7 @@ upvote，是史上最高分的 dev tool 發文之一）：
 - **連結指向可以馬上玩的東西**，不是 landing page。理想選項是連到一個
   已經串好 demo-app.yaml 那組 tool（搜尋 → 換頁 → 標示元素 → 結帳）的
   react-demo 公開部署，讓讀者不用建帳號就能先看到 AI 真的在操作畫面；
-  次選是直接連 GitHub repo（`github.com/tim72117/agent`），因為 HN
+  次選是直接連 GitHub repo（`github.com/tim72117/onagent`），因為 HN
   讀者本來就傾向想先看程式碼再決定要不要試。
 - **發文時機**：週二到週四美東上午 9 點到中午這段時間流量與活躍審核者
   最多；如果想避開最主戰場的競爭、鎖定更利基的早期受眾，週日晚間美東
@@ -243,7 +243,7 @@ upvote，是史上最高分的 dev tool 發文之一）：
 
 ### 4.3 GitHub —— repo 本身就是渠道
 
-- Repo 目前是 `github.com/tim72117/agent`，README 已經寫得很清楚
+- Repo 目前是 `github.com/tim72117/onagent`，README 已經寫得很清楚
   （架構圖、quick start、status 章節誠實列出「還沒做什麼」）——這件事
   本身不用大改，但決定公開發布時機時，**README 的「Status / what's
   not built yet」章節要保留**，不要為了行銷好看而刪掉。開發者受眾對
