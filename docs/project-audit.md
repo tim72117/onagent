@@ -101,36 +101,36 @@
 ## 四、需要調整的功能設計 / 品質問題
 
 ### 🟠 F1. SDK 無限重連無斷路器/終端狀態
-- **位置**：`packages/bridge/src/client.ts:138-144`——`scheduleReconnect` 永遠重試（backoff 封頂 10s），無法區分暫時性斷線 vs 致命狀況（key 錯/被撤銷/app 被刪/appId 錯）。stale 分頁會每 10s 無限敲後端（本 session 實際觀察到）。無回呼告訴嵌入方「這連線已永久死掉」。
+- **位置**：`packages/bridge/src/client.ts:132-145`——`scheduleReconnect` 永遠重試（backoff 封頂 10s），無法區分暫時性斷線 vs 致命狀況（key 錯/被撤銷/app 被刪/appId 錯）。stale 分頁會每 10s 無限敲後端（本 session 實際觀察到）。無回呼告訴嵌入方「這連線已永久死掉」。
 - **修法**：加 max-attempt/max-elapsed 上限＋獨立終端狀態，透過新回呼（如 `onDisconnected(permanent)`）曝露；分頁 hidden 時暫停/減速重連。
 
 ### 🟠 F2. SDK 吞掉 WS close/error code，auth 失敗看起來跟斷線一樣
-- **位置**：`client.ts:126-135`——close handler 完全忽略 `event.code`/`reason`，error 是純 no-op。撤銷 key 產生的 auth 拒絕 close 與暫時性斷線無法區分，兩者都無限重試、零信號。
+- **位置**：`client.ts:132-141`——close handler 完全忽略 `event.code`/`reason`，error 是純 no-op。撤銷 key 產生的 auth 拒絕 close 與暫時性斷線無法區分，兩者都無限重試、零信號。
 - **修法**：檢查 `ev.code`，把 4xxx auth 類 code 當終端、停止重試（需先確認 `internal/ws` 實際用什麼 code 關閉）。
 
 ### 🟠 E2. `select_question` schema 在 live YAML 與範例 YAML 之間漂移（活的行為 bug）
-- **位置**：`backend/tools/analysis-app.yaml`（實際載入的）**沒有** `required` array；`examples/analysis/frontend/tools.yaml`（本 session 已補 `required: [selected]`）的修正**沒有同步進 backend live 副本**。
+- **位置**：`backend/tools/analysis-app.yaml`（實際載入的）**沒有** `required` array；`examples/analysis/tools.yaml`（本 session 已補 `required: [selected]`）的修正**沒有同步進 backend live 副本**。
 - **影響**：`dev.js` 的 handler 在 LLM（依 live schema 正確地）省略 `selected` 時，`Menu.vue:129` 的 `if (selected)` 把 `undefined` 當 falsy → **靜默取消選取而非報錯**，是 shipped 範例的可重現 bug。搭配 want append-only bug，光改 YAML 還不夠、要重啟 process 才會換 registry entry。
 - **修法**：把 `backend/tools/analysis-app.yaml` 同步成有 `required: [selected]`。
 
 ### 🟠 F5. ADDR-vs-PORT — 確認的 Cloud Run 風險，且文件把它講反了
-- **位置**：`backend/cmd/server/main.go:146`——`addr := envOr("ADDR", ":8080")`；全 `backend/` **從不讀 `PORT`**。Cloud Run 一律注入 `PORT` 並期望容器聽它；`ADDR` 是 Cloud Run 不認識的自訂變數。現在能動只因 fallback `:8080` 剛好等於 Cloud Run 目前預設 `PORT=8080`。`docs/deployment.md` 把這講成「刻意相容」而非巧合——一旦 service 改設非預設 port，容器會靜默綁錯 port、deploy 失敗且無明確錯誤指向此行。
+- **位置**：`backend/cmd/server/main.go:218`——`addr := envOr("ADDR", ":8080")`；全 `backend/` **從不讀 `PORT`**。Cloud Run 一律注入 `PORT` 並期望容器聽它；`ADDR` 是 Cloud Run 不認識的自訂變數。現在能動只因 fallback `:8080` 剛好等於 Cloud Run 目前預設 `PORT=8080`。`docs/deployment.md` 把這講成「刻意相容」而非巧合——一旦 service 改設非預設 port，容器會靜默綁錯 port、deploy 失敗且無明確錯誤指向此行。
 - **修法**：改成 `":" + envOr("PORT", "8080")`（`ADDR` 保留為非 Cloud Run 用的完整位址覆寫），並修正文件說法。
 
 ### 🟡 F3. SDK queue 無上限成長（配合 F1 的記憶體洩漏）
-- **位置**：`client.ts:69`——`queue` 無 size cap，配合無限重連，對永久死掉的後端頁面會累積每一次 `sendContext`/`prompt`。
+- **位置**：`client.ts:80`——`queue` 無 size cap，配合無限重連，對永久死掉的後端頁面會累積每一次 `prompt()` 呼叫。
 - **修法**：限制 queue 長度（丟最舊，比照 gtag），或曝露 `queue.length`。
 
 ### 🟡 F4. SDK `ToolHandler` 是 `any` 型別，違背「型別安全」訴求
-- **位置**：`client.ts:13`——`ToolHandler = (args: any) => ...`。handler 的 `args` 與工具宣告的 JSON schema 無泛型連結；console 的 `codegen.ts` 產生的 `ToolHandlers` interface 也沒有自動接進 `AgentBridgeOptions.tools` 的機制。
+- **位置**：`client.ts:14`——`ToolHandler = (args: any) => ...`。handler 的 `args` 與工具宣告的 JSON schema 無泛型連結；console 的 `codegen.ts` 產生的 `ToolHandlers` interface 也沒有自動接進 `AgentBridgeOptions.tools` 的機制。
 - **修法**：讓 `AgentBridgeOptions` 對 `ToolHandlers` 形狀泛型化，把 console 已產生的 interface 接上，讓 `tools:` 有真正編譯期檢查。
 
-### 🟡 F6. `tool_query` 的阻塞語意只在程式碼註解、不在公開 API doc surface
-- **位置**：`client.ts:162-173` 有好的內部註解，但公開的 `ToolHandler`/`AgentBridgeOptions` JSDoc（第三方在編輯器裡實際看到的）沒提到某些 handler 會阻塞 LLM 推論直到 resolve。開發者可能不知情地為 `kind: query` 工具寫慢/網路綁定的 handler，靜默拖慢每個 prompt。
+### 🟡 F6. `tool_query`/`tool_call` 的阻塞語意只在程式碼註解、不在公開 API doc surface
+- **位置**：`client.ts:168-178` 有內部註解說明兩者現在都會阻塞後端 LLM 推論（只差結果資料會不會轉給 LLM）——**這段註解本身在本次稽核中發現曾經寫錯**（舊版說 `tool_call` 是 fire-and-forget，已於本次一併修正為正確描述），可見這類語意只活在程式碼註解裡、沒有可驗證的公開 doc surface 有多容易跟實際行為脫鉤。公開的 `ToolHandler`/`AgentBridgeOptions` JSDoc（第三方在編輯器裡實際看到的）仍完全沒提到 handler 會阻塞 LLM 推論直到 resolve。開發者可能不知情地寫慢/網路綁定的 handler，靜默拖慢每個 prompt。
 - **修法**：在公開 `tools` 欄位的 doc comment 說明；handler 超過 N 秒才 resolve 時 runtime 警告。
 
 ### ⚪ 低優先（已確認，多為 cosmetic）
-- **後端零測試覆蓋**：`backend/` 無任何 `*_test.go`。最高風險未測路徑：ws.Session 的 mutex 狀態機（`handlePrompt`/`handleToolResult`/`AskInteraction` 競爭 `pendingCalls`/`app`/`lastContext`）、`sanitizeSessionID`/`AgentIDToSessionID` 的 `"WS-"` prefix round-trip（單邊改就默默壞掉所有 query tool）、`saveApp` 的 delete-then-insert transaction、`withOwnedApp` 的 404-not-403 隔離 invariant。
+- **後端零測試覆蓋**：`backend/` 無任何 `*_test.go`。最高風險未測路徑：ws.Session 的 mutex 狀態機（`handlePrompt`/`handleToolResult`/`AskInteraction` 競爭 `pendingCalls`/`app`）、`sanitizeSessionID`/`AgentIDToSessionID` 的 `"WS-"` prefix round-trip（單邊改就默默壞掉所有 query tool）、`saveApp` 的 delete-then-insert transaction、`withOwnedApp` 的 404-not-403 隔離 invariant。
 - **console 無 `kind: query` UI**（`schema.ts:17-22` 的 TS `Tool` interface 根本沒有 `kind`）：只能手改 YAML 才能建 query 工具；需確認 `saveTools` 的 payload 會不會把 `kind` drop 掉。
 - **`codegen.ts:143-153` 巢狀 object 屬性 description 在 TS 預覽被丟棄**（`tsType` 的 `case 'object'` vs `writeInterface`）：僅預覽準確度，不影響 runtime。
 - **`db.Open` 每次開機重跑 `schema.sql`、無 migration 版本控制**：additive 時 OK，但與 `cmd/migrate` 兩套 schema 變更機制並存，未來破壞性變更（改欄位型別/rename）易 drift。
