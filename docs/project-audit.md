@@ -56,9 +56,9 @@
 1. **🔴 S3 安全 header** — 一個 middleware 搞定，成本最低、直接消除 clickjacking/HSTS 缺口。
 2. **🔴 A2 Playground 死結（見下）** — 剛在 `ws/session.go` 修好的死結，`playground.go` 有一份未修的複製。範圍小、性質已知。
 3. **🟠 S2 / A1 orchestrator 序列化＋無 rate limit** — 平台級瓶頸與 DoS 面，最重要但工程量最大，過渡期先加 rate limit。
-4. **🟠 D1 settings.json 修正 + F5 ADDR/PORT** — 部署正確性，改動小。
+4. **🟠 F5 ADDR/PORT** — 部署正確性，改動小。
 5. **🟠 F1/F2 SDK 重連斷路器** — 第三方直接依賴，影響外部開發者體驗。
-6. **🟠 E1/E2 範例修復** — 第三方會照抄的參考檔案目前是壞的。
+6. **🟠 E2 範例修復** — 第三方會照抄的參考檔案目前是壞的。
 
 ---
 
@@ -79,10 +79,10 @@
 - **影響**：request context 被取消時（server shutdown），idle-but-connected 的連線要等下一次 `ReadMessage()` 自然返回才退出（最長 60s，或客戶端持續 pong 就永遠不退），graceful shutdown 非確定性；且 `defer inference.UnregisterAsker(s.id)`（防 stale asker 卡住未來 query tool）被同樣延遲。
 - **修法**：shutdown 時明確 `conn.Close()` 以 error 中斷 `ReadMessage`，或確認 hijacked 連線的 per-request context 語意後不依賴它。
 
-### 🟡 A4. `callSink`／`askers` 是靠呼叫端紀律的 package 全域狀態
-- **位置**：`agent_roles.go:48-51`（`callSink` 無鎖，只因 `Complete` 全程握 mutex 才安全）；`interaction.go:27-30`（`askers` 有 RWMutex，但 process 全域 key、無 TTL）
-- **影響**：若之後為修 A1 而 pool orchestrator，`callSink` 會**默默重新引入 data race**（它無 orchestrator 實例親和性）。`askers` 若 process 中途重啟留下 stale entry。
-- **修法**：至少加註解記錄假設；長期把這些狀態綁定到 orchestrator 實例而非 package 全域。
+### 🟡 A4. `askers` 是靠呼叫端紀律的 package 全域狀態
+- **位置**：`interaction.go:27-30`（`askers` 有 RWMutex，但 process 全域 key、無 TTL）
+- **影響**：`askers` 若 process 中途重啟留下 stale entry。（原本一併記載的 `callSink` data-race 風險已隨該機制移除而解除——action-kind 工具現在直接透過 `askPage` 同步回報，不再有 package 全域 sink。）
+- **修法**：至少加註解記錄假設；長期把這狀態綁定到 orchestrator 實例而非 package 全域。
 
 ### 🟡 A5. `RegisterAppRole` 是跨套件手動維護的 invariant
 - **位置**：`console.go` 的 `syncWantRole` 在三個 mutation 點呼叫 `RegisterAppRole`——型別系統不強制，第四條忘記呼叫的 mutation 路徑會重現同類 bug。
@@ -100,10 +100,6 @@
 
 ## 四、需要調整的功能設計 / 品質問題
 
-### 🔴 D1. `configs/settings.json` 有 typo 且與部署設定不一致
-- **親自複核**：`backend/configs/settings.json` 有正確的 `"model": "google/gemma-4-12b-it"`（第 6 行），但也留了一個 stray key `"model1"`（第 5 行，無作用的殘留）。**subagent 原本說「fs.Model 永遠是空」是過度解讀——實際 `model` 有值**。真正問題：檔案 `provider: vllm` 與部署 `AI_PROVIDER=googleapis`（`deploy-cloudrun.yml`）不一致；本機沒設 `AI_PROVIDER` 時會靜默 fallback 到 `vllm`（指向外部 `https://vllm.e-gps.tw`）。
-- **修法**：刪掉 `model1` 殘留 key；把 checked-in 的預設 provider 改成安全的 `mock`（新開發者會照抄這個檔案）。
-
 ### 🟠 F1. SDK 無限重連無斷路器/終端狀態
 - **位置**：`packages/bridge/src/client.ts:138-144`——`scheduleReconnect` 永遠重試（backoff 封頂 10s），無法區分暫時性斷線 vs 致命狀況（key 錯/被撤銷/app 被刪/appId 錯）。stale 分頁會每 10s 無限敲後端（本 session 實際觀察到）。無回呼告訴嵌入方「這連線已永久死掉」。
 - **修法**：加 max-attempt/max-elapsed 上限＋獨立終端狀態，透過新回呼（如 `onDisconnected(permanent)`）曝露；分頁 hidden 時暫停/減速重連。
@@ -111,10 +107,6 @@
 ### 🟠 F2. SDK 吞掉 WS close/error code，auth 失敗看起來跟斷線一樣
 - **位置**：`client.ts:126-135`——close handler 完全忽略 `event.code`/`reason`，error 是純 no-op。撤銷 key 產生的 auth 拒絕 close 與暫時性斷線無法區分，兩者都無限重試、零信號。
 - **修法**：檢查 `ev.code`，把 4xxx auth 類 code 當終端、停止重試（需先確認 `internal/ws` 實際用什麼 code 關閉）。
-
-### ✅ E1. `examples/analysis/vite.config.js` 出廠即壞 —— 已解決
-- **位置**（修法當時，路徑已隨目錄扁平化更新）：`examples/analysis/vite.config.js:1-6`——import 了 `laravel-vite-plugin`、`./multiHtmlPlugin.js`、`./devMockPlugin.js`，這三個在此目錄**都不存在**（Laravel 專案抽取殘留）。這正是 `npm run build`/`watch` 實際呼叫的檔案——**範例自己的 build 出廠就 crash**，只有 `npm run dev`（指向 `vite.dev.config.js`）能動。連同它唯一引用者 `analysis.js`（import 路徑本身也對不上、指向的 `Census.vue`/`CensusInfo.vue` 兩層斷鏈，還打一個已移除後端的 `allCensus` API）一起，確認整條路徑在目前 repo 從未真正執行過。
-- **解法**：`vite.config.js`、`analysis.js`、`Census.vue` 三個檔案已直接刪除（`multiHtmlPlugin.js`/`devMockPlugin.js` 原本就不存在，無需另外處理）。`build`/`watch`/`preview` 目前仍是舊的、指向已刪設定的 script，尚未重新接上 `vite.dev.config.js` 變體 —— 若要讓 `npm run build` 真正可用，仍是待辦。
 
 ### 🟠 E2. `select_question` schema 在 live YAML 與範例 YAML 之間漂移（活的行為 bug）
 - **位置**：`backend/tools/analysis-app.yaml`（實際載入的）**沒有** `required` array；`examples/analysis/frontend/tools.yaml`（本 session 已補 `required: [selected]`）的修正**沒有同步進 backend live 副本**。
