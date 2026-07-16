@@ -178,5 +178,5 @@ func randomToken() (string, error) {
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
-	return "atp_" + base64.RawURLEncoding.EncodeToString(buf), nil
+	return "onagent_" + base64.RawURLEncoding.EncodeToString(buf), nil
 }
