@@ -53,5 +53,22 @@ export interface AssistantMessagePayload {
 
 export interface ErrorPayload {
   message: string;
+  /**
+   * Machine-readable reason, set only when the SDK is expected to branch on
+   * it rather than parse `message`. See ErrorCode. Most errors omit it.
+   */
   code?: string;
 }
+
+/**
+ * Known values for ErrorPayload.code. Mirrors the backend's
+ * protocol.Code* constants (internal/protocol/message.go).
+ */
+export const ErrorCode = {
+  /**
+   * The app owner has used their whole prompt allowance for the current
+   * billing period. The connection stays open (upgrade and keep going), so
+   * this arrives once per rejected prompt, not as a socket close.
+   */
+  QuotaExceeded: "quota_exceeded",
+} as const;

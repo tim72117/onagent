@@ -1,3 +1,4 @@
+import { ErrorCode } from "./protocol.js";
 import type {
   AckPayload,
   AssistantMessagePayload,
@@ -41,6 +42,16 @@ export interface AgentBridgeOptions {
   onAssistantMessage?: (text: string) => void;
   /** Called on protocol/inference errors not tied to a specific call. */
   onError?: (err: ErrorPayload) => void;
+  /**
+   * Called when a prompt is refused because the app owner has hit their
+   * monthly quota (the backend sends an error with code
+   * ErrorCode.QuotaExceeded). Use it to show an upgrade prompt. The
+   * connection is NOT closed — once the plan is upgraded, further prompts on
+   * the same connection work again. If this handler is set, onError is NOT
+   * also called for a quota error; if it is unset, the quota error falls
+   * through to onError like any other.
+   */
+  onQuotaExceeded?: (err: ErrorPayload) => void;
   /** Reconnect backoff bounds, in ms. Defaults: 500ms .. 10s. */
   minBackoffMs?: number;
   maxBackoffMs?: number;
@@ -172,9 +183,19 @@ export class AgentBridge {
           (env.payload as AssistantMessagePayload).text
         );
         break;
-      case "error":
-        this.opts.onError?.(env.payload as ErrorPayload);
+      case "error": {
+        const err = env.payload as ErrorPayload;
+        // A quota rejection routes to its dedicated handler if the developer
+        // set one, so they can show an upgrade UI without string-matching
+        // the message. Falls through to onError when onQuotaExceeded is
+        // unset, so a developer who doesn't care still sees it as an error.
+        if (err.code === ErrorCode.QuotaExceeded && this.opts.onQuotaExceeded) {
+          this.opts.onQuotaExceeded(err);
+        } else {
+          this.opts.onError?.(err);
+        }
         break;
+      }
     }
   }
 

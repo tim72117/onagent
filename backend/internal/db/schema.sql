@@ -111,3 +111,87 @@ CREATE TABLE IF NOT EXISTS tools (
 -- needs its own idempotent migration here — this runs on every startup
 -- (see internal/db.Open), so it must stay safe to re-run indefinitely.
 ALTER TABLE tools ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'action';
+
+-- Subscription tier + billing-cycle anchor per user. One row per user,
+-- written at signup (session.Register) with just a tier; readers still
+-- treat a missing row as the default (free) tier so a user created before
+-- this table existed, or by any path that skips the insert, is never
+-- rejected for lack of a row. The prompt allowance is NOT stored here — it
+-- is derived from the tier's plan at query time (internal/quota.PlanFor),
+-- so changing a plan's number applies to every user on that tier with no
+-- migration. monthly_quota is an OPTIONAL per-user override (NULL for
+-- almost everyone) that wins over the plan value when set — the manual
+-- "grant this one user more" lever. Period boundaries are DERIVED from
+-- started_at at query time, not reset by a scheduled job — that is what
+-- avoids a reset-boundary race on a mutable counter.
+CREATE TABLE IF NOT EXISTS subscriptions (
+    user_id       BIGINT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    tier          TEXT NOT NULL DEFAULT 'free', -- 'free' | 'pro' | ... ; free text, not an enum, so a new tier needs no migration
+    monthly_quota INTEGER,                       -- OPTIONAL per-user override of the tier plan's allowance; NULL = use the plan value (internal/quota.PlanFor)
+    started_at    TIMESTAMPTZ NOT NULL DEFAULT now(), -- billing-cycle anchor: the "day of month" this user's period boundary is computed from, mirroring Stripe's billing_cycle_anchor
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- monthly_quota was NOT NULL in the table's first version (it held the
+-- actual allowance). It's now an optional override, so relax the constraint
+-- for databases created under the old definition. Idempotent: DROP NOT NULL
+-- is a no-op if the column is already nullable.
+ALTER TABLE subscriptions ALTER COLUMN monthly_quota DROP NOT NULL;
+
+-- Append-only usage ledger: one row per billable event (today, one
+-- WebSocket `prompt` that reached inference.Service.Complete). Current
+-- usage for a period is always COMPUTED from this table
+-- (COUNT(*) WHERE app_id IN owner's apps AND created_at >= period_start),
+-- never kept as a running counter — see the design doc (section 3) for why
+-- this sidesteps the reset-boundary race a mutable counter would need to
+-- guard against.
+CREATE TABLE IF NOT EXISTS usage_events (
+    id         BIGSERIAL PRIMARY KEY,
+    app_id     TEXT NOT NULL REFERENCES apps (app_id) ON DELETE CASCADE, -- attribution matches inference.Request.AppID, already threaded through ws.Session.handlePrompt
+    event_id   TEXT NOT NULL,                   -- caller-supplied idempotency key (the WebSocket RequestID); prevents double-counting on retry, mirroring Stripe's meter event identifier
+    kind       TEXT NOT NULL DEFAULT 'prompt',  -- 'prompt' today; room for 'tool_call' or token-based units later without a schema change
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Idempotency: the same event_id must never be counted twice, even if a
+-- client retries a request whose response it never saw (e.g. a dropped
+-- WebSocket write). Scoped per-app rather than globally unique, matching
+-- how RequestID is only unique within one session/app's own traffic.
+CREATE UNIQUE INDEX IF NOT EXISTS usage_events_app_id_event_id_idx
+    ON usage_events (app_id, event_id);
+
+-- The query this whole design exists to make fast: "how much has this app
+-- used since some timestamp." Every enforcement point (ws.Handler.ServeHTTP
+-- at handshake, ws.Session.handlePrompt per message) filters on exactly
+-- these two columns together.
+CREATE INDEX IF NOT EXISTS usage_events_app_id_created_at_idx
+    ON usage_events (app_id, created_at);
+
+-- ── Admin back-office (internal/adminauth, apps/admin) ────────────────────
+-- The admin console is a DELIBERATELY SEPARATE system from the developer-
+-- facing accounts above. admin_users is its own identity table, unrelated
+-- to users: an admin is not a users row with a flag, so no vulnerability in
+-- the public users/session flow can ever escalate into admin access. The
+-- first admin is seeded from ADMIN_BOOTSTRAP_EMAIL/PASSWORD at startup (see
+-- main.go); there is no API path that promotes a user to admin.
+CREATE TABLE IF NOT EXISTS admin_users (
+    id            BIGSERIAL PRIMARY KEY,
+    email         TEXT NOT NULL,
+    password_hash TEXT NOT NULL, -- bcrypt, same scheme as users.password_hash
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS admin_users_email_lower_idx ON admin_users (lower(email));
+
+-- Admin browser sessions, separate from the developer `sessions` table and
+-- carried in a separate cookie (adminauth.CookieName = "admin_session") so
+-- the two session systems never overlap: holding a developer session grants
+-- nothing here, and vice versa.
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    id            TEXT PRIMARY KEY, -- opaque random token; also the cookie value
+    admin_user_id BIGINT NOT NULL REFERENCES admin_users (id) ON DELETE CASCADE,
+    expires_at    TIMESTAMPTZ NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS admin_sessions_admin_user_id_idx ON admin_sessions (admin_user_id);

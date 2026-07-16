@@ -15,6 +15,7 @@ import (
 	"github.com/tim72117/agent/internal/codegen"
 	"github.com/tim72117/agent/internal/inference"
 	"github.com/tim72117/agent/internal/protocol"
+	"github.com/tim72117/agent/internal/quota"
 	"github.com/tim72117/agent/internal/toolschema"
 )
 
@@ -30,6 +31,7 @@ type Session struct {
 	conn  *websocket.Conn
 	apps  *toolschema.Registry
 	infer inference.Service
+	quota *quota.Service // nil disables quota enforcement (see quota.Service)
 	log   *slog.Logger
 	// authAppID is the appId the WebSocket handshake was verified against
 	// (ws.Handler.Auth), or "" if auth is disabled. When set, it overrides
@@ -47,12 +49,13 @@ type Session struct {
 // its read/write pumps. It blocks until the connection closes. authAppID is
 // the server-verified appId from the handshake (empty when auth is
 // disabled); see Session.authAppID.
-func NewSession(ctx context.Context, conn *websocket.Conn, apps *toolschema.Registry, infer inference.Service, log *slog.Logger, authAppID string) {
+func NewSession(ctx context.Context, conn *websocket.Conn, apps *toolschema.Registry, infer inference.Service, log *slog.Logger, authAppID string, quotaSvc *quota.Service) {
 	s := &Session{
 		id:           randomID(),
 		conn:         conn,
 		apps:         apps,
 		infer:        infer,
+		quota:        quotaSvc,
 		log:          log,
 		authAppID:    authAppID,
 		pendingCalls: make(map[string]chan protocol.ToolResultPayload),
@@ -209,6 +212,23 @@ func (s *Session) handlePrompt(ctx context.Context, env protocol.Envelope) {
 		return
 	}
 
+	// Per-prompt quota gate, checked right before the call that actually
+	// costs money (inference). This is what stops a long-lived connection
+	// that passed the handshake check from overrunning its allowance as the
+	// period fills up. The connection is NOT closed on rejection — the user
+	// can upgrade their plan and keep using this same session — so the
+	// refusal is a coded error on this one prompt (SDK branches on
+	// protocol.CodeQuotaExceeded). A DB error is fail-open (log and allow),
+	// matching the handshake: a database blip must not block a paying user.
+	if dec, err := s.quota.Check(ctx, app.AppID); err != nil {
+		s.log.Warn("quota check failed, allowing (fail-open)", "session", s.id, "app", app.AppID, "err", err)
+	} else if !dec.Allowed {
+		s.log.Info("prompt rejected: over quota", "session", s.id, "app", app.AppID, "used", dec.Used, "limit", dec.Limit)
+		s.sendErrorCode(env.RequestID,
+			"monthly prompt quota exceeded for this app's plan", protocol.CodeQuotaExceeded)
+		return
+	}
+
 	result, err := s.infer.Complete(ctx, inference.Request{
 		Prompt:    p.Text,
 		Tools:     codegen.ToLLMTools(app),
@@ -218,6 +238,17 @@ func (s *Session) handlePrompt(ctx context.Context, env protocol.Envelope) {
 	if err != nil {
 		s.sendError(env.RequestID, "inference error: "+err.Error())
 		return
+	}
+
+	// Record usage only after inference succeeded — a failed call cost no
+	// billable LLM turn, so it must not consume quota. event_id is the
+	// prompt's RequestID, making the insert idempotent (quota.Record uses
+	// ON CONFLICT DO NOTHING): a client that retries the same RequestID
+	// after a dropped response is not charged twice. Recording failure is
+	// logged but not surfaced to the user — the work already happened; the
+	// worst case is one uncounted prompt, which favors the user.
+	if err := s.quota.Record(ctx, app.AppID, env.RequestID); err != nil {
+		s.log.Warn("failed to record usage event", "session", s.id, "app", app.AppID, "err", err)
 	}
 
 	for _, tc := range result.ToolCalls {
@@ -342,4 +373,11 @@ func (s *Session) send(typ protocol.MessageType, requestID string, payload any) 
 
 func (s *Session) sendError(requestID, message string) {
 	s.send(protocol.TypeError, requestID, protocol.ErrorPayload{Message: message})
+}
+
+// sendErrorCode is sendError plus a machine-readable Code the client SDK can
+// branch on (e.g. protocol.CodeQuotaExceeded) instead of matching on the
+// human-readable message text.
+func (s *Session) sendErrorCode(requestID, message, code string) {
+	s.send(protocol.TypeError, requestID, protocol.ErrorPayload{Message: message, Code: code})
 }

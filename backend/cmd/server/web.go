@@ -58,10 +58,13 @@ var landingFS embed.FS
 //go:embed all:web/console
 var consoleFS embed.FS
 
+//go:embed all:web/admin
+var adminFS embed.FS
+
 // placeholderMarker is a byte sequence unique to the checked-in placeholder
-// files (see cmd/server/web/{landing,console}/index.html) and never present
-// in a real Vite build's index.html. Used only to decide what to log at
-// startup — never affects request handling.
+// files (see cmd/server/web/{landing,console,admin}/index.html) and never
+// present in a real Vite build's index.html. Used only to decide what to
+// log at startup — never affects request handling.
 const placeholderMarker = "Placeholder only"
 
 // isPlaceholder reports whether sub (rooted at "landing" or "console"
@@ -111,16 +114,25 @@ func mountStatic(mux *http.ServeMux, log *slog.Logger) {
 		log.Error("static: bad console embed root", "err", err)
 		consoleRoot = consoleFS
 	}
+	adminRoot, err := fs.Sub(adminFS, "web/admin")
+	if err != nil {
+		// Can't happen: "web/admin" is a literal go:embed'd path.
+		log.Error("static: bad admin embed root", "err", err)
+		adminRoot = adminFS
+	}
 
 	landingReal := !isPlaceholder(landingRoot)
 	consoleReal := !isPlaceholder(consoleRoot)
+	adminReal := !isPlaceholder(adminRoot)
 	log.Info("embedded frontend static assets",
 		"landing", embedStatus(landingReal),
 		"console", embedStatus(consoleReal),
+		"admin", embedStatus(adminReal),
 	)
 
 	mountLanding(mux, landingRoot)
 	mountConsole(mux, consoleRoot, consoleReal)
+	mountAdmin(mux, adminRoot, adminReal)
 }
 
 func embedStatus(real bool) string {
@@ -181,4 +193,43 @@ func mountConsole(mux *http.ServeMux, root fs.FS, consoleReal bool) {
 
 	mux.Handle("/app", handler)
 	mux.Handle("/app/", handler)
+}
+
+// mountAdmin serves apps/admin's build at the "/admin" prefix with SPA
+// fallback, mirroring mountConsole. The admin API lives under /admin/api/*
+// (internal/adminconsole), which is more specific than the "/admin/"
+// subtree pattern here, so Go's ServeMux always routes API calls to the API
+// handler and only non-API /admin paths fall through to this static/SPA
+// handler. Nothing else in the app starts with "/admin", so this doesn't
+// overlap any other route.
+func mountAdmin(mux *http.ServeMux, root fs.FS, adminReal bool) {
+	fileServer := http.StripPrefix("/admin", http.FileServerFS(root))
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !adminReal {
+			// No real build embedded (local `go build`/`go run` without the
+			// Docker copy step) — serve the placeholder, which explains how
+			// to run the admin dev server, rather than pretending to be a
+			// working SPA.
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		upath := strings.TrimPrefix(r.URL.Path, "/admin")
+		upath = strings.TrimPrefix(upath, "/")
+		if upath != "" {
+			if f, err := root.Open(upath); err == nil {
+				_ = f.Close()
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+		}
+		// SPA fallback to /admin's index.html, keeping the requested URL
+		// intact (same rationale as mountConsole).
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		http.ServeFileFS(w, r, root, "index.html")
+	})
+
+	mux.Handle("/admin", handler)
+	mux.Handle("/admin/", handler)
 }

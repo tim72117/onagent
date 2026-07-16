@@ -13,12 +13,15 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
+	"github.com/tim72117/agent/internal/adminauth"
+	"github.com/tim72117/agent/internal/adminconsole"
 	"github.com/tim72117/agent/internal/auth"
 	"github.com/tim72117/agent/internal/cliauth"
 	"github.com/tim72117/agent/internal/codegen"
 	"github.com/tim72117/agent/internal/console"
 	"github.com/tim72117/agent/internal/db"
 	"github.com/tim72117/agent/internal/inference"
+	"github.com/tim72117/agent/internal/quota"
 	"github.com/tim72117/agent/internal/session"
 	"github.com/tim72117/agent/internal/toolschema"
 	"github.com/tim72117/agent/internal/usertoken"
@@ -94,6 +97,38 @@ func main() {
 	tokenStore := usertoken.New(conn)
 	cliAuthStore := cliauth.New(conn)
 
+	// Monthly prompt quota, enforced at the WebSocket handshake and per
+	// prompt (see internal/quota, ws.Handler, ws.Session). Backed by the
+	// same DB as everything else here; this server always has one, so quota
+	// is always on. (The nil-Service "disabled" mode exists for callers with
+	// no database — e.g. tests — not for this path.)
+	quotaSvc := quota.New(conn)
+
+	// Admin back-office identity (internal/adminauth), a system deliberately
+	// separate from the developer accounts above: its own tables, its own
+	// cookie. cookieSecure is set further down for the developer session; the
+	// admin store shares the same HTTPS/plain-HTTP decision, so read it here
+	// via the same env the developer session uses below.
+	adminSecure := envOr("COOKIE_SECURE", "false") == "true"
+	adminAuthStore := adminauth.New(conn, adminSecure)
+
+	// Seed the first admin from the environment — the ONLY way an admin comes
+	// into being (there is no admin-signup endpoint), so the trust root is
+	// whoever controls the deployment's env, never an API caller. No-op when
+	// the vars are unset or the admin already exists. In production, require
+	// the bootstrap vars so a deploy can never come up with an admin console
+	// that has no way to log in.
+	if created, err := adminAuthStore.Bootstrap(os.Getenv("ADMIN_BOOTSTRAP_EMAIL"), os.Getenv("ADMIN_BOOTSTRAP_PASSWORD")); err != nil {
+		log.Error("admin bootstrap failed", "err", err)
+		os.Exit(1)
+	} else if created {
+		log.Info("bootstrapped first admin from ADMIN_BOOTSTRAP_EMAIL")
+	}
+	if isProd && adminAuthStore.Count() == 0 {
+		log.Error("APP_ENV=production but no admin exists and ADMIN_BOOTSTRAP_EMAIL/PASSWORD were not set; refusing to start an admin console no one can log into")
+		os.Exit(1)
+	}
+
 	// wsAuth == nil is what tells ws.Handler to skip verification entirely
 	// (see Handler.ServeHTTP) — appropriate only when literally no app can
 	// have a key yet. Since the console API is always on now (no ADMIN_TOKEN
@@ -120,9 +155,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Where the admin SPA (apps/admin) is served from, for the credentialed
+	// CORS on /admin/api/*. Defaults to a local dev port distinct from the
+	// console's (5173) so both dev servers can run at once. In production the
+	// admin SPA is served same-origin from /admin, so a cross-origin allow is
+	// only strictly needed in dev — but requiring it in prod would break any
+	// deployment that does serve the admin console from a separate domain, so
+	// it's left optional and simply merged into the credentialed-CORS allow
+	// set below.
+	adminOrigins := parseOrigins(envOr("ADMIN_ORIGIN", "http://localhost:5174"))
+
+	// Credentialed CORS (see withCORS) must allow the developer app origins,
+	// the console origin, AND the admin origin, since /console, /auth, and
+	// /admin all ride on cookies. WebSocket handshake origin enforcement
+	// stays on originChecker alone (developer apps only) — the console/admin
+	// UIs never open the developer /ws.
+	credentialedOrigins := anyOf(originChecker, allowlistChecker(consoleOrigins), allowlistChecker(adminOrigins))
+
 	inferSvc := newInferenceService(log, apps.All())
-	wsHandler := ws.NewHandler(apps, inferSvc, log, originChecker, wsAuth)
-	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore, inferSvc, consoleOrigins)
+	wsHandler := ws.NewHandler(apps, inferSvc, log, originChecker, wsAuth, quotaSvc)
+	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore, inferSvc, quotaSvc, consoleOrigins)
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", wsHandler)
@@ -133,6 +185,11 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 	consoleHandler.Register(mux)
+
+	// Admin back-office API under /admin/api/* — a separate handler and
+	// identity system from the developer console above (internal/adminauth).
+	adminHandler := adminconsole.NewHandler(adminAuthStore, quotaSvc)
+	adminHandler.Register(mux)
 
 	// Static frontend hosting (apps/landing at "/", apps/console at "/app"
 	// with SPA fallback) — registered last, after every API route above,
@@ -145,7 +202,7 @@ func main() {
 
 	addr := envOr("ADDR", ":8080")
 	log.Info("listening", "addr", addr)
-	if err := http.ListenAndServe(addr, withCORS(mux, originChecker)); err != nil {
+	if err := http.ListenAndServe(addr, withCORS(mux, credentialedOrigins)); err != nil {
 		log.Error("server exited", "err", err)
 		os.Exit(1)
 	}
@@ -203,7 +260,12 @@ func handleToolTypeScript(apps *toolschema.Registry) http.HandlerFunc {
 func withCORS(next http.Handler, allowedOrigins ws.OriginChecker) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		credentialed := strings.HasPrefix(r.URL.Path, "/console/") || strings.HasPrefix(r.URL.Path, "/auth/")
+		// /admin/api/* is credentialed too (admin session cookie), so it
+		// must go through the allowlisted, credentials-true branch — never
+		// the "*" branch, which browsers refuse to combine with credentials.
+		credentialed := strings.HasPrefix(r.URL.Path, "/console/") ||
+			strings.HasPrefix(r.URL.Path, "/auth/") ||
+			strings.HasPrefix(r.URL.Path, "/admin/")
 
 		switch {
 		case credentialed:
@@ -310,5 +372,19 @@ func allowlistChecker(allowed []string) ws.OriginChecker {
 	}
 	return func(origin string) bool {
 		return set[origin]
+	}
+}
+
+// anyOf combines origin checkers with OR: an origin is allowed if any of
+// them allows it. Used to build the credentialed-CORS allow set from the
+// developer app allowlist plus the console and admin origins.
+func anyOf(checkers ...ws.OriginChecker) ws.OriginChecker {
+	return func(origin string) bool {
+		for _, c := range checkers {
+			if c != nil && c(origin) {
+				return true
+			}
+		}
+		return false
 	}
 }

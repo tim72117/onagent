@@ -7,6 +7,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/tim72117/agent/internal/auth"
 	"github.com/tim72117/agent/internal/inference"
+	"github.com/tim72117/agent/internal/quota"
 	"github.com/tim72117/agent/internal/toolschema"
 )
 
@@ -25,7 +26,8 @@ type Handler struct {
 	Inference      inference.Service
 	Log            *slog.Logger
 	AllowedOrigins OriginChecker
-	Auth           *auth.Store // nil disables auth: any appId is accepted, dev/mock mode only
+	Auth           *auth.Store    // nil disables auth: any appId is accepted, dev/mock mode only
+	Quota          *quota.Service // nil disables quota enforcement (see quota.Service); handshake and per-prompt checks become no-ops
 
 	upgrader websocket.Upgrader
 }
@@ -39,13 +41,14 @@ type OriginChecker func(origin string) bool
 // by each developer app's registered domains.
 func AllowAllOrigins(string) bool { return true }
 
-func NewHandler(apps *toolschema.Registry, infer inference.Service, log *slog.Logger, allowed OriginChecker, authStore *auth.Store) *Handler {
+func NewHandler(apps *toolschema.Registry, infer inference.Service, log *slog.Logger, allowed OriginChecker, authStore *auth.Store, quotaSvc *quota.Service) *Handler {
 	h := &Handler{
 		Apps:           apps,
 		Inference:      infer,
 		Log:            log,
 		AllowedOrigins: allowed,
 		Auth:           authStore,
+		Quota:          quotaSvc,
 	}
 	h.upgrader = websocket.Upgrader{
 		ReadBufferSize:  4096,
@@ -120,6 +123,23 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		appID = result.AppID
+
+		// Cheap early gate: refuse to even upgrade the connection if this
+		// app's owner is already over quota, so an exhausted account can't
+		// keep opening fresh sockets. This is the "handshake" half of the
+		// two-point enforcement — Session.handlePrompt is the other half,
+		// covering a connection that runs out mid-session (see its comment).
+		// A DB error here is treated as fail-open (log and allow): a
+		// transient database blip must not lock legitimate users out at the
+		// front door. 429 mirrors how HTTP APIs report rate/quota limits;
+		// the SDK sees the handshake fail and its onError/reconnect path runs.
+		if dec, err := h.Quota.Check(r.Context(), appID); err != nil {
+			h.Log.Warn("ws handshake: quota check failed, allowing (fail-open)", "appId", appID, "err", err)
+		} else if !dec.Allowed {
+			h.Log.Info("ws handshake rejected: owner over quota", "appId", appID, "used", dec.Used, "limit", dec.Limit)
+			http.Error(w, "monthly quota exceeded for this app's plan", http.StatusTooManyRequests)
+			return
+		}
 	}
 
 	conn, err := h.upgrader.Upgrade(w, r, nil)
@@ -127,5 +147,5 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Log.Info("ws upgrade rejected", "err", err, "origin", r.Header.Get("Origin"))
 		return
 	}
-	NewSession(r.Context(), conn, h.Apps, h.Inference, h.Log, appID)
+	NewSession(r.Context(), conn, h.Apps, h.Inference, h.Log, appID, h.Quota)
 }

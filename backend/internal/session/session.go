@@ -19,6 +19,8 @@ import (
 
 	"github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/tim72117/agent/internal/quota"
 )
 
 // CookieName is the cookie the console API's session id travels in. httpOnly
@@ -77,8 +79,20 @@ func (s *Store) Register(email, password string) (*User, error) {
 		return nil, fmt.Errorf("session: hash password: %w", err)
 	}
 
+	// The user row and its free-tier subscription row are created together
+	// in one transaction: a signup that left a user without a subscription
+	// row would still work (internal/quota treats a missing row as the free
+	// tier), but writing it here keeps subscriptions 1:1 with users on the
+	// happy path and gives billing a row to later UPDATE in place. All-or-
+	// nothing avoids a half-created account if the second insert fails.
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("session: begin tx: %w", err)
+	}
+	defer tx.Rollback() // no-op after a successful Commit
+
 	var id int64
-	err = s.db.QueryRow(
+	err = tx.QueryRow(
 		`INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id`,
 		email, string(hash),
 	).Scan(&id)
@@ -87,6 +101,25 @@ func (s *Store) Register(email, password string) (*User, error) {
 			return nil, ErrEmailTaken
 		}
 		return nil, fmt.Errorf("session: insert user: %w", err)
+	}
+
+	// Start every account on the default tier. The actual allowance is NOT
+	// stored on the row — internal/quota derives it from the tier's plan at
+	// check time (quota.PlanFor), so a plan's number can change without
+	// touching existing rows. monthly_quota is left NULL: it's an optional
+	// per-user override, not the source of the limit. started_at and tier
+	// both have schema defaults, but tier is set explicitly here so the
+	// account's plan is unambiguous from the row itself.
+	_, err = tx.Exec(
+		`INSERT INTO subscriptions (user_id, tier) VALUES ($1, $2)`,
+		id, string(quota.DefaultTier),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("session: insert subscription: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("session: commit signup: %w", err)
 	}
 
 	return &User{ID: id, Email: email}, nil

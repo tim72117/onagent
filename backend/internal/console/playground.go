@@ -188,6 +188,20 @@ func (h *Handler) playgroundWS(w http.ResponseWriter, r *http.Request, user *ses
 			continue
 		}
 
+		// Playground prompts count against the owner's quota like real
+		// traffic: an owner testing their own app is still driving real
+		// inference cost. Check before the paid call; a DB error here is
+		// fail-open (fall through and allow), matching ws.Session — a
+		// database blip must not block an owner from testing. The event_id
+		// is namespaced by sessionID ("PG-<userID>-<appID>") so a playground
+		// prompt and a real end-user prompt that happen to share a RequestID
+		// don't collide on the (app_id, event_id) idempotency key and
+		// wrongly cancel each other out.
+		if dec, err := h.Quota.Check(ctx, app.AppID); err == nil && !dec.Allowed {
+			sendError(env.RequestID, "monthly prompt quota exceeded for this app's plan")
+			continue
+		}
+
 		result, err := h.Inference.Complete(ctx, inference.Request{
 			Prompt:    p.Text,
 			Tools:     codegen.ToLLMTools(app),
@@ -198,6 +212,11 @@ func (h *Handler) playgroundWS(w http.ResponseWriter, r *http.Request, user *ses
 			sendError(env.RequestID, "inference error: "+err.Error())
 			continue
 		}
+
+		// Best-effort: an uncounted playground prompt (record failed) favors
+		// the user and never blocks the response that already happened. This
+		// package keeps no logger, matching the rest of playground.go.
+		_ = h.Quota.Record(ctx, app.AppID, sessionID+":"+env.RequestID)
 
 		for _, tc := range result.ToolCalls {
 			payload, _ := json.Marshal(playgroundToolCallPayload{ToolName: tc.ToolName, Args: tc.Args})

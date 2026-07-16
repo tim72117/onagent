@@ -103,3 +103,16 @@ type ErrorPayload struct {
 	Message string `json:"message"`
 	Code    string `json:"code,omitempty"`
 }
+
+// Error codes for ErrorPayload.Code. Most errors leave Code empty (a
+// human-readable Message is enough); a code is set only when the client SDK
+// is expected to branch on the reason programmatically rather than parse
+// Message text.
+const (
+	// CodeQuotaExceeded means the app owner has used their whole prompt
+	// allowance for the current billing period. The connection stays open —
+	// the user can upgrade and keep using the same session — so this is
+	// reported per rejected prompt, not by closing the socket. See
+	// internal/quota and docs/subscription-usage-quota-design.md.
+	CodeQuotaExceeded = "quota_exceeded"
+)

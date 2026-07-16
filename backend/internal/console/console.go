@@ -27,6 +27,7 @@ import (
 	"github.com/tim72117/agent/internal/auth"
 	"github.com/tim72117/agent/internal/cliauth"
 	"github.com/tim72117/agent/internal/inference"
+	"github.com/tim72117/agent/internal/quota"
 	"github.com/tim72117/agent/internal/session"
 	"github.com/tim72117/agent/internal/toolschema"
 	"github.com/tim72117/agent/internal/usertoken"
@@ -40,6 +41,7 @@ type Handler struct {
 	Tokens    *usertoken.Store
 	CliAuth   *cliauth.Store
 	Inference inference.Service // used only by playground.go's test-prompt endpoint
+	Quota     *quota.Service    // nil disables enforcement; playground prompts count against the owner's quota like real traffic
 	// ConsoleOrigins is the set of origins the console front-end itself is
 	// served from (e.g. http://localhost:5173 in dev). Used only by
 	// playground.go to accept the Playground WebSocket's cross-origin
@@ -50,8 +52,8 @@ type Handler struct {
 	ConsoleOrigins []string
 }
 
-func NewHandler(apps *toolschema.Registry, authStore *auth.Store, sessionStore *session.Store, tokenStore *usertoken.Store, cliAuthStore *cliauth.Store, inferSvc inference.Service, consoleOrigins []string) *Handler {
-	return &Handler{Apps: apps, Auth: authStore, Session: sessionStore, Tokens: tokenStore, CliAuth: cliAuthStore, Inference: inferSvc, ConsoleOrigins: consoleOrigins}
+func NewHandler(apps *toolschema.Registry, authStore *auth.Store, sessionStore *session.Store, tokenStore *usertoken.Store, cliAuthStore *cliauth.Store, inferSvc inference.Service, quotaSvc *quota.Service, consoleOrigins []string) *Handler {
+	return &Handler{Apps: apps, Auth: authStore, Session: sessionStore, Tokens: tokenStore, CliAuth: cliAuthStore, Inference: inferSvc, Quota: quotaSvc, ConsoleOrigins: consoleOrigins}
 }
 
 // syncWantRole re-registers appID's want agent role (tool whitelist +

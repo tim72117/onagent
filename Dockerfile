@@ -33,6 +33,16 @@ COPY apps/console/ ./
 # 移除自訂 outDir,回歸 dist,不再需要在這裡用 CLI flag 覆蓋。)
 RUN npm run build
 
+# ---- 階段 2b:build admin 後台前端 ----
+# 獨立的 apps/admin SPA(系統管理員後台),跟 console 一樣 build 進預設 dist,
+# 之後複製進 backend/cmd/server/web/admin/(go:embed 目標)。
+FROM node:22-alpine AS admin-build
+WORKDIR /web
+COPY apps/admin/package.json apps/admin/package-lock.json ./
+RUN npm ci
+COPY apps/admin/ ./
+RUN npm run build
+
 # ---- 階段 3:編譯 Go ----
 FROM golang:1.26 AS build
 
@@ -54,9 +64,10 @@ COPY backend/ /src/backend/
 # cp -r apps/landing/dist/. backend/cmd/server/web/landing/ 等指令)。
 # 用 rm -rf 先清掉 checked-in 的 placeholder index.html,避免殘留檔案
 # 混進真正的 build 產物。
-RUN rm -rf /src/backend/cmd/server/web/landing/* /src/backend/cmd/server/web/console/*
+RUN rm -rf /src/backend/cmd/server/web/landing/* /src/backend/cmd/server/web/console/* /src/backend/cmd/server/web/admin/*
 COPY --from=landing-build /web/dist/. /src/backend/cmd/server/web/landing/
 COPY --from=console-build /web/dist/. /src/backend/cmd/server/web/console/
+COPY --from=admin-build /web/dist/. /src/backend/cmd/server/web/admin/
 
 # 靜態編譯:關 CGO 產出不依賴 libc 的單一執行檔,可放進極小的 base image。
 RUN cd /src/backend && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
