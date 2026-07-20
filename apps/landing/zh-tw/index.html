@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>onagent — give your website an AI assistant</title>
+  <title>onagent — 讓你的網站長出 AI 助手</title>
   <meta
     name="description"
-    content="Define a few tools and the platform generates the LLM schema and TypeScript types for you; embed one browser SDK snippet and AI can drive your page directly with natural language — filling forms, navigating, clicking buttons."
+    content="定義幾個 tool，平台自動產生 LLM schema 與 TypeScript 型別；嵌入一段瀏覽器 SDK，AI 就能用自然語言直接操作你的頁面——填表單、跳頁、點按鈕。"
   />
   <style>
     :root {
@@ -28,7 +28,7 @@
       --shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.6);
       --shadow-glow: 0 0 0 1px rgba(201, 162, 75, 0.22), 0 24px 70px -24px rgba(201, 162, 75, 0.32);
       --max: 1160px;
-      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang TC', 'Microsoft JhengHei', sans-serif;
       --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
     }
     * { box-sizing: border-box; }
@@ -343,19 +343,19 @@
   <div class="bg-fx"></div>
   <div class="bg-grid"></div>
 
-  <!-- CONSOLE_URL: see the script below — relative path /app, same-origin to the embedded console (backend/cmd/server/web.go) -->
+  <!-- CONSOLE_URL 見下方 script：相對路徑 /app，同源指向內嵌的 console (backend/cmd/server/web.go) -->
 
   <header id="nav">
     <div class="wrap nav">
       <a class="brand" href="#top"><span class="mark">⌘</span>onagent</a>
       <nav class="nav-links">
-        <a href="#features">Features</a>
-        <a href="#how">How it works</a>
-        <a href="#cases">Examples</a>
-        <a href="/docs/">Docs</a>
-        <a class="lang-switch" href="/">中文</a>
+        <a href="#features">功能</a>
+        <a href="#how">運作方式</a>
+        <a href="#cases">範例</a>
+        <a href="/docs/">文件</a>
+        <a class="lang-switch" href="/">EN</a>
       </nav>
-      <a class="btn btn-primary" href="#" data-console>Open Console →</a>
+      <a class="btn btn-primary" href="#" data-console>開啟 Console →</a>
     </div>
   </header>
 
@@ -363,18 +363,17 @@
     <section class="hero">
       <div class="wrap hero-grid">
         <div class="reveal">
-          <span class="eyebrow"><span class="dot"></span>An AI integration platform built for developers</span>
-          <h1>In minutes,<br />give your website<br /><span class="g">an AI assistant.</span></h1>
+          <span class="eyebrow"><span class="dot"></span>為開發者打造的 AI 介接平台</span>
+          <h1>幾分鐘，<br />讓你的網站<br /><span class="g">長出 AI 助手。</span></h1>
           <p class="hero-sub">
-            Define a few tools and the platform generates the LLM schema and TypeScript types for you;
-            embed one browser SDK snippet and AI can drive your page directly with natural language —
-            filling forms, navigating, clicking buttons.
+            定義幾個 tool，平台自動產生 LLM schema 與 TypeScript 型別；嵌入一段瀏覽器 SDK，AI
+            就能用自然語言直接操作你的頁面——填表單、跳頁、點按鈕。
           </p>
           <div class="hero-cta">
-            <a class="btn btn-primary btn-lg" href="#" data-console>Open Console</a>
-            <a class="btn btn-ghost btn-lg" href="#how">See a 3-step example ↓</a>
+            <a class="btn btn-primary btn-lg" href="#" data-console>開啟 Console</a>
+            <a class="btn btn-ghost btn-lg" href="#how">看 3 步驟範例 ↓</a>
           </div>
-          <div class="hero-note">No key needed for local dev · <code>npm install</code> to wire up the SDK · type-safe front-end code</div>
+          <div class="hero-note">本機開發免金鑰 · <code>npm install</code> 接上 SDK · 型別安全的前端程式碼</div>
         </div>
 
         <div class="reveal">
@@ -397,9 +396,9 @@
               </div>
               <div class="mock-page">
                 <div class="mock-list">
-                  <label class="mock-item"><span class="mock-check"></span>White Sneakers<span class="mock-price">NT$1,200</span></label>
-                  <label class="mock-item" id="mock-item-target"><span class="mock-check"></span>Red Sneakers<span class="mock-price">NT$1,350</span></label>
-                  <label class="mock-item"><span class="mock-check"></span>Blue Sneakers<span class="mock-price">NT$1,180</span></label>
+                  <label class="mock-item"><span class="mock-check"></span>白色運動鞋<span class="mock-price">NT$1,200</span></label>
+                  <label class="mock-item" id="mock-item-target"><span class="mock-check"></span>紅色運動鞋<span class="mock-price">NT$1,350</span></label>
+                  <label class="mock-item"><span class="mock-check"></span>藍色運動鞋<span class="mock-price">NT$1,180</span></label>
                 </div>
                 <div class="mock-input">
                   <span id="mock-input-text"></span><span class="mock-caret"></span>
@@ -416,24 +415,24 @@
       <div class="wrap">
         <div class="sec-head reveal">
           <div class="sec-tag">Why onagent</div>
-          <h2>Everything you need to wire AI into your UI</h2>
-          <p>From tool definitions to type-safe front-end code and secure isolation, all in one place.</p>
+          <h2>把 AI 接進介面，該有的都幫你準備好</h2>
+          <p>從 tool 定義到型別安全的前端程式碼與安全隔離，一次到位。</p>
         </div>
         <div class="features">
           <div class="feature reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M4 8h10M8 4v4M4 16h10M8 12v4"/><circle cx="18" cy="8" r="2"/><circle cx="18" cy="16" r="2"/></svg></div>
-            <h3>Define once, get both</h3>
-            <p>One tool definition auto-generates the LLM's JSON schema and a type-safe TypeScript <code>ToolHandlers</code> interface — schema and front-end types never drift apart.</p>
+            <h3>一次定義，兩邊產出</h3>
+            <p>一份 tool 定義，自動生成 LLM 用的 JSON schema 與型別安全的 TypeScript <code>ToolHandlers</code> 介面——schema 與前端型別永不漂移。</p>
           </div>
           <div class="feature reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z"/></svg></div>
-            <h3>AI drives your UI directly</h3>
-            <p>Tool calls dispatch straight to the handler you registered: fill forms, navigate, check boxes, click buttons — not just a reply, but a real action.</p>
+            <h3>AI 直接操作你的介面</h3>
+            <p>tool call 會派發到你註冊的 handler：填表單、跳頁、勾選、點按鈕——不只是回一段文字，而是真的動起來。</p>
           </div>
           <div class="feature reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></div>
-            <h3>Per-app isolation & allowlisting</h3>
-            <p>Every API key resolves to its app on the server (the front end can't spoof it) and is bound to a single Origin — unset means fail-closed by default.</p>
+            <h3>逐 App 隔離與白名單</h3>
+            <p>每把 API key 由伺服器端解析對應的 app（前端無法偽造），並綁定單一 Origin，未設定時預設 fail-closed 拒絕連線。</p>
           </div>
         </div>
       </div>
@@ -443,8 +442,8 @@
       <div class="wrap">
         <div class="sec-head reveal">
           <div class="sec-tag">Ship in 3 steps</div>
-          <h2>Stand up an AI-powered feature in three steps</h2>
-          <p>Define a capability, push it to the platform, embed it in your front end — click a step on the left to see the actual code for it.</p>
+          <h2>三步驟，建立一個 AI 服務</h2>
+          <p>定義能力、推送到平台、嵌入前端——點左側步驟，看每一步實際的程式碼。</p>
         </div>
 
         <div class="how-grid reveal">
@@ -452,48 +451,48 @@
             <div class="steps" id="steps">
               <button class="step active" data-step="0">
                 <span class="step-num">01</span>
-                <span class="step-txt"><h3>Define a tool</h3><p>Describe a name, description, and parameters (JSON Schema) in one config file. This is the single source of truth.</p></span>
+                <span class="step-txt"><h3>定義一個 tool</h3><p>用一個設定檔描述名稱、說明與參數（JSON Schema）。這就是唯一的真相來源。</p></span>
               </button>
               <button class="step" data-step="1">
                 <span class="step-num">02</span>
-                <span class="step-txt"><h3>Push to the platform</h3><p>Sign in with the <code style="font-family:var(--mono);color:var(--accent-2)">onagent</code> CLI and upload; or edit directly in the console.</p></span>
+                <span class="step-txt"><h3>推送到平台</h3><p>用 <code style="font-family:var(--mono);color:var(--accent-2)">onagent</code> CLI 登入並上傳；或直接在 console 編輯。</p></span>
               </button>
               <button class="step" data-step="2">
                 <span class="step-num">03</span>
-                <span class="step-txt"><h3>Embed the front-end SDK</h3><p>Wire up your own handlers, push page state, and let AI operate your UI with a single sentence.</p></span>
+                <span class="step-txt"><h3>嵌入前端 SDK</h3><p>綁定你自己的 handler，推送頁面狀態，用一句話讓 AI 操作介面。</p></span>
               </button>
             </div>
-            <p class="how-note">↳ Once wired up, the AI picks a matching tool for each prompt — the SDK calls your handler and reports the result back to the model.</p>
+            <p class="how-note">↳ 完成後，AI 收到 prompt 時會挑選對應的 tool，SDK 幫你呼叫 handler、把結果回傳給模型。</p>
           </div>
 
           <div class="code-panel">
             <div class="code-top">
               <div class="code-file"><span class="fdot"></span><span id="fname">tools</span></div>
-              <button class="copy-btn" id="copy">Copy</button>
+              <button class="copy-btn" id="copy">複製</button>
             </div>
             <div class="code-body">
               <div class="code-pane active" data-pane="0">
 <pre><span class="t-key">appId</span><span class="t-punc">:</span> <span class="t-str">demo-app</span>
 <span class="t-key">tools</span><span class="t-punc">:</span>
   <span class="t-punc">-</span> <span class="t-key">name</span><span class="t-punc">:</span> <span class="t-str">fill_search_form</span>
-    <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">Fill the on-page search box and submit it.</span>
+    <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">填入頁面上的搜尋框並送出。</span>
     <span class="t-key">parameters</span><span class="t-punc">:</span>
       <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">object</span>
       <span class="t-key">required</span><span class="t-punc">:</span> <span class="t-punc">[</span><span class="t-str">query</span><span class="t-punc">]</span>
       <span class="t-key">properties</span><span class="t-punc">:</span>
         <span class="t-key">query</span><span class="t-punc">:</span>
           <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span>
-          <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">The keyword to search for.</span></pre>
+          <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">要搜尋的關鍵字。</span></pre>
               </div>
               <div class="code-pane" data-pane="1">
-<pre><span class="t-com"># Sign in (opens a browser to authorize; the URL only carries a one-time code)</span>
+<pre><span class="t-com"># 登入（會開瀏覽器授權，網址只帶一個一次性代碼）</span>
 <span class="t-prompt">$</span> onagent login <span class="t-kw">--web</span>
 
-<span class="t-com"># Push your tool definitions</span>
+<span class="t-com"># 把 tool 定義推上去</span>
 <span class="t-prompt">$</span> onagent save-tools demo-app tools
 <span class="t-ok">✓</span> Saved 1 tool to <span class="t-str">"demo-app"</span>
 
-<span class="t-com"># List your apps any time</span>
+<span class="t-com"># 隨時列出你的 app</span>
 <span class="t-prompt">$</span> onagent list-apps
 demo-app        1 tool, has key</pre>
               </div>
@@ -509,7 +508,7 @@ demo-app        1 tool, has key</pre>
   <span class="t-punc">},</span>
 <span class="t-punc">});</span>
 
-bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class="t-str">"search for red sneakers"</span><span class="t-punc">);</span>     <span class="t-com">// let AI take action</span></pre>
+bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class="t-str">"搜尋紅色運動鞋"</span><span class="t-punc">);</span>     <span class="t-com">// 讓 AI 動起來</span></pre>
               </div>
             </div>
           </div>
@@ -521,26 +520,26 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
       <div class="wrap">
         <div class="sec-head reveal">
           <div class="sec-tag">What you can build</div>
-          <h2>Drive real UI actions with a single sentence</h2>
-          <p>These aren't mockups — they're runnable examples under <code style="font-family:var(--mono);color:var(--accent-2)">examples/</code> in the repo.</p>
+          <h2>用一句話，驅動真實的介面操作</h2>
+          <p>這些不是示意圖——都是 repo 裡 <code style="font-family:var(--mono);color:var(--accent-2)">examples/</code> 底下能跑的範例。</p>
         </div>
         <div class="cases">
           <div class="case reveal">
             <span class="case-badge">examples/react-demo · React</span>
-            <h3>Checkout assistant</h3>
-            <p>Let AI fill in a search, navigate between pages, and even click the checkout button — every action maps to a handler you registered.</p>
+            <h3>電商結帳助手</h3>
+            <p>讓 AI 幫使用者填搜尋、跳轉頁面、甚至按下結帳按鈕——每個動作都對應一個你註冊的 handler。</p>
             <div class="chat">
-              <span class="bubble-u">check me out</span>
-              <span class="bubble-a"><span class="tc">→ click_checkout_button()</span><br />Your order has been placed ✓</span>
+              <span class="bubble-u">幫我結帳</span>
+              <span class="bubble-a"><span class="tc">→ click_checkout_button()</span><br />已為你送出訂單 ✓</span>
             </div>
           </div>
           <div class="case reveal">
             <span class="case-badge">examples/analysis · Vue 3</span>
-            <h3>Survey analysis assistant</h3>
-            <p>On a list of survey questions, let AI select the relevant ones in natural language, ready to run statistical analysis.</p>
+            <h3>問卷分析助手</h3>
+            <p>在一份問卷題目清單上，用自然語言讓 AI 幫你勾選相關題目，準備跑統計分析。</p>
             <div class="chat">
-              <span class="bubble-u">select the questions about age</span>
-              <span class="bubble-a"><span class="tc">→ select_question(["p2q1", …])</span><br />Selected 3 questions</span>
+              <span class="bubble-u">選擇跟年齡有關的題目</span>
+              <span class="bubble-a"><span class="tc">→ select_question(["p2q1", …])</span><br />已勾選 3 個題目</span>
             </div>
           </div>
         </div>
@@ -550,11 +549,11 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
     <section class="final">
       <div class="wrap">
         <div class="final-band reveal">
-          <h2>Ready to bring AI into your UI?</h2>
-          <p>Create an app, issue an API key — that's it. Local development works with no LLM key at all.</p>
+          <h2>準備好讓 AI 進駐你的介面了嗎？</h2>
+          <p>建立 app、發一把 API key——就這樣。本機開發不需要任何 LLM 金鑰就能先跑起來。</p>
           <div class="final-cta">
-            <a class="btn btn-primary btn-lg" href="#" data-console>Open Console</a>
-            <a class="btn btn-ghost btn-lg" href="#how">Revisit the 3 steps</a>
+            <a class="btn btn-primary btn-lg" href="#" data-console>開啟 Console</a>
+            <a class="btn btn-ghost btn-lg" href="#how">回顧 3 步驟</a>
           </div>
         </div>
       </div>
@@ -566,11 +565,11 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
       <div class="foot-grid">
         <div class="foot-brand">
           <a class="brand" href="#top"><span class="mark">⌘</span>onagent</a>
-          <p>Describe front-end capabilities as tools, and let an LLM operate your web page safely in natural language. Built for developers, type-safe throughout.</p>
+          <p>把前端能力描述成 tool，讓 LLM 用自然語言安全地操作你的網頁。開發者導向、型別安全。</p>
         </div>
-        <div class="foot-col"><h4>Product</h4><a href="#" data-console>Console</a><a href="#how">How it works</a><a href="#features">Features</a></div>
-        <div class="foot-col"><h4>Resources</h4><a href="#cases">Examples</a><a href="#how">Agent Bridge SDK</a><a href="#how">onagent CLI</a></div>
-        <div class="foot-col"><h4>Get started</h4><a href="#" data-console>Create an app</a><a href="#" data-console>Get an API key</a><a href="#how">Embed the SDK</a></div>
+        <div class="foot-col"><h4>產品</h4><a href="#" data-console>Console</a><a href="#how">運作方式</a><a href="#features">功能特色</a></div>
+        <div class="foot-col"><h4>資源</h4><a href="#cases">範例應用</a><a href="#how">Agent Bridge SDK</a><a href="#how">onagent CLI</a></div>
+        <div class="foot-col"><h4>開始</h4><a href="#" data-console>建立 App</a><a href="#" data-console>取得 API Key</a><a href="#how">嵌入 SDK</a></div>
       </div>
       <div class="foot-bottom">
         <span>© 2026 onagent</span>
@@ -598,14 +597,14 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
 
     var term = document.getElementById('term');
     var lines = [
-      { t: 'comment', text: '# 1. Define a tool, push it to the platform' },
+      { t: 'comment', text: '# 1. 定義一個 tool，推上平台' },
       { t: 'prompt', cmd: 'onagent save-tools demo-app tools' },
       { t: 'ok', text: '✓ Saved 1 tool to "demo-app"' },
       { t: 'gap' },
-      { t: 'comment', text: '# 2. Embed the SDK in your front end' },
+      { t: 'comment', text: '# 2. 前端嵌入 SDK' },
       { t: 'prompt', cmd: 'npm i @onagent/bridge' },
       { t: 'gap' },
-      { t: 'comment', text: '# 3. Let AI drive the UI with one sentence' },
+      { t: 'comment', text: '# 3. 用一句話讓 AI 操作介面' },
       { t: 'code', text: 'const bridge = new AgentBridge({ tools: { select_item } })' },
     ];
     var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -633,7 +632,7 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
     var stage = document.querySelector('.card-stack');
     var mockInputText = document.getElementById('mock-input-text');
     var mockTarget = document.getElementById('mock-item-target');
-    var MOCK_INPUT_VALUE = 'select the red sneakers';
+    var MOCK_INPUT_VALUE = '選擇紅色運動鞋';
 
     function showMockPicked() {
       mockInputText.textContent = MOCK_INPUT_VALUE;
@@ -721,9 +720,9 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
       var active = document.querySelector('.code-pane.active pre');
       if (!active) return;
       navigator.clipboard.writeText(active.innerText).then(function () {
-        copyBtn.textContent = 'Copied ✓';
+        copyBtn.textContent = '已複製 ✓';
         copyBtn.classList.add('copied');
-        setTimeout(function () { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('copied'); }, 1600);
+        setTimeout(function () { copyBtn.textContent = '複製'; copyBtn.classList.remove('copied'); }, 1600);
       });
     });
   </script>
