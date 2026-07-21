@@ -5,7 +5,7 @@ import { toLLMToolsJSON, toTypeScript, toYAML } from './codegen'
 type Tab = 'yaml' | 'json' | 'ts'
 
 const TABS: { id: Tab; label: string; hint: string }[] = [
-  { id: 'yaml', label: 'YAML', hint: 'what Save writes to backend/tools/<appId>.yaml' },
+  { id: 'yaml', label: 'YAML', hint: 'equivalent to what Save persists for this app (stored in the database, not a file on disk)' },
   { id: 'json', label: 'LLM tool JSON', hint: 'shape returned by GET /apps/{appId}/tools.json' },
   { id: 'ts', label: 'TypeScript', hint: 'shape returned by GET /apps/{appId}/tools.ts' },
 ]
