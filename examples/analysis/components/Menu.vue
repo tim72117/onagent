@@ -42,6 +42,9 @@
             </v-card-title>
             <v-divider color="grey-darken-4"></v-divider>
             <v-card-text class="text-black">
+                <div class="mb-2 text-caption text-grey-darken-1">
+                    偵錯：目前 selected 陣列（{{ selected.length }}）— {{ selected.map(q => q.name).join('、') || '（無）' }}
+                </div>
                 <v-data-table-virtual
                     class="custom-table"
                     v-model="selected"

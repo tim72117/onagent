@@ -88,7 +88,7 @@ describe('select_question tool_call (action kind)', () => {
         expect(menuVm().selected.map((q) => q.name)).toEqual([Q2])
     })
 
-    it('clears the whole selection when clear=true, ignoring names/selected', async () => {
+    it('clears the whole selection when clear=true is the only arg', async () => {
         ws.simulateMessage({
             type: 'tool_call',
             requestId: 'r1',
@@ -105,6 +105,29 @@ describe('select_question tool_call (action kind)', () => {
         await flushPromises()
 
         expect(menuVm().selected).toEqual([])
+    })
+
+    it('clear=true plus names/selected in the same call replaces the selection, rather than the names/selected half being silently dropped', async () => {
+        ws.simulateMessage({
+            type: 'tool_call',
+            requestId: 'r1',
+            payload: { toolName: 'select_question', args: { names: [Q1, Q2], selected: true } },
+        })
+        await flushPromises()
+        expect(menuVm().selected.length).toBe(2)
+
+        // Observed real model behavior (see App.vue's select_question
+        // handler comment): a single call combining clear=true with
+        // names/selected, meant as "replace the whole selection with just
+        // these names" — not two separate calls.
+        ws.simulateMessage({
+            type: 'tool_call',
+            requestId: 'r2',
+            payload: { toolName: 'select_question', args: { clear: true, names: [Q1], selected: true } },
+        })
+        await flushPromises()
+
+        expect(menuVm().selected.map((q) => q.name)).toEqual([Q1])
     })
 
     it('sends an ok tool_result back regardless (the SDK always answers; only the backend treats action-kind tools as fire-and-forget)', async () => {
@@ -145,6 +168,34 @@ describe('list_questions tool_query (query kind)', () => {
 
         const result = ws.sentEnvelopes().find((e) => e.type === 'tool_result' && e.requestId === 'r1')
         expect(result.payload.result).toHaveLength(2)
+    })
+
+    it('respects the offset argument, paging in from the start', async () => {
+        ws.simulateMessage({
+            type: 'tool_query',
+            requestId: 'r1',
+            payload: { toolName: 'list_questions', args: { limit: 2, offset: 1 } },
+        })
+        await flushPromises()
+
+        const result = ws.sentEnvelopes().find((e) => e.type === 'tool_result' && e.requestId === 'r1')
+        expect(result.payload.result).toEqual(
+            questions.slice(1, 3).map((q) => ({ name: q.name, title: q.title })),
+        )
+    })
+
+    it('defaults offset to 0 when omitted', async () => {
+        ws.simulateMessage({
+            type: 'tool_query',
+            requestId: 'r1',
+            payload: { toolName: 'list_questions', args: { limit: 2 } },
+        })
+        await flushPromises()
+
+        const result = ws.sentEnvelopes().find((e) => e.type === 'tool_result' && e.requestId === 'r1')
+        expect(result.payload.result).toEqual(
+            questions.slice(0, 2).map((q) => ({ name: q.name, title: q.title })),
+        )
     })
 })
 

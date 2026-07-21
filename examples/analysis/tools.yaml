@@ -96,7 +96,13 @@ tools:
           description: True to select the named questions, false to deselect them.
         clear:
           type: boolean
-          description: If true, clears the entire selection and ignores names/selected.
+          description: >-
+            If true, clears the entire selection first. If names/selected
+            are also given in the same call, they're applied after the
+            clear (on the now-empty selection) — so clear=true plus
+            names/selected together replaces the whole selection with just
+            those names, rather than clear alone leaving an empty
+            selection.
       required:
         - selected
 
@@ -116,6 +122,12 @@ tools:
             Max number of questions to return. Always provide a value — pass
             100 if you want effectively all of them (there are never more
             than a handful of questions on this page).
+        offset:
+          type: integer
+          description: >-
+            Number of questions to skip from the start before applying
+            limit, for paging through the list across multiple calls.
+            Omit (or pass 0) to start from the first question.
       required:
         - limit
     returns:
