@@ -1,0 +1,62 @@
+# onagent server 容器映像 —— 公開釋出版,給其他專案自行部署用。
+# 跟根目錄的 Dockerfile 差別只有一個:不 build/不嵌入 apps/landing(這個
+# 專案自己的行銷頁對其他專案沒有任何功能意義,見 backend/cmd/server/web.go
+# 的 go:embed all:web/landing)。go:embed 不允許目錄完全是空的,所以這裡
+# 刻意保留 checked-in 的 placeholder index.html、不覆蓋它,而不是留空目錄。
+# console/admin/API 三者完全比照根目錄 Dockerfile 的行為,不打折扣。
+#
+# 這個 image 本身不含任何密鑰 —— 所有 provider/憑證都是啟動時透過環境變數
+# 注入(AI_PROVIDER/DATABASE_URL/...,見 backend/cmd/server/main.go 開頭的
+# env 讀取),跟根目錄 Dockerfile 用 BuildKit secret 處理 GH_PAT 是同一套
+# 「build 期需要的密鑰只存在於單一 RUN 步驟、不落進任何 layer」原則。
+#
+# 建置(從專案根目錄,需要 BuildKit):
+#   DOCKER_BUILDKIT=1 docker build -f Dockerfile.release \
+#     --secret id=gh_pat,env=GH_PAT -t onagent-server-release .
+# 本機跑:
+#   docker run --rm -p 8080:8080 --env-file backend/.env onagent-server-release
+
+# ---- 階段 1:build console 前端 ----
+FROM node:22-alpine AS console-build
+WORKDIR /web
+COPY apps/console/package.json apps/console/package-lock.json ./
+RUN npm ci
+COPY apps/console/ ./
+RUN npm run build
+
+# ---- 階段 1b:build admin 後台前端 ----
+FROM node:22-alpine AS admin-build
+WORKDIR /web
+COPY apps/admin/package.json apps/admin/package-lock.json ./
+RUN npm ci
+COPY apps/admin/ ./
+RUN npm run build
+
+# ---- 階段 2:編譯 Go ----
+FROM golang:1.26 AS build
+
+RUN --mount=type=secret,id=gh_pat \
+    git config --global url."https://$(cat /run/secrets/gh_pat)@github.com/".insteadOf "https://github.com/"
+
+COPY backend/go.mod backend/go.sum /src/backend/
+RUN cd /src/backend && GOPRIVATE=github.com/tim72117/want go mod download
+
+COPY backend/ /src/backend/
+
+# 只清空/覆蓋 console、admin 的 embed 目標;landing 那份維持 checked-in
+# 的 placeholder index.html 原樣 —— go:embed 需要目錄至少有一個檔案,
+# placeholder 正是滿足這個限制用的,不是要真的 build 出行銷頁內容。
+RUN rm -rf /src/backend/cmd/server/web/console/* /src/backend/cmd/server/web/admin/*
+COPY --from=console-build /web/dist/. /src/backend/cmd/server/web/console/
+COPY --from=admin-build /web/dist/. /src/backend/cmd/server/web/admin/
+
+RUN cd /src/backend && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
+    -o /out/server ./cmd/server
+
+# ---- 階段 3:執行 ----
+FROM gcr.io/distroless/static-debian12:nonroot
+WORKDIR /app
+COPY --from=build /out/server /app/server
+
+EXPOSE 8080
+ENTRYPOINT ["/app/server"]

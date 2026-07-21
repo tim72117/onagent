@@ -1,0 +1,74 @@
+name: Release public Docker image
+
+# Independent from deploy-cloudrun.yml / release-onagent.yml on purpose —
+# those trigger on every "v*" tag (Cloud Run deploy + CLI binaries); this
+# publishes the landing-free image (Dockerfile.release) to GHCR, which is
+# a separate decision from "cut a new onagent.shuttle.tools deploy". Only
+# fires on workflow_dispatch (manual) or its own "release-v*" tag prefix,
+# never automatically alongside the other two.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to publish (e.g. v1.2.0). Defaults to the short commit SHA.'
+        type: string
+        default: ''
+  push:
+    tags:
+      - 'release-v*'
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/onagent-server-release
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            # strip the "release-" prefix so the published image tag reads
+            # as a plain version (release-v1.2.0 -> v1.2.0).
+            echo "value=${GITHUB_REF_NAME#release-}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        env:
+          DOCKER_BUILDKIT: "1"
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          docker build \
+            -f Dockerfile.release \
+            --secret id=gh_pat,env=GH_PAT \
+            -t ${{ env.IMAGE }}:${{ steps.tag.outputs.value }} \
+            -t ${{ env.IMAGE }}:latest \
+            .
+          docker push ${{ env.IMAGE }}:${{ steps.tag.outputs.value }}
+          docker push ${{ env.IMAGE }}:latest
+
+      - name: Show pull command
+        run: |
+          echo "### 已發布" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "docker pull ${{ env.IMAGE }}:${{ steps.tag.outputs.value }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "**第一次發布後記得手動把這個 package 的可見度改成 Public**（GitHub repo → Packages → onagent-server-release → Package settings → Danger Zone），預設是 private。" >> "$GITHUB_STEP_SUMMARY"
