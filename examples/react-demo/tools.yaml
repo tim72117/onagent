@@ -1,7 +1,7 @@
-# Example tool definition file for a developer application.
-# Each file under backend/tools/ describes one app's tools; the appId
-# must be unique across all files and is what the front-end SDK passes
-# in its `hello` message to select which tool set to load.
+# Tool definitions for this example app, pushed to the backend via
+# `atp save-tools <appId> <this file>` (see backend/cmd/onagent). appId
+# must be unique across every app registered on the backend, and is what
+# the front-end SDK passes in its `hello` message to select this tool set.
 appId: demo-app
 
 tools:

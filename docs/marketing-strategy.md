@@ -46,7 +46,7 @@
   的開發者，這是零安裝門檻：不需要裝 Go 工具鏈、不需要等編譯，直接請
   Claude 用 skill 裡預先編好的執行檔操作。這是一個具體、稀缺、目前
   同類產品幾乎沒人做的差異化切入點（詳見第 4 節）。
-- `@onagent/bridge`：瀏覽器端 SDK，`backend/tools/demo-app.yaml` 有一組
+- `@onagent/bridge`：瀏覽器端 SDK，`examples/react-demo/tools.yaml` 有一組
   現成、敘事完整的範例 tool 定義——`fill_search_form`（填搜尋框）、
   `navigate_to_page`（換頁）、`highlight_element`（在畫面上框出元素）、
   `click_checkout_button`（按下結帳按鈕完成訂單）。這四個 tool 串起來

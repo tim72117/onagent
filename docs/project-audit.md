@@ -58,7 +58,6 @@
 3. **🟠 S2 / A1 orchestrator 序列化＋無 rate limit** — 平台級瓶頸與 DoS 面，最重要但工程量最大，過渡期先加 rate limit。
 4. **🟠 F5 ADDR/PORT** — 部署正確性，改動小。
 5. **🟠 F1/F2 SDK 重連斷路器** — 第三方直接依賴，影響外部開發者體驗。
-6. **🟠 E2 範例修復** — 第三方會照抄的參考檔案目前是壞的。
 
 ---
 
@@ -107,11 +106,6 @@
 ### 🟠 F2. SDK 吞掉 WS close/error code，auth 失敗看起來跟斷線一樣
 - **位置**：`client.ts:132-141`——close handler 完全忽略 `event.code`/`reason`，error 是純 no-op。撤銷 key 產生的 auth 拒絕 close 與暫時性斷線無法區分，兩者都無限重試、零信號。
 - **修法**：檢查 `ev.code`，把 4xxx auth 類 code 當終端、停止重試（需先確認 `internal/ws` 實際用什麼 code 關閉）。
-
-### 🟠 E2. `select_question` schema 在 live YAML 與範例 YAML 之間漂移（活的行為 bug）
-- **位置**：`backend/tools/analysis-app.yaml`（實際載入的）**沒有** `required` array；`examples/analysis/tools.yaml`（本 session 已補 `required: [selected]`）的修正**沒有同步進 backend live 副本**。
-- **影響**：`dev.js` 的 handler 在 LLM（依 live schema 正確地）省略 `selected` 時，`Menu.vue:129` 的 `if (selected)` 把 `undefined` 當 falsy → **靜默取消選取而非報錯**，是 shipped 範例的可重現 bug。搭配 want append-only bug，光改 YAML 還不夠、要重啟 process 才會換 registry entry。
-- **修法**：把 `backend/tools/analysis-app.yaml` 同步成有 `required: [selected]`。
 
 ### 🟠 F5. ADDR-vs-PORT — 確認的 Cloud Run 風險，且文件把它講反了
 - **位置**：`backend/cmd/server/main.go:218`——`addr := envOr("ADDR", ":8080")`；全 `backend/` **從不讀 `PORT`**。Cloud Run 一律注入 `PORT` 並期望容器聽它；`ADDR` 是 Cloud Run 不認識的自訂變數。現在能動只因 fallback `:8080` 剛好等於 Cloud Run 目前預設 `PORT=8080`。`docs/deployment.md` 把這講成「刻意相容」而非巧合——一旦 service 改設非預設 port，容器會靜默綁錯 port、deploy 失敗且無明確錯誤指向此行。
