@@ -13,6 +13,64 @@ const SDK_VERSION = "0.1.0";
 /** A tool handler the developer registers to fulfill a named tool call. */
 export type ToolHandler = (args: any) => Promise<unknown> | unknown;
 
+/**
+ * A named tool handler, for array-based registration — an alternative to
+ * building the `Record<string, ToolHandler>` map by hand (see
+ * `AgentBridgeOptions.tools` and `defineTool`). Two tools with the same
+ * `name` in the same array is a configuration error: the constructor throws
+ * rather than silently letting one shadow the other the way a later key in
+ * an object literal (`{ ...a, ...b }`) silently wins over an earlier one —
+ * that failure mode surfaces at runtime as a tool call mysteriously never
+ * reaching its handler, which is a hard way to discover a typo'd name.
+ */
+export interface ToolEntry {
+  name: string;
+  handle: ToolHandler;
+}
+
+/**
+ * Converts array-based tool registration into the `Record<string,
+ * ToolHandler>` shape `AgentBridgeOptions.tools` ultimately needs. Exported
+ * so it's independently usable (e.g. to merge tool arrays from multiple
+ * sources before constructing `AgentBridge`), not just an internal helper.
+ */
+export function toToolRecord(tools: ToolEntry[]): Record<string, ToolHandler> {
+  const result: Record<string, ToolHandler> = {};
+  for (const tool of tools) {
+    if (Object.prototype.hasOwnProperty.call(result, tool.name)) {
+      throw new Error(`toToolRecord: duplicate tool name "${tool.name}"`);
+    }
+    result[tool.name] = tool.handle;
+  }
+  return result;
+}
+
+/**
+ * Defines a tool with its own typed arguments, instead of every handler
+ * having to carve `args: any` into shape by hand with no compile-time check
+ * that it actually matches what's declared. `parseArgs` is the source of
+ * truth for `Args` — its return type, not a bare `as Args` assertion the
+ * type system would trust without anyone actually having verified it at
+ * runtime. Deliberately zero-dependency: `parseArgs` can be a few lines of
+ * hand-written validation, or wrap a schema library's `.parse` method — the
+ * SDK doesn't decide that for you.
+ *
+ * A `parseArgs` that throws propagates out of the resulting handler
+ * unchanged, so it's reported back as a normal `{ ok: false, error }`
+ * tool_result the same way any other handler error is (see
+ * `handleToolCall`) — no separate error-handling path to learn.
+ */
+export function defineTool<Args>(
+  name: string,
+  parseArgs: (raw: unknown) => Args,
+  handle: (args: Args) => Promise<unknown> | unknown
+): ToolEntry {
+  return {
+    name,
+    handle: (raw: any) => handle(parseArgs(raw)),
+  };
+}
+
 export interface AgentBridgeOptions {
   /** WebSocket endpoint, e.g. "wss://agent.example.com/ws". */
   url: string;
@@ -32,12 +90,15 @@ export interface AgentBridgeOptions {
    */
   apiKey?: string;
   /**
-   * Tool handlers keyed by tool name. Only names the backend already knows
-   * about (from the app's tool definitions) will ever be invoked, but the
-   * SDK also refuses to call anything not present in this map — the
-   * front-end never executes arbitrary/unregistered actions.
+   * Tool handlers, either as a `Record<string, ToolHandler>` map you build
+   * yourself, or a `ToolEntry[]` array (see `defineTool`) — the constructor
+   * normalizes either shape the same way `toToolRecord` does, including its
+   * duplicate-name check. Only names the backend already knows about (from
+   * the app's tool definitions) will ever be invoked, but the SDK also
+   * refuses to call anything not present here — the front-end never
+   * executes arbitrary/unregistered actions.
    */
-  tools: Record<string, ToolHandler>;
+  tools: Record<string, ToolHandler> | ToolEntry[];
   /** Called for natural-language messages meant for display to the user. */
   onAssistantMessage?: (text: string) => void;
   /** Called on protocol/inference errors not tied to a specific call. */
@@ -84,11 +145,16 @@ export class AgentBridge {
 
   private readonly minBackoffMs: number;
   private readonly maxBackoffMs: number;
+  /** opts.tools normalized to a Record once, regardless of which shape the
+   * developer passed in — every other method reads this, never opts.tools
+   * directly. */
+  private readonly tools: Record<string, ToolHandler>;
 
   constructor(private readonly opts: AgentBridgeOptions) {
     this.minBackoffMs = opts.minBackoffMs ?? 500;
     this.maxBackoffMs = opts.maxBackoffMs ?? 10_000;
     this.backoffMs = this.minBackoffMs;
+    this.tools = Array.isArray(opts.tools) ? toToolRecord(opts.tools) : opts.tools;
     this.installUnloadFallback();
     this.connect();
   }
@@ -200,7 +266,7 @@ export class AgentBridge {
   }
 
   private validateHandlers(toolNames: string[]): void {
-    const missing = toolNames.filter((name) => !(name in this.opts.tools));
+    const missing = toolNames.filter((name) => !(name in this.tools));
     if (missing.length > 0) {
       console.warn(
         `[agent-bridge] backend declares tools with no registered handler: ${missing.join(", ")}`
@@ -212,7 +278,7 @@ export class AgentBridge {
     requestId: string | undefined,
     payload: ToolCallPayload
   ): Promise<void> {
-    const handler = this.opts.tools[payload.toolName];
+    const handler = this.tools[payload.toolName];
     if (!handler) {
       // Never fall back to eval/dynamic dispatch: an unregistered tool
       // name is rejected, not guessed at.
