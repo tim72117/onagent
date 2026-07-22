@@ -1,8 +1,10 @@
 package ws
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/tim72117/onagent/internal/auth"
@@ -133,7 +135,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// transient database blip must not lock legitimate users out at the
 		// front door. 429 mirrors how HTTP APIs report rate/quota limits;
 		// the SDK sees the handshake fail and its onError/reconnect path runs.
-		if dec, err := h.Quota.Check(r.Context(), appID); err != nil {
+		//
+		// Deliberately NOT r.Context(): that context is tied to this HTTP
+		// request/upgrade, which can be canceled by the client disconnecting
+		// or retrying the handshake before this query returns — observed in
+		// practice as spurious "context canceled" fail-open warnings on every
+		// quick reconnect, not an actual DB problem. A short-lived detached
+		// context makes this check's lifetime match the query itself.
+		checkCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		dec, err := h.Quota.Check(checkCtx, appID)
+		cancel()
+		if err != nil {
 			h.Log.Warn("ws handshake: quota check failed, allowing (fail-open)", "appId", appID, "err", err)
 		} else if !dec.Allowed {
 			h.Log.Info("ws handshake rejected: owner over quota", "appId", appID, "used", dec.Used, "limit", dec.Limit)
