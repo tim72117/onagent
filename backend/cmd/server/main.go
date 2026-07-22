@@ -61,6 +61,10 @@ Configured entirely via environment variables (optionally loaded from a
                           on startup if no admin exists yet.
   ADMIN_BOOTSTRAP_PASSWORD
                           Password for the bootstrapped admin account.
+  QUOTA_ENABLED           "false" to disable the monthly prompt quota
+                          entirely — for self-hosters running this as their
+                          own infrastructure, not onagent's SaaS. Default
+                          "true".
   SETTINGS_FILE           Path to the AI provider settings JSON
                           (default "configs/settings.json").
   AI_PROVIDER             Overrides the provider from SETTINGS_FILE.
@@ -148,11 +152,20 @@ func main() {
 	cliAuthStore := cliauth.New(conn)
 
 	// Monthly prompt quota, enforced at the WebSocket handshake and per
-	// prompt (see internal/quota, ws.Handler, ws.Session). Backed by the
-	// same DB as everything else here; this server always has one, so quota
-	// is always on. (The nil-Service "disabled" mode exists for callers with
-	// no database — e.g. tests — not for this path.)
-	quotaSvc := quota.New(conn)
+	// prompt (see internal/quota, ws.Handler, ws.Session). onagent's own
+	// deployment always wants this on (the default); QUOTA_ENABLED=false is
+	// for self-hosters running this image as their own infrastructure, who
+	// have no reason to enforce onagent's SaaS billing tiers against
+	// themselves — see quota.Service.Check/StandingFor's nil-Service
+	// doc comments for why a nil *Service here is enough to disable
+	// enforcement everywhere, with no other code path needing to know.
+	quotaEnabled := envOr("QUOTA_ENABLED", "true") == "true"
+	var quotaSvc *quota.Service
+	if quotaEnabled {
+		quotaSvc = quota.New(conn)
+	} else {
+		log.Info("QUOTA_ENABLED=false: monthly prompt quota is not enforced")
+	}
 
 	// Admin back-office identity (internal/adminauth), a system deliberately
 	// separate from the developer accounts above: its own tables, its own

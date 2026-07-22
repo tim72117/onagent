@@ -245,13 +245,22 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request, user *session.User)
 // vocabulary for the same numbers. periodStart/periodEnd are RFC 3339
 // (encoding/json's default time.Time marshaling) since nothing else in this
 // package needs a different format for a timestamp.
+//
+// Enabled is false when this deployment runs with QUOTA_ENABLED=false (see
+// cmd/server/main.go) — every other field is the zero value in that case,
+// never meaningful data a caller should render. This is a real, expected
+// deployment state (self-hosters running onagent as their own
+// infrastructure have no reason to enforce onagent's own SaaS tiers against
+// themselves), not a failure — see getQuota below for why that distinction
+// matters.
 type quotaResponse struct {
-	Tier        string    `json:"tier"`
-	PlanName    string    `json:"planName"`
-	Limit       int       `json:"limit"`
-	Used        int       `json:"used"`
-	PeriodStart time.Time `json:"periodStart"`
-	PeriodEnd   time.Time `json:"periodEnd"`
+	Enabled     bool      `json:"enabled"`
+	Tier        string    `json:"tier,omitempty"`
+	PlanName    string    `json:"planName,omitempty"`
+	Limit       int       `json:"limit,omitempty"`
+	Used        int       `json:"used,omitempty"`
+	PeriodStart time.Time `json:"periodStart,omitempty"`
+	PeriodEnd   time.Time `json:"periodEnd,omitempty"`
 }
 
 // getQuota reports the calling developer's own plan and current-period
@@ -260,13 +269,24 @@ type quotaResponse struct {
 // already enforce it — see quota.Service.StandingFor's doc comment. No app
 // ownership check applies here (unlike the /console/apps/{appId}/* routes)
 // since there is no {appId} in this path at all.
+//
+// h.Quota == nil (QUOTA_ENABLED=false) is reported as a normal 200 with
+// enabled=false, not an error status — it's an intentional deployment
+// choice, and treating it as a 500 would both mislead error-rate monitoring
+// and make the console frontend's "hide the quota widget" decision harder
+// to distinguish from "the request actually failed."
 func (h *Handler) getQuota(w http.ResponseWriter, r *http.Request, user *session.User) {
+	if h.Quota == nil {
+		writeJSON(w, http.StatusOK, quotaResponse{Enabled: false})
+		return
+	}
 	st, err := h.Quota.StandingFor(r.Context(), user.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, quotaResponse{
+		Enabled:     true,
 		Tier:        string(st.Tier),
 		PlanName:    st.PlanName,
 		Limit:       st.Limit,

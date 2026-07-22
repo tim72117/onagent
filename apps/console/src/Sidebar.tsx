@@ -22,7 +22,7 @@ export function Sidebar({
   onLogout,
 }: {
   userEmail: string
-  quota: Quota | null // null while loading, or if the fetch failed — rendered as nothing rather than a placeholder
+  quota: Quota | null // null while loading or if the fetch failed; quota.enabled === false when this deployment runs with QUOTA_ENABLED=false — both render as nothing, not a placeholder
   summaries: AppSummary[]
   activeAppId: string | null
   onSelectApp: (appId: string) => void
@@ -147,8 +147,8 @@ export function Sidebar({
             Delete "{activeAppId}"
           </button>
         )}
-        {quota && (
-          <div className="sidebar-quota" title={`Resets ${new Date(quota.periodEnd).toLocaleDateString()}`}>
+        {quota?.enabled && (
+          <div className="sidebar-quota" title={`Resets ${new Date(quota.periodEnd!).toLocaleDateString()}`}>
             <span className="sidebar-quota-plan">{quota.planName} plan</span>
             <span className="sidebar-quota-usage">
               {quota.used} / {quota.limit} requests used this month

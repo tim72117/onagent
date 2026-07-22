@@ -37,13 +37,19 @@ export interface CurrentUser {
 // admin back-office's per-user shape (quota.UserSummary) — tier/limit/used
 // mean the same thing on both surfaces, just scoped to "me" here instead of
 // an admin-chosen userId.
+//
+// enabled is false when this deployment runs with QUOTA_ENABLED=false — the
+// other fields are absent in that case (never meaningful zero values to
+// render), not merely a fetch failure. Callers should check enabled before
+// reading anything else, the same way the backend's own quotaResponse does.
 export interface Quota {
-  tier: string
-  planName: string
-  limit: number
-  used: number
-  periodStart: string // RFC 3339
-  periodEnd: string // RFC 3339
+  enabled: boolean
+  tier?: string
+  planName?: string
+  limit?: number
+  used?: number
+  periodStart?: string // RFC 3339
+  periodEnd?: string // RFC 3339
 }
 
 // Exported so Playground.tsx can derive the playground WebSocket's URL
