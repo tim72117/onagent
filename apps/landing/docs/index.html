@@ -309,6 +309,7 @@
         <a href="#embed-sdk">Embed the SDK</a>
         <a class="sub" href="#bridge-options">AgentBridge options</a>
         <a class="sub" href="#tool-handlers">Implement tool handlers</a>
+        <a class="sub" href="#define-tool">Typed handlers with defineTool</a>
         <a class="sub" href="#prompting">Sending prompts</a>
       </div>
       <div class="side-group">
@@ -376,7 +377,7 @@
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> go install github.com/tim72117/onagent/backend/cmd/onagent@latest</pre>
+          <pre><span class="t-prompt">$</span> go install github.com/tim72117/onagent/cmd/onagent@latest</pre>
         </div>
         <p class="body-text">
           This drops an <code>onagent</code> binary in your Go bin directory. No separate download or package registry —
@@ -388,8 +389,9 @@
           <div class="ct">
             <h4>Using Claude Code?</h4>
             <p>
-              See <a href="#claude-code">the Claude Code skill note</a> further down — it bundles a prebuilt
-              <code>onagent</code> binary and can drive this entire setup for you, no local install required.
+              See <a href="#claude-code">the Claude Code skill note</a> further down — it can drive this entire
+              setup for you. It bundles a prebuilt <code>onagent</code> binary for Windows only; on macOS/Linux it
+              falls back to <code>go install</code> or a local build, same as above.
             </p>
           </div>
         </div>
@@ -592,7 +594,7 @@ Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">
             <tbody>
               <tr><td>name</td><td>Yes</td><td>Identifier the LLM uses to call this tool. Must match <code>^[a-zA-Z_][a-zA-Z0-9_]*$</code> and be unique within the app.</td></tr>
               <tr><td>description</td><td>Yes</td><td>Tells the LLM when and why to call this tool. This is the primary signal the model uses to pick between tools — be specific.</td></tr>
-              <tr><td>parameters</td><td>Yes</td><td>A JSON-Schema object: <code>type: object</code>, a <code>properties</code> map (each with a <code>type</code> — <code>string</code>, <code>number</code>, <code>integer</code>, <code>boolean</code>, <code>array</code>, or <code>object</code> — and optional <code>description</code>), and an optional <code>required</code> list of property names. Array-typed properties use <code>items</code>; object-typed properties can nest another <code>properties</code>/<code>required</code>.</td></tr>
+              <tr><td>parameters</td><td>Yes</td><td>A JSON-Schema object: <code>type: object</code>, a <code>properties</code> map (each with a <code>type</code> — <code>string</code>, <code>number</code>, <code>integer</code>, <code>boolean</code>, <code>array</code>, or <code>object</code> — and optional <code>description</code>), and an optional <code>required</code> list of property names. Array-typed properties use <code>items</code>; object-typed properties can nest another <code>properties</code>/<code>required</code>. Any property can also take an optional <code>enum</code> — a list of allowed string values — to constrain the LLM to one of a fixed set instead of free text.</td></tr>
               <tr><td>returns</td><td>No</td><td>Same shape as <code>parameters</code>, documenting what the frontend sends back. Not sent to the LLM as part of the tool schema — used for TypeScript codegen, and for <code>query</code>-kind tools, this is also the shape the LLM receives back as data (see below).</td></tr>
               <tr><td>kind</td><td>No</td><td><code>action</code> (default) or <code>query</code> — see <a href="#tool-kind">action vs. query</a> below.</td></tr>
             </tbody>
@@ -639,6 +641,9 @@ Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">
         <span class="t-key">quantity</span><span class="t-punc">:</span>
           <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">integer</span>
           <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">How many units to add. Defaults to 1 if omitted.</span>
+        <span class="t-key">giftWrap</span><span class="t-punc">:</span>
+          <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span>
+          <span class="t-key">enum</span><span class="t-punc">:</span> <span class="t-punc">[</span><span class="t-str">none</span><span class="t-punc">,</span> <span class="t-str">standard</span><span class="t-punc">,</span> <span class="t-str">premium</span><span class="t-punc">]</span>   <span class="t-com"># constrains the LLM to one of these three</span>
       <span class="t-key">required</span><span class="t-punc">:</span>
         <span class="t-punc">-</span> <span class="t-str">productId</span>
     <span class="t-com"># kind omitted → defaults to "action"</span></pre>
@@ -776,9 +781,10 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
               <tr><td>url</td><td>Yes</td><td>WebSocket endpoint, e.g. <code>wss://onagent.shuttle.tools/ws</code>. Always use <code>wss://</code>, never <code>ws://</code> — the API key rides in a URL query parameter on the handshake (browsers can't attach custom headers to a WebSocket upgrade), so an unencrypted connection puts it on the wire, and often in server access logs, in plaintext.</td></tr>
               <tr><td>appId</td><td>Yes</td><td>The app whose tool set this session loads.</td></tr>
               <tr><td>apiKey</td><td>No</td><td>The key from <code>onagent issue-key</code>. When set, it always overrides <code>appId</code> for authorization (the backend resolves the real appId server-side from the key). Omit only when connecting to a backend explicitly configured to allow its dev/no-auth mode.</td></tr>
-              <tr><td>tools</td><td>Yes</td><td>Map of tool name → handler function. See <a href="#tool-handlers">below</a>.</td></tr>
+              <tr><td>tools</td><td>Yes</td><td>Either a <code>Record&lt;string, ToolHandler&gt;</code> map you build yourself, or a <code>ToolEntry[]</code> array (see <a href="#define-tool"><code>defineTool</code></a> below) — the constructor normalizes either shape the same way, including a duplicate-name check. See <a href="#tool-handlers">Implement tool handlers</a>.</td></tr>
               <tr><td>onAssistantMessage</td><td>No</td><td><code>(text: string) =&gt; void</code> — called with natural-language messages meant for display to the user (e.g. render into a chat panel).</td></tr>
               <tr><td>onError</td><td>No</td><td><code>(err) =&gt; void</code> — called on protocol/inference errors not tied to one specific call.</td></tr>
+              <tr><td>onQuotaExceeded</td><td>No</td><td><code>(err) =&gt; void</code> — called instead of <code>onError</code> when a prompt is refused because the app owner hit their monthly quota. The connection stays open — once the plan is upgraded, further prompts on the same connection work again. Use it to show an upgrade prompt. If unset, a quota error falls through to <code>onError</code> like any other.</td></tr>
               <tr><td>minBackoffMs / maxBackoffMs</td><td>No</td><td>Reconnect backoff bounds in ms. Default 500ms .. 10s.</td></tr>
               <tr><td>beaconUrl</td><td>No</td><td>HTTP endpoint to best-effort <code>sendBeacon</code> any still-queued messages to when the page is hidden/unloaded, since the WebSocket closes before an in-flight send can complete. Omit to skip this fallback.</td></tr>
             </tbody>
@@ -808,6 +814,61 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
             </p>
           </div>
         </div>
+
+        <h3 class="sub-head" id="define-tool">Typed handlers with <code>defineTool</code></h3>
+        <p class="body-text">
+          Writing <code>tools</code> as a plain object means every handler starts from <code>args: any</code> — the
+          type system trusts whatever shape you assert without anyone having actually checked it at runtime.
+          <code>defineTool</code> pairs a handler with a <code>parseArgs</code> function that both validates the raw
+          payload and gives <code>Args</code> its type, so the handler itself is fully typed:
+        </p>
+        <div class="code-block">
+          <div class="cb-top">
+            <div class="cb-file"><span class="fdot"></span>app.ts</div>
+            <button class="copy-btn" data-copy>Copy</button>
+          </div>
+          <pre><span class="t-kw">import</span> <span class="t-punc">{</span> AgentBridge<span class="t-punc">,</span> defineTool <span class="t-punc">}</span> <span class="t-kw">from</span> <span class="t-str">"@onagent/bridge"</span><span class="t-punc">;</span>
+
+<span class="t-kw">interface</span> <span class="t-fn">SearchArgs</span> <span class="t-punc">{</span> query<span class="t-punc">:</span> <span class="t-kw">string</span><span class="t-punc">;</span> maxResults<span class="t-punc">?:</span> <span class="t-kw">number</span><span class="t-punc">;</span> <span class="t-punc">}</span>
+
+<span class="t-kw">function</span> <span class="t-fn">parseSearchArgs</span><span class="t-punc">(</span>raw<span class="t-punc">:</span> <span class="t-kw">unknown</span><span class="t-punc">):</span> SearchArgs <span class="t-punc">{</span>
+  <span class="t-kw">const</span> r <span class="t-punc">=</span> raw <span class="t-kw">as</span> <span class="t-kw">Partial</span><span class="t-punc">&lt;</span>SearchArgs<span class="t-punc">&gt;;</span>
+  <span class="t-kw">if</span> <span class="t-punc">(</span><span class="t-kw">typeof</span> r<span class="t-punc">?.</span>query <span class="t-punc">!==</span> <span class="t-str">"string"</span><span class="t-punc">)</span> <span class="t-kw">throw</span> <span class="t-kw">new</span> <span class="t-fn">Error</span><span class="t-punc">(</span><span class="t-str">"query must be a string"</span><span class="t-punc">);</span>
+  <span class="t-kw">return</span> <span class="t-punc">{</span> query<span class="t-punc">:</span> r<span class="t-punc">.</span>query<span class="t-punc">,</span> maxResults<span class="t-punc">:</span> r<span class="t-punc">.</span>maxResults <span class="t-punc">};</span>
+<span class="t-punc">}</span>
+
+<span class="t-kw">const</span> searchProducts <span class="t-punc">=</span> <span class="t-fn">defineTool</span><span class="t-punc">(</span>
+  <span class="t-str">"search_products"</span><span class="t-punc">,</span>
+  parseSearchArgs<span class="t-punc">,</span>
+  <span class="t-kw">async</span> <span class="t-punc">({</span> query<span class="t-punc">,</span> maxResults <span class="t-punc">})</span> <span class="t-kw">=&gt;</span> <span class="t-punc">{</span> <span class="t-com">// fully typed: SearchArgs, not any</span>
+    <span class="t-kw">return</span> <span class="t-kw">await</span> <span class="t-fn">searchCatalog</span><span class="t-punc">(</span>query<span class="t-punc">,</span> maxResults<span class="t-punc">);</span>
+  <span class="t-punc">}</span>
+<span class="t-punc">);</span>
+
+<span class="t-kw">const</span> bridge <span class="t-punc">=</span> <span class="t-kw">new</span> <span class="t-fn">AgentBridge</span><span class="t-punc">({</span>
+  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://onagent.shuttle.tools/ws"</span><span class="t-punc">,</span>
+  <span class="t-key">appId</span><span class="t-punc">:</span> <span class="t-str">"my-app"</span><span class="t-punc">,</span>
+  <span class="t-key">apiKey</span><span class="t-punc">:</span> <span class="t-str">"YOUR_APP_API_KEY"</span><span class="t-punc">,</span>
+  <span class="t-key">tools</span><span class="t-punc">:</span> <span class="t-punc">[</span>searchProducts<span class="t-punc">],</span> <span class="t-com">// ToolEntry[], not a { name: handler } map</span>
+<span class="t-punc">});</span></pre>
+        </div>
+        <p class="body-text">
+          <code>parseArgs</code> is the source of truth for <code>Args</code> — its return type, not a bare
+          <code>as Args</code> assertion. It can be a few lines of hand-written validation like above, or wrap a
+          schema library's <code>.parse</code> method; the SDK doesn't decide that for you. A <code>parseArgs</code>
+          that throws propagates out of the resulting handler unchanged, so it's reported back as a normal
+          <code>{ ok: false, error }</code> tool result the same way any other handler error is — no separate
+          error-handling path to learn.
+        </p>
+        <p class="body-text">
+          <code>tools</code> accepts a <code>ToolEntry[]</code> array directly, as shown above — the constructor
+          converts it to the same <code>Record&lt;string, ToolHandler&gt;</code> shape a plain object would be,
+          using the exported <code>toToolRecord</code> helper internally. Call <code>toToolRecord</code> yourself if
+          you need to merge tool arrays from multiple sources before passing them to <code>AgentBridge</code>. Two
+          entries sharing the same <code>name</code> — in the array or across merged arrays — throws immediately
+          rather than letting one silently shadow the other the way a later key in <code>{ ...a, ...b }</code>
+          silently wins over an earlier one.
+        </p>
 
         <h3 class="sub-head" id="prompting">Send a prompt</h3>
         <p class="body-text">
@@ -841,11 +902,13 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
         <p class="intro">
           If you're integrating onagent from inside Claude Code, the <code>onagent-cli-setup</code> skill
           (<code>.claude/skills/onagent-cli-setup/</code>) can walk through this entire flow for you — install
-          detection, login, app creation, key issuance, origin setup, and pushing a <code>tools.yaml</code> — using
-          a bundled prebuilt <code>onagent</code> binary, so there's nothing to install manually first. It's a
-          complementary path to everything above, not a replacement: the underlying CLI commands and
-          <code>tools.yaml</code> schema are identical either way, so it's worth reading this page regardless of
-          whether Claude Code drives the mechanics for you.
+          detection, login, app creation, key issuance, origin setup, and pushing a <code>tools.yaml</code>. It
+          bundles a prebuilt <code>onagent</code> binary for Windows; on macOS/Linux (the more common case for a
+          Claude Code user) it falls back to <code>go install</code> or building locally from a clone, same as the
+          manual install path above — so "no local install required" only holds on Windows. It's a complementary
+          path to everything above, not a replacement: the underlying CLI commands and <code>tools.yaml</code>
+          schema are identical either way, so it's worth reading this page regardless of whether Claude Code
+          drives the mechanics for you.
         </p>
       </section>
 
@@ -859,9 +922,9 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
           <table class="doc-table">
             <thead><tr><th>Symptom</th><th>Likely cause</th></tr></thead>
             <tbody>
-              <tr><td>WebSocket won't connect, API key looks correct</td><td>The app's allowed origin is unset or doesn't exactly match the page's origin. See <a href="#set-origin">Origin is fail-closed</a> above — this is the most common cause by far.</td></tr>
+              <tr><td>WebSocket won't connect, API key looks correct</td><td>A few things reject the handshake independently — an invalid/expired token, an unknown <code>appId</code>, quota exhaustion — but an unset or mismatched allowed origin is a common one worth checking first. See <a href="#set-origin">Origin is fail-closed</a> above.</td></tr>
               <tr><td><code>onagent</code> says "not logged in"</td><td>Run <code>onagent login --web</code> (or <code>onagent login</code>) again; the cached token may be missing or expired.</td></tr>
-              <tr><td><code>save-tools</code> fails validation</td><td>Check, in order: tool name regex, missing <code>description</code>, missing <code>parameters.type</code>, duplicate tool names. See <a href="#push-tools">Push tools</a> above.</td></tr>
+              <tr><td><code>save-tools</code> fails validation</td><td>Checked in order per tool: name regex, duplicate name, missing <code>description</code>, missing <code>parameters.type</code>. The first failure found is the one you'll see. See <a href="#push-tools">Push tools</a> above.</td></tr>
               <tr><td>Console warning: "backend declares tools with no registered handler"</td><td>A tool exists on the platform (pushed via <code>save-tools</code> or the console editor) that your <code>tools</code> map doesn't have a matching handler key for. Add the missing handler or remove the unused tool definition.</td></tr>
               <tr><td>Issued a new key and everything broke</td><td>Expected — issuing a key immediately revokes the previous one. Update every deployed copy of the old key to the new one.</td></tr>
               <tr><td>A tool call seems to hang</td><td>Likely a <code>kind: query</code> tool whose handler never resolves. Query tools block a shared backend lock while waiting — make sure the handler always resolves or rejects, and reserve <code>query</code> for cases that truly need data back.</td></tr>

@@ -17,7 +17,7 @@ description: 協助使用者透過 onagent CLI 登入 onagent 平台、在 conso
 
 （原本曾一次編過 linux/darwin 共 4 個平台，之後決定先只保留 Windows；下面的平台判斷邏輯仍保留完整寫法，未來若補回其他平台的執行檔，不需要再改這段邏輯，只要把對應檔案放進 `bin/` 目錄即可生效。）
 
-`go install github.com/tim72117/onagent/backend/cmd/onagent@latest` 現在也能用了（go.mod 的 module path 先前跟實際 repo 位置對不上導致 `go install` 失敗，這個問題已修好）。但即使如此，**優先使用上面內建的執行檔**：不需要本機裝 Go 工具鏈、不需要等編譯、也不依賴網路抓取私有相依套件。全域 PATH 上通常也不會有 `onagent` 指令，所以**不要**直接執行裸指令 `onagent`，而是要先判斷目前所在平台，再直接呼叫 `${CLAUDE_SKILL_DIR}/bin/` 底下對應的執行檔。
+`go install github.com/tim72117/onagent/cmd/onagent@latest` 現在也能用了（go.mod 的 module path 先前跟實際 repo 位置對不上導致 `go install` 失敗，這個問題已修好；`backend/` 本身就是 module root，所以路徑不含 `backend/`）。但即使如此，**優先使用上面內建的執行檔**：不需要本機裝 Go 工具鏈、不需要等編譯、也不依賴網路抓取私有相依套件。全域 PATH 上通常也不會有 `onagent` 指令，所以**不要**直接執行裸指令 `onagent`，而是要先判斷目前所在平台，再直接呼叫 `${CLAUDE_SKILL_DIR}/bin/` 底下對應的執行檔。
 
 判斷平台的方式：
 
@@ -50,14 +50,14 @@ chmod +x "${CLAUDE_SKILL_DIR}/bin/onagent-linux-amd64"
 目前只內建 Windows 的執行檔，判斷出其他平台（Linux、macOS，或更少見的 linux/386、linux/arm 等）時都會落到這裡。如果本機已有 Go 工具鏈，最簡單的方式是：
 
 ```bash
-go install github.com/tim72117/onagent/backend/cmd/onagent@latest
+go install github.com/tim72117/onagent/cmd/onagent@latest
 ```
 
 沒有 Go 工具鏈的話，才 fallback 用 clone 整個 repo 後在本機用 `go build` 編譯：
 
 ```bash
 git clone https://github.com/tim72117/onagent.git
-cd agent/backend
+cd onagent/backend
 go build -o onagent ./cmd/onagent
 ```
 
