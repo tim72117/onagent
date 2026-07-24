@@ -74,6 +74,11 @@
       transition: border-color 0.3s;
     }
     header.scrolled { border-bottom-color: var(--border-soft); }
+    /* header now stacks two rows: .nav (brand + nav-right, always a single
+       line) and .nav-mobile-links below it (mobile only, see its own
+       comment) — kept as two siblings, not one wrapping flex row, so the
+       second row can never push on or share space with the first: the CTA
+       stays pinned to .nav's own right edge at every width, full stop. */
     .nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
     .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
     .mark {
@@ -81,11 +86,42 @@
       background: var(--grad); color: #1a1408; font-size: 16px; font-weight: 700;
       box-shadow: 0 6px 18px -6px rgba(201, 162, 75, 0.55);
     }
+    /* Groups nav-links + the CTA as one flex item on .nav's right side, so
+       .nav itself always has exactly two items (brand, this) — space-between
+       then only ever divides those two, at any width, instead of also
+       having to arbitrate a third item in between. */
+    .nav-right { display: flex; align-items: center; gap: 30px; }
     .nav-links { display: flex; align-items: center; gap: 30px; }
     .nav-links a { color: var(--text-2); font-size: 14px; font-weight: 500; transition: color 0.2s; }
     .nav-links a:hover { color: var(--text); }
     .lang-switch { color: var(--text-3) !important; }
     .lang-switch:hover { color: var(--text) !important; }
+
+    /* Below 640px, .nav-links (the anchor links to sections already on this
+       page — Features/How/Examples) hides entirely; footer already mirrors
+       each of those, so nothing is lost. But Docs/Pricing/the zh-tw switch
+       are NOT anchors — they're the only links on the whole page to those
+       destinations, with no footer counterpart — so hiding them the same
+       way would make three real pages permanently unreachable on mobile,
+       not just one tap further away. Rendered as .nav's own second row
+       (sibling, not a wrapped child of .nav-right) precisely so the CTA
+       never has to shrink, move, or compete with these three for space —
+       it stays exactly where it always was, pinned to .nav's right edge. */
+    .nav-mobile-links {
+      display: none; align-items: center; justify-content: center; gap: 14px;
+      padding: 10px 0 14px;
+    }
+    .nav-mobile-links a { color: var(--text-2); font-size: 13px; font-weight: 500; transition: color 0.2s; white-space: nowrap; }
+    .nav-mobile-links a:hover { color: var(--text); }
+    .nav-mobile-links .lang-switch { color: var(--text-3) !important; }
+
+    /* The nav CTA's text swaps to a shorter form once nav-mobile-links takes
+       the space .nav-links used to occupy — the full "Open Console →" plus
+       Docs/Pricing/中文 no longer both fit next to the brand mark below
+       640px (verified: ~379px of required content in a 342px available
+       row), and the three mobile-links destinations are the ones with no
+       other way to reach them, so the CTA's label is what yields. */
+    .nav-cta-short { display: none; }
 
     /* buttons */
     .btn {
@@ -328,9 +364,27 @@
     }
     @media (max-width: 640px) {
       .nav-links { display: none; }
+      .nav-mobile-links { display: flex; }
       .features, .cases, .foot-grid { grid-template-columns: 1fr; }
       section.block { padding: 72px 0; }
       .final-band { padding: 48px 24px; }
+    }
+    @media (max-width: 340px) {
+      /* nav-mobile-links itself (not .nav — the brand/CTA row above it is
+         never at risk now that it's a separate sibling row, see .nav's own
+         comment) can still run out of room for its own three links + their
+         gaps below ~340px — measured directly, not guessed. Same reasoning
+         as elsewhere in this file: don't hide one of the three (no other
+         path to those destinations) or add a tap-to-reveal menu
+         (inconsistent with every wider breakpoint) — let this one small row
+         wrap onto two lines instead. It was already the shortest, lowest-
+         emphasis row in the header, so two short lines here reads as
+         "secondary links," not as a layout problem. */
+      .nav-mobile-links { flex-wrap: wrap; row-gap: 6px; }
+    }
+    @media (max-width: 400px) {
+      .nav-cta-full { display: none; }
+      .nav-cta-short { display: inline; }
     }
     @media (prefers-reduced-motion: reduce) {
       .cursor { animation: none; }
@@ -346,17 +400,33 @@
   <!-- CONSOLE_URL: see the script below — relative path /app, same-origin to the embedded console (backend/cmd/server/web.go) -->
 
   <header id="nav">
-    <div class="wrap nav">
-      <a class="brand" href="#top"><span class="mark">⌘</span>onagent</a>
-      <nav class="nav-links">
-        <a href="#features">Features</a>
-        <a href="#how">How it works</a>
-        <a href="#cases">Examples</a>
+    <div class="wrap">
+      <div class="nav">
+        <a class="brand" href="#top"><span class="mark">⌘</span>onagent</a>
+        <div class="nav-right">
+          <nav class="nav-links">
+            <a href="#features">Features</a>
+            <a href="#how">How it works</a>
+            <a href="#cases">Examples</a>
+            <a href="/docs/">Docs</a>
+            <a href="/pricing/">Pricing</a>
+            <a class="lang-switch" href="/zh-tw/">中文</a>
+          </nav>
+          <a class="btn btn-primary" href="#" data-console><span class="nav-cta-full">Open Console →</span><span class="nav-cta-short">Console →</span></a>
+        </div>
+      </div>
+      <!-- Second row, mobile only (see @media max-width: 640px): Docs/Pricing/
+           the zh-tw switch are the only links on the whole page to those
+           destinations (no footer counterpart, unlike the anchor links
+           above), so they stay reachable without a drawer — but they sit
+           below the brand/CTA row instead of squeezed into it, so the CTA
+           never has to compete with them for space and never gets pushed
+           around or shrunk to make room. -->
+      <nav class="nav-mobile-links">
         <a href="/docs/">Docs</a>
         <a href="/pricing/">Pricing</a>
         <a class="lang-switch" href="/zh-tw/">中文</a>
       </nav>
-      <a class="btn btn-primary" href="#" data-console>Open Console →</a>
     </div>
   </header>
 

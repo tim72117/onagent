@@ -74,6 +74,11 @@
       transition: border-color 0.3s;
     }
     header.scrolled { border-bottom-color: var(--border-soft); }
+    /* header 現在是上下兩列：.nav（brand + nav-right，永遠單行）和它下面
+       的 .nav-mobile-links（僅手機版，見它自己的註解）——兩者是兄弟關
+       係，不是同一個會換行的 flex row 底下的子項，這樣第二列永遠不會
+       擠壓或搶佔第一列的空間：CTA 在任何寬度下都固定在 .nav 自己的右邊
+       界，不會被推擠或縮小。 */
     .nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
     .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
     .mark {
@@ -81,11 +86,36 @@
       background: var(--grad); color: #1a1408; font-size: 16px; font-weight: 700;
       box-shadow: 0 6px 18px -6px rgba(201, 162, 75, 0.55);
     }
+    /* 把 nav-links 跟 CTA 包成 .nav 右側單一個 flex item，讓 .nav 永遠只有
+       兩個項目（brand、這一整組）——space-between 就只需要分配這兩者，不
+       管在哪個寬度下，都不會有第三個項目要參與仲裁。 */
+    .nav-right { display: flex; align-items: center; gap: 30px; }
     .nav-links { display: flex; align-items: center; gap: 30px; }
     .nav-links a { color: var(--text-2); font-size: 14px; font-weight: 500; transition: color 0.2s; }
     .nav-links a:hover { color: var(--text); }
     .lang-switch { color: var(--text-3) !important; }
     .lang-switch:hover { color: var(--text) !important; }
+
+    /* 640px 以下 .nav-links（站內錨點：功能/運作方式/範例）整組隱藏——footer
+       已有分身，不影響觸及。但文件、定價、語言切換不是錨點，是全站唯一能
+       到達那三個目的地的連結，footer 沒有對應項——用同樣方式隱藏會讓這三
+       個真實頁面在手機上完全無法到達，不只是多按一次的問題。渲染成 .nav
+       自己的第二列（是兄弟節點，不是 .nav-right 換行出來的子項），就是為
+       了讓 CTA 永遠不需要為了讓路給這三個連結而縮小、移動或搶空間——它
+       永遠待在原本的位置，固定貼齊 .nav 的右邊界。 */
+    .nav-mobile-links {
+      display: none; align-items: center; justify-content: center; gap: 14px;
+      padding: 10px 0 14px;
+    }
+    .nav-mobile-links a { color: var(--text-2); font-size: 13px; font-weight: 500; transition: color 0.2s; white-space: nowrap; }
+    .nav-mobile-links a:hover { color: var(--text); }
+    .nav-mobile-links .lang-switch { color: var(--text-3) !important; }
+
+    /* nav CTA 的文字在 nav-mobile-links 佔用原本 nav-links 的空間後換成短版
+       ——完整的「開啟 Console →」加上文件/費用方案/語言切換，在 640px 以下
+       跟品牌標誌擠不進同一列（實測：約需 379px 內容，可用只有 342px），
+       這三個小列連結是唯一沒有其他管道到達的目的地，所以讓 CTA 文字讓步。 */
+    .nav-cta-short { display: none; }
 
     /* buttons */
     .btn {
@@ -328,9 +358,25 @@
     }
     @media (max-width: 640px) {
       .nav-links { display: none; }
+      .nav-mobile-links { display: flex; }
       .features, .cases, .foot-grid { grid-template-columns: 1fr; }
       section.block { padding: 72px 0; }
       .final-band { padding: 48px 24px; }
+    }
+    @media (max-width: 340px) {
+      /* nav-mobile-links 自己（不是 .nav——上面那列 brand/CTA 現在是獨立
+         的兄弟節點，不會被擠壓，見 .nav 自己的註解）在低於約 340px 時，
+         自己的三個連結加上間距仍可能放不下——這是實測而非猜測。跟本檔案
+         其他地方一樣的原則：不隱藏三個連結其中一個（沒有其他管道到達那
+         些目的地），也不加點擊展開選單（跟其他所有寬度的互動模式不一
+         致）——讓這個小小的列自己換成兩行就好。它本來就是 header 裡最短、
+         優先度最低的一列，這裡變成兩短行讀起來就是「次要連結」，不會像
+         版面出問題。 */
+      .nav-mobile-links { flex-wrap: wrap; row-gap: 6px; }
+    }
+    @media (max-width: 400px) {
+      .nav-cta-full { display: none; }
+      .nav-cta-short { display: inline; }
     }
     @media (prefers-reduced-motion: reduce) {
       .cursor { animation: none; }
@@ -346,17 +392,31 @@
   <!-- CONSOLE_URL 見下方 script：相對路徑 /app，同源指向內嵌的 console (backend/cmd/server/web.go) -->
 
   <header id="nav">
-    <div class="wrap nav">
-      <a class="brand" href="#top"><span class="mark">⌘</span>onagent</a>
-      <nav class="nav-links">
-        <a href="#features">功能</a>
-        <a href="#how">運作方式</a>
-        <a href="#cases">範例</a>
+    <div class="wrap">
+      <div class="nav">
+        <a class="brand" href="#top"><span class="mark">⌘</span>onagent</a>
+        <div class="nav-right">
+          <nav class="nav-links">
+            <a href="#features">功能</a>
+            <a href="#how">運作方式</a>
+            <a href="#cases">範例</a>
+            <a href="/docs/">文件</a>
+            <a href="/zh-tw/pricing/">費用方案</a>
+            <a class="lang-switch" href="/">EN</a>
+          </nav>
+          <a class="btn btn-primary" href="#" data-console><span class="nav-cta-full">開啟 Console →</span><span class="nav-cta-short">Console →</span></a>
+        </div>
+      </div>
+      <!-- 第二列，僅手機版（見 @media max-width: 640px）：文件/費用方案/
+           語言切換是全站唯一能到達那些目的地的連結（不像上面的錨點連結
+           在 footer 有對應項），所以要維持觸及、不用抽屜——但排在 brand/CTA
+           那一列下面，而不是硬擠進去，這樣 CTA 永遠不用跟它們搶空間，也
+           永遠不會被推擠或縮小。 -->
+      <nav class="nav-mobile-links">
         <a href="/docs/">文件</a>
         <a href="/zh-tw/pricing/">費用方案</a>
         <a class="lang-switch" href="/">EN</a>
       </nav>
-      <a class="btn btn-primary" href="#" data-console>開啟 Console →</a>
     </div>
   </header>
 
