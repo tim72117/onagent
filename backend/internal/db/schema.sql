@@ -141,17 +141,56 @@ ALTER TABLE subscriptions ALTER COLUMN monthly_quota DROP NOT NULL;
 -- Append-only usage ledger: one row per billable event (today, one
 -- WebSocket `prompt` that reached inference.Service.Complete). Current
 -- usage for a period is always COMPUTED from this table
--- (COUNT(*) WHERE app_id IN owner's apps AND created_at >= period_start),
--- never kept as a running counter — see the design doc (section 3) for why
--- this sidesteps the reset-boundary race a mutable counter would need to
--- guard against.
+-- (COUNT(*) WHERE owner_id = ... AND created_at >= period_start), never
+-- kept as a running counter — see the design doc (section 3) for why this
+-- sidesteps the reset-boundary race a mutable counter would need to guard
+-- against.
+--
+-- owner_id, not just app_id, is what usage is billed against: a ledger has
+-- to outlive the thing it bills for. app_id alone made deleting an app
+-- cascade its whole usage history away, so delete-app/recreate-app reset
+-- the month's quota to zero — free, unlimited, self-service. See the
+-- owner_id backfill and the FK change below.
 CREATE TABLE IF NOT EXISTS usage_events (
     id         BIGSERIAL PRIMARY KEY,
-    app_id     TEXT NOT NULL REFERENCES apps (app_id) ON DELETE CASCADE, -- attribution matches inference.Request.AppID, already threaded through ws.Session.handlePrompt
+    app_id     TEXT REFERENCES apps (app_id) ON DELETE SET NULL, -- attribution matches inference.Request.AppID, already threaded through ws.Session.handlePrompt; NULL once the app is deleted, but the row (and its owner_id) survives
+    owner_id   BIGINT REFERENCES users (id) ON DELETE CASCADE,   -- who this is billed to; denormalized from apps.owner_id at write time so the ledger no longer depends on the app still existing
     event_id   TEXT NOT NULL,                   -- caller-supplied idempotency key (the WebSocket RequestID); prevents double-counting on retry, mirroring Stripe's meter event identifier
     kind       TEXT NOT NULL DEFAULT 'prompt',  -- 'prompt' today; room for 'tool_call' or token-based units later without a schema change
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Idempotent migration for databases created before owner_id existed. The
+-- backfill resolves each existing row's owner through the app it was
+-- recorded against; rows whose app is already gone stay NULL (that history
+-- is unrecoverable — it was cascade-deleted before this column existed).
+ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES users (id) ON DELETE CASCADE;
+
+UPDATE usage_events ue
+   SET owner_id = a.owner_id
+  FROM apps a
+ WHERE a.app_id = ue.app_id
+   AND ue.owner_id IS NULL;
+
+-- Drop the original ON DELETE CASCADE on app_id (and its NOT NULL) so
+-- deleting an app no longer takes the billing record with it. Postgres has
+-- no ALTER CONSTRAINT for this, so the constraint is dropped and re-added
+-- by name; the DO block keeps that idempotent across restarts, since this
+-- file re-runs on every boot (see internal/db.Open).
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.referential_constraints
+         WHERE constraint_name = 'usage_events_app_id_fkey'
+           AND delete_rule = 'CASCADE'
+    ) THEN
+        ALTER TABLE usage_events DROP CONSTRAINT usage_events_app_id_fkey;
+        ALTER TABLE usage_events
+            ADD CONSTRAINT usage_events_app_id_fkey
+            FOREIGN KEY (app_id) REFERENCES apps (app_id) ON DELETE SET NULL;
+        ALTER TABLE usage_events ALTER COLUMN app_id DROP NOT NULL;
+    END IF;
+END $$;
 
 -- Idempotency: the same event_id must never be counted twice, even if a
 -- client retries a request whose response it never saw (e.g. a dropped
@@ -160,10 +199,16 @@ CREATE TABLE IF NOT EXISTS usage_events (
 CREATE UNIQUE INDEX IF NOT EXISTS usage_events_app_id_event_id_idx
     ON usage_events (app_id, event_id);
 
--- The query this whole design exists to make fast: "how much has this app
+-- The query this whole design exists to make fast: "how much has this OWNER
 -- used since some timestamp." Every enforcement point (ws.Handler.ServeHTTP
 -- at handshake, ws.Session.handlePrompt per message) filters on exactly
--- these two columns together.
+-- these two columns together — and does so without joining apps, which is
+-- what lets the count survive an app deletion.
+CREATE INDEX IF NOT EXISTS usage_events_owner_id_created_at_idx
+    ON usage_events (owner_id, created_at);
+
+-- Kept for per-app reporting (and for the idempotency index's prefix); the
+-- billing path itself no longer uses it.
 CREATE INDEX IF NOT EXISTS usage_events_app_id_created_at_idx
     ON usage_events (app_id, created_at);
 

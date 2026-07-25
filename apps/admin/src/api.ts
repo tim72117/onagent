@@ -33,6 +33,24 @@ export interface PlanInfo {
   monthlyPrompts: number
 }
 
+// One data-integrity invariant's result. Mirrors quota.IntegrityCheck.
+// count is the number of violating rows; ok is count === 0.
+export interface IntegrityCheck {
+  key: string
+  label: string
+  count: number
+  ok: boolean
+  severity: 'critical' | 'warning' | 'info'
+  detail: string
+}
+
+// healthy is false when any non-info check failed — computed on the backend
+// so the severity rule lives in one place.
+export interface IntegrityResponse {
+  healthy: boolean
+  checks: IntegrityCheck[]
+}
+
 // Same resolution strategy as the console's api.ts BASE: an explicit
 // VITE_ADMIN_API_URL for local dev against a separately-running backend,
 // falling back to the serving origin (correct in production, where the
@@ -80,4 +98,7 @@ export const api = {
 
   setUserPlan: (userId: number, tier: string): Promise<void> =>
     request('PUT', `/admin/api/users/${userId}/plan`, { tier }).then(() => undefined),
+
+  checkIntegrity: (): Promise<IntegrityResponse> =>
+    request('GET', '/admin/api/integrity').then((r) => r.json()),
 }

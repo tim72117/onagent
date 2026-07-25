@@ -39,6 +39,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/api/plans", h.withAdmin(h.listPlans))
 	mux.HandleFunc("GET /admin/api/users", h.withAdmin(h.listUsers))
 	mux.HandleFunc("PUT /admin/api/users/{userId}/plan", h.withAdmin(h.setUserPlan))
+	mux.HandleFunc("GET /admin/api/integrity", h.withAdmin(h.integrity))
 }
 
 // withAdmin is the single gate for every privileged admin route: it
@@ -138,6 +139,29 @@ func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request, _ *adminauth
 		return
 	}
 	writeJSON(w, http.StatusOK, usersResponse{Total: total, Users: users})
+}
+
+type integrityResponse struct {
+	Healthy bool                   `json:"healthy"`
+	Checks  []quota.IntegrityCheck `json:"checks"`
+}
+
+// integrity runs the billing ledger's data-integrity checks (see
+// quota.CheckIntegrity). Healthy is false if any non-info check failed, so
+// the UI has a single flag to render on without re-deriving severity rules.
+func (h *Handler) integrity(w http.ResponseWriter, r *http.Request, _ *adminauth.Admin) {
+	checks, err := h.Quota.CheckIntegrity(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	healthy := true
+	for _, c := range checks {
+		if !c.OK && c.Severity != "info" {
+			healthy = false
+		}
+	}
+	writeJSON(w, http.StatusOK, integrityResponse{Healthy: healthy, Checks: checks})
 }
 
 type setPlanRequest struct {

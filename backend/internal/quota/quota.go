@@ -99,13 +99,24 @@ func (s *Service) Check(ctx context.Context, appID string) (Decision, error) {
 // A nil Service (disabled) is a no-op. Callers should record only after the
 // billable work actually succeeded (ws.Session.handlePrompt records after
 // inference.Complete returns without error).
+// owner_id is resolved from the app and stored on the row at write time,
+// rather than joined back through apps at read time: that join is what let
+// deleting an app erase its usage history (the FK used to cascade), which
+// made quota resettable on demand. Denormalizing here means the ledger
+// stays correct even after the app it was recorded against is gone.
+//
+// Resolved inside Record rather than passed in by callers so ws.Session and
+// the console playground don't have to carry billing's ownership model
+// around — they already only know the appID (see both call sites).
 func (s *Service) Record(ctx context.Context, appID, eventID string) error {
 	if s == nil {
 		return nil
 	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO usage_events (app_id, event_id, kind)
-		VALUES ($1, $2, 'prompt')
+		INSERT INTO usage_events (app_id, owner_id, event_id, kind)
+		SELECT $1, a.owner_id, $2, 'prompt'
+		  FROM apps a
+		 WHERE a.app_id = $1
 		ON CONFLICT (app_id, event_id) DO NOTHING`,
 		appID, eventID)
 	if err != nil {
@@ -249,17 +260,21 @@ func (r ownerStandingRow) limit() int {
 	return PlanFor(r.tier).MonthlyPrompts
 }
 
-// usageSince counts billable events across all of ownerID's apps since
-// periodStart. This is the O(n)-over-the-ledger query the
-// usage_events(app_id, created_at) index exists to keep fast.
+// usageSince counts billable events charged to ownerID since periodStart.
+// This is the O(n)-over-the-ledger query the
+// usage_events(owner_id, created_at) index exists to keep fast.
+//
+// Deliberately reads owner_id off the ledger row instead of joining apps:
+// the join meant a deleted app's rows stopped being counted (and, while the
+// FK still cascaded, stopped existing at all), so deleting and recreating an
+// app reset the period's usage to zero.
 func (s *Service) usageSince(ctx context.Context, ownerID int64, periodStart time.Time) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `
 		SELECT count(*)
-		  FROM usage_events ue
-		  JOIN apps a ON a.app_id = ue.app_id
-		 WHERE a.owner_id = $1
-		   AND ue.created_at >= $2`,
+		  FROM usage_events
+		 WHERE owner_id = $1
+		   AND created_at >= $2`,
 		ownerID, periodStart).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("quota: count usage: %w", err)

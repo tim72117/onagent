@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError } from './api'
-import type { PlanInfo, UserSummary } from './api'
+import type { IntegrityResponse, PlanInfo, UserSummary } from './api'
 
 export default function App() {
   const [me, setMe] = useState<string | null>(null)
@@ -67,6 +67,7 @@ function Dashboard({ adminEmail, onLoggedOut }: { adminEmail: string; onLoggedOu
   const [total, setTotal] = useState<number | null>(null)
   const [users, setUsers] = useState<UserSummary[]>([])
   const [plans, setPlans] = useState<PlanInfo[]>([])
+  const [integrity, setIntegrity] = useState<IntegrityResponse | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -74,10 +75,15 @@ function Dashboard({ adminEmail, onLoggedOut }: { adminEmail: string; onLoggedOu
     setLoading(true)
     setError('')
     try {
-      const [usersRes, plansRes] = await Promise.all([api.listUsers(), api.listPlans()])
+      const [usersRes, plansRes, integrityRes] = await Promise.all([
+        api.listUsers(),
+        api.listPlans(),
+        api.checkIntegrity(),
+      ])
       setTotal(usersRes.total)
       setUsers(usersRes.users)
       setPlans(plansRes)
+      setIntegrity(integrityRes)
     } catch (err) {
       // A 401 here means the session expired mid-session — bounce to login.
       if (err instanceof ApiError && err.status === 401) {
@@ -133,6 +139,48 @@ function Dashboard({ adminEmail, onLoggedOut }: { adminEmail: string; onLoggedOu
       </section>
 
       {error && <div className="error banner">{error}</div>}
+
+      {integrity && (
+        <section className="card">
+          <div className="section-head">
+            <h2>
+              Data integrity{' '}
+              <span className={integrity.healthy ? 'badge ok' : 'badge bad'}>
+                {integrity.healthy ? 'healthy' : 'attention needed'}
+              </span>
+            </h2>
+          </div>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Check</th>
+                  <th>Rows</th>
+                  <th>What it means</th>
+                </tr>
+              </thead>
+              <tbody>
+                {integrity.checks.map((c) => (
+                  <tr key={c.key}>
+                    <td>
+                      {c.label}
+                      {/* An "info" check is reported for auditability, not as a
+                          failure — it has an expected non-zero count. */}
+                      {!c.ok && c.severity !== 'info' && (
+                        <span className={c.severity === 'critical' ? 'badge bad' : 'badge warn'}>
+                          {c.severity}
+                        </span>
+                      )}
+                    </td>
+                    <td className={!c.ok && c.severity === 'critical' ? 'over' : ''}>{c.count}</td>
+                    <td className="muted">{c.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <section className="card">
         <div className="section-head">

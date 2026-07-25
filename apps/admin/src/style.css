@@ -194,6 +194,23 @@ td.over {
   color: var(--accent);
 }
 
+/* Integrity-check severity variants. Colours match the `.over` usage cell
+   (red = something is actually wrong) rather than inventing a new scale. */
+.badge.ok {
+  background: rgba(88, 190, 130, 0.18);
+  color: #58be82;
+}
+
+.badge.warn {
+  background: rgba(224, 180, 90, 0.18);
+  color: #e0b45a;
+}
+
+.badge.bad {
+  background: rgba(240, 110, 110, 0.18);
+  color: #f06e6e;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     --bg: #f5f6f8;
