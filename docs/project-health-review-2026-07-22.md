@@ -32,8 +32,8 @@
 - **日誌內含完整明文對話紀錄**：`backend/tmp/logs/*.json` 有 gitignore 保護（不會進 repo），但硬碟上是無限保留、無 redaction、無 rotation 的完整對話與 system prompt 明文。此記錄行為來自 `want` 依賴本身（`want/internal/provider/vllm.go`），非 onagent 自有程式碼，但任何跑這個 backend 的機器都會累積使用者資料，屬營運面資料保存風險。
 - **前後端程式碼重複**：`apps/console/src/api.ts` 與 `apps/admin/src/api.ts` 幾乎是複製貼上的同一份 fetch wrapper（相同的 `ApiError`、`credentials: 'include'` 模式、`BASE` 環境變數 fallback）。已有 `packages/bridge` 先例，值得抽出共用 package。
 - **`subscription-usage-quota-design.md` 文件過時**：文件開頭寫「onagent 目前完全沒有計費/訂閱/配額機制」，但 `backend/internal/quota/` 已完整實作該設計（`Check`/`Record`/`StandingFor`），且 console/admin 前端都已在消費 `Quota`/`UserSummary` API。文件狀態需更新。
-- **Cloud SQL 夜間自動關機沒有自動重啟**：`setup-nightly-sql-shutdown.sh` 每晚 23:00（Asia/Taipei）自動關閉 DB 省錢，但沒有對應的自動重啟排程——需人工每天早上手動執行 `gcloud sql instances patch ... --activation-policy=ALWAYS`，忘記則服務直接中斷、無自動復原。
-- **`PROJECT_ID="onagent-prod"` 散落至少 4 處各自硬編碼**（3 支 deploy 腳本 + `deploy-cloudrun.yml`），無單一真相來源，變更專案 ID 需同步改多處。
+- ~~**Cloud SQL 夜間自動關機沒有自動重啟**：`setup-nightly-sql-shutdown.sh` 每晚 23:00（Asia/Taipei）自動關閉 DB 省錢，但沒有對應的自動重啟排程——需人工每天早上手動執行 `gcloud sql instances patch ... --activation-policy=ALWAYS`，忘記則服務直接中斷、無自動復原。~~ **（2026-07-24 已解決：排程已取消，腳本已從 repo 移除。）**
+- **`PROJECT_ID="onagent-prod"` 散落多處各自硬編碼**（deploy 腳本 + `deploy-cloudrun.yml`），無單一真相來源，變更專案 ID 需同步改多處。
 - **`want`（package-level `askers` map）無 TTL/eviction**：stale entries 在 process 重啟前持續累積（A4 相關，低嚴重度但與觀察項相關，故列於此）。
 
 ---
