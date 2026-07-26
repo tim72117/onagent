@@ -70,7 +70,7 @@ jobs:
             --image=${{ env.IMAGE }}:${{ env.DEPLOY_TAG }} \
             --region=${{ env.CLOUD_RUN_REGION }} \
             --update-env-vars=APP_ENV=production,COOKIE_SECURE=true,AI_PROVIDER=googleapis,AI_MODEL=gemini-2.5-flash-lite,ALLOWED_ORIGIN=https://onagent.shuttle.tools,APP_ORIGINS=https://agent.shuttle.tools \
-            --update-secrets=DATABASE_URL=DATABASE_URL:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest \
+            --update-secrets=DATABASE_URL=DATABASE_URL:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest,ADMIN_BOOTSTRAP_EMAIL=ADMIN_BOOTSTRAP_EMAIL:latest,ADMIN_BOOTSTRAP_PASSWORD=ADMIN_BOOTSTRAP_PASSWORD:latest \
             --quiet
 
       - name: Show Cloud Run URL
