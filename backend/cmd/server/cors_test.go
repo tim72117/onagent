@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -106,10 +107,19 @@ func TestMountCredentialedRoutes_WiresEachPrefixToTheSameAllowlist(t *testing.T)
 	const siteOrigin = "https://onagent.shuttle.tools"
 	const thirdPartyAppOrigin = "https://some-developer-app.example.com"
 
+	// The admin fake registers under /admin/api/, not /admin/ — mirroring
+	// adminconsole.Handler.Register's real routes, which are all under
+	// /admin/api/*. mountCredentialedRoutes depends on staying strictly
+	// more specific than the literal "/admin/" pattern mountAdmin (web.go)
+	// separately registers for the admin SPA's static assets; reusing
+	// "/admin/" here would pass this test while still panicking at real
+	// startup (ServeMux forbids registering the same literal pattern
+	// twice) — this app must register a mux we also mount at a distinct
+	// prefix, so an /admin/-mounted fake would silently hide that bug.
 	mux := http.NewServeMux()
 	mountCredentialedRoutes(mux,
 		fakeRegistrar{patterns: []string{"/console/ping", "/auth/ping"}},
-		fakeRegistrar{patterns: []string{"/admin/ping"}},
+		fakeRegistrar{patterns: []string{"/admin/api/ping"}},
 		allowlistChecker([]string{siteOrigin}),
 	)
 
@@ -123,8 +133,8 @@ func TestMountCredentialedRoutes_WiresEachPrefixToTheSameAllowlist(t *testing.T)
 		{"console rejects third-party app origin", "/console/ping", thirdPartyAppOrigin, false},
 		{"auth trusts site origin", "/auth/ping", siteOrigin, true},
 		{"auth rejects third-party app origin", "/auth/ping", thirdPartyAppOrigin, false},
-		{"admin trusts site origin", "/admin/ping", siteOrigin, true},
-		{"admin rejects third-party app origin", "/admin/ping", thirdPartyAppOrigin, false},
+		{"admin trusts site origin", "/admin/api/ping", siteOrigin, true},
+		{"admin rejects third-party app origin", "/admin/api/ping", thirdPartyAppOrigin, false},
 	}
 
 	for _, tc := range cases {
@@ -144,4 +154,33 @@ func TestMountCredentialedRoutes_WiresEachPrefixToTheSameAllowlist(t *testing.T)
 			}
 		})
 	}
+}
+
+// TestFullMuxAssembly_DoesNotPanic reproduces main()'s actual mux-building
+// sequence — mountCredentialedRoutes followed by mountStatic — end to end.
+// This is the only test that would have caught the real incident this
+// file's other tests missed: mountCredentialedRoutes used to mount the
+// admin sub-mux at the literal pattern "/admin/", which is also registered
+// by mountAdmin (web.go) for the admin SPA's static assets. Go's ServeMux
+// panics at registration time when the same literal pattern is registered
+// twice — go build, go vet, and every other test in this file passed
+// anyway, because none of them ever called mountCredentialedRoutes and
+// mountStatic against the *same* mux the way main() actually does. Fixed by
+// mounting the admin sub-mux at "/admin/api/" instead, matching
+// adminconsole.Handler.Register's own routes and staying strictly more
+// specific than "/admin/".
+func TestFullMuxAssembly_DoesNotPanic(t *testing.T) {
+	mux := http.NewServeMux()
+	mountCredentialedRoutes(mux,
+		fakeRegistrar{patterns: []string{"/console/ping", "/auth/ping"}},
+		fakeRegistrar{patterns: []string{"/admin/api/ping"}},
+		allowlistChecker([]string{"https://onagent.shuttle.tools"}),
+	)
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("mux assembly panicked (this is exactly how the real server fails to start): %v", r)
+		}
+	}()
+	mountStatic(mux, slog.New(slog.NewTextHandler(t.Output(), nil)))
 }

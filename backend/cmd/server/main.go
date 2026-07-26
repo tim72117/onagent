@@ -323,12 +323,19 @@ type routeRegistrar interface {
 	Register(mux *http.ServeMux)
 }
 
-// mountCredentialedRoutes wires /console/*, /auth/*, and /admin/* onto mux,
-// each behind the same ALLOWED_ORIGIN-bound CORS middleware — see
+// mountCredentialedRoutes wires /console/*, /auth/*, and /admin/api/* onto
+// mux, each behind the same ALLOWED_ORIGIN-bound CORS middleware — see
 // corsMiddleware's doc comment for why these three are deliberately kept on
 // one shared allowlist rather than one per route group. Each handler gets
 // its own sub-mux so Register's internal patterns (e.g. "/console/apps",
 // "/auth/login") keep matching unchanged once mounted under a prefix here.
+//
+// The admin sub-mux is mounted at "/admin/api/", not "/admin/": mountAdmin
+// (web.go) separately registers the literal pattern "/admin/" for the admin
+// SPA's static assets and SPA fallback. Go's ServeMux panics at startup if
+// the same literal pattern is registered twice, so this must stay strictly
+// more specific than "/admin/" — mirroring adminconsole.Handler.Register's
+// own routes, which are all already under /admin/api/*.
 func mountCredentialedRoutes(mux *http.ServeMux, console, admin routeRegistrar, siteOrigins ws.OriginChecker) {
 	siteCORS := corsMiddleware(siteOrigins)
 
@@ -339,7 +346,7 @@ func mountCredentialedRoutes(mux *http.ServeMux, console, admin routeRegistrar, 
 
 	adminMux := http.NewServeMux()
 	admin.Register(adminMux)
-	mux.Handle("/admin/", siteCORS(adminMux))
+	mux.Handle("/admin/api/", siteCORS(adminMux))
 }
 
 // corsMiddleware builds a CORS middleware bound to a single origin
