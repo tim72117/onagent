@@ -42,21 +42,19 @@ Configured entirely via environment variables (optionally loaded from a
   DATABASE_URL            Postgres DSN
                           (default "postgres://platform:platform@localhost:5434/platform?sslmode=disable")
   APP_ENV                 Set to "production" to turn insecure-default
-                          warnings (missing ALLOWED_ORIGINS/CONSOLE_ORIGIN,
+                          warnings (missing APP_ORIGINS/ALLOWED_ORIGIN,
                           COOKIE_SECURE=false) into startup failures.
-  ALLOWED_ORIGINS         Comma-separated developer app origins allowed to
-                          open /ws and hit credentialed /console, /auth
-                          endpoints. Required when APP_ENV=production;
+  APP_ORIGINS             Comma-separated developer app origins allowed to
+                          open /ws. Required when APP_ENV=production;
                           unset accepts any origin (dev mode only).
   COOKIE_SECURE           "true" to send session cookies with Secure
                           (required when APP_ENV=production). Default
                           "false" (plain HTTP, dev only).
-  CONSOLE_ORIGIN          Comma-separated origins for the developer console
-                          frontend (Playground WebSocket + CORS). Required
-                          when APP_ENV=production; defaults to
+  ALLOWED_ORIGIN          Comma-separated origins for this project's own
+                          frontends (console Playground WebSocket + CORS,
+                          and credentialed /console, /auth, /admin CORS).
+                          Required when APP_ENV=production; defaults to
                           "http://localhost:5173" outside production.
-  ADMIN_ORIGIN            Comma-separated origins for the admin SPA CORS.
-                          Default "http://localhost:5174".
   ADMIN_BOOTSTRAP_EMAIL   Email for the first admin account, created once
                           on startup if no admin exists yet.
   ADMIN_BOOTSTRAP_PASSWORD
@@ -96,7 +94,7 @@ func main() {
 	// startup failures. Unset (or any other value) keeps today's dev-mode
 	// behavior of warning and continuing, since local dev and CI never set
 	// this. Cloud Run must set APP_ENV=production so a forgotten
-	// ALLOWED_ORIGINS/COOKIE_SECURE fails loudly at deploy time instead of
+	// APP_ORIGINS/COOKIE_SECURE fails loudly at deploy time instead of
 	// silently running open in front of real users.
 	isProd := os.Getenv("APP_ENV") == "production"
 
@@ -115,21 +113,20 @@ func main() {
 	}
 	log.Info("loaded tool definitions from database", "apps", len(apps.All()))
 
-	// Governs both the WebSocket handshake (ws.Handler) and credentialed
-	// CORS for /console, /auth (withCORS) — one setting, since both are
-	// really the same question: which front-end origins does this backend
-	// trust with a real session/token, not just "which origins can read
-	// public codegen artifacts" (unrestricted regardless, see withCORS).
-	originAllowlist := parseOrigins(envOr("ALLOWED_ORIGINS", ""))
+	// Governs the WebSocket handshake for developer apps' own sites
+	// (ws.Handler) — a separate audience and separate setting from this
+	// project's own frontends (ALLOWED_ORIGIN, below), which cover
+	// /console, /auth, /admin instead.
+	originAllowlist := parseOrigins(envOr("APP_ORIGINS", ""))
 	originChecker := ws.AllowAllOrigins
 	if len(originAllowlist) > 0 {
 		originChecker = allowlistChecker(originAllowlist)
 		log.Info("origin allowlist enabled", "origins", originAllowlist)
 	} else if isProd {
-		log.Error("APP_ENV=production but ALLOWED_ORIGINS is not set; refusing to start open to any origin")
+		log.Error("APP_ENV=production but APP_ORIGINS is not set; refusing to start open to any origin")
 		os.Exit(1)
 	} else {
-		log.Warn("no ALLOWED_ORIGINS set; accepting WebSocket handshakes AND credentialed /console, /auth CORS requests from any origin (dev mode only — set this before any real deployment)")
+		log.Warn("no APP_ORIGINS set; accepting WebSocket handshakes from any origin (dev mode only — set this before any real deployment)")
 	}
 
 	authStore := auth.New(conn)
@@ -208,66 +205,48 @@ func main() {
 		log.Info("API key auth enabled (no keys issued yet)")
 	}
 
-	// Separate from ALLOWED_ORIGINS above: that setting is about developer
-	// apps' own sites talking to /ws. This is the console frontend itself
-	// (a single app this project ships, not a developer's), needed only so
+	// Separate from APP_ORIGINS above: that setting is about developer
+	// apps' own sites talking to /ws. ALLOWED_ORIGIN (singular) is this
+	// project's own frontends — console and admin are both shipped by this
+	// project, not a developer's, so they share one setting. Needed so
 	// internal/console/playground.go can accept its cross-origin WebSocket
-	// handshake — see Handler.ConsoleOrigins.
+	// handshake, and so /console, /auth, /admin can get a credentialed CORS
+	// response — see Handler.ConsoleOrigins and corsMiddleware.
 	//
 	// The fallback to localhost:5173 (the console's standard dev port) only
 	// applies outside production, so a fresh checkout works with zero
-	// config. In production, CONSOLE_ORIGIN must be set explicitly — an
+	// config. In production, ALLOWED_ORIGIN must be set explicitly — an
 	// unset var used to silently default to localhost:5173 even in prod
 	// (parseOrigins(envOr(..., "http://localhost:5173")) is never empty, so
 	// the len==0 guard below could never fire), which meant a forgotten
-	// CONSOLE_ORIGIN failed *quietly*: the server started fine but every
+	// ALLOWED_ORIGIN failed *quietly*: the server started fine but every
 	// Playground WebSocket and credentialed CORS check trusted only
-	// localhost, never the real deployed console origin.
-	consoleOriginRaw := os.Getenv("CONSOLE_ORIGIN")
-	if consoleOriginRaw == "" && !isProd {
-		consoleOriginRaw = "http://localhost:5173"
+	// localhost, never the real deployed origin.
+	siteOriginRaw := os.Getenv("ALLOWED_ORIGIN")
+	if siteOriginRaw == "" && !isProd {
+		siteOriginRaw = "http://localhost:5173"
 	}
-	consoleOrigins := parseOrigins(consoleOriginRaw)
-	if isProd && len(consoleOrigins) == 0 {
-		log.Error("APP_ENV=production but CONSOLE_ORIGIN is not set; refusing to start with the Playground WebSocket unreachable")
+	siteOrigins := parseOrigins(siteOriginRaw)
+	if isProd && len(siteOrigins) == 0 {
+		log.Error("APP_ENV=production but ALLOWED_ORIGIN is not set; refusing to start with the Playground WebSocket unreachable")
 		os.Exit(1)
 	}
 
-	// Where the admin SPA (apps/admin) is served from, for the credentialed
-	// CORS on /admin/api/*. Defaults to a local dev port distinct from the
-	// console's (5173) so both dev servers can run at once. In production the
-	// admin SPA is served same-origin from /admin, so a cross-origin allow is
-	// only strictly needed in dev — but requiring it in prod would break any
-	// deployment that does serve the admin console from a separate domain, so
-	// it's left optional and simply merged into the credentialed-CORS allow
-	// set below.
-	adminOrigins := parseOrigins(envOr("ADMIN_ORIGIN", "http://localhost:5174"))
-
-	// Credentialed CORS (see withCORS) must allow the developer app origins,
-	// the console origin, AND the admin origin, since /console, /auth, and
-	// /admin all ride on cookies. WebSocket handshake origin enforcement
-	// stays on originChecker alone (developer apps only) — the console/admin
-	// UIs never open the developer /ws.
-	credentialedOrigins := anyOf(originChecker, allowlistChecker(consoleOrigins), allowlistChecker(adminOrigins))
-
-	inferSvc := newInferenceService(log, apps.All())
+	inferSvc := newInferenceService(log, apps)
 	wsHandler := ws.NewHandler(apps, inferSvc, log, originChecker, wsAuth, quotaSvc)
-	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore, inferSvc, quotaSvc, consoleOrigins)
+	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore, inferSvc, quotaSvc, siteOrigins)
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", wsHandler)
-	mux.HandleFunc("/apps/{appId}/tools.json", handleToolSchema(apps))
-	mux.HandleFunc("/apps/{appId}/tools.ts", handleToolTypeScript(apps))
+	mux.Handle("/apps/{appId}/tools.json", publicCORS(handleToolSchema(apps)))
+	mux.Handle("/apps/{appId}/tools.ts", publicCORS(handleToolTypeScript(apps)))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
-	consoleHandler.Register(mux)
 
-	// Admin back-office API under /admin/api/* — a separate handler and
-	// identity system from the developer console above (internal/adminauth).
 	adminHandler := adminconsole.NewHandler(adminAuthStore, quotaSvc)
-	adminHandler.Register(mux)
+	mountCredentialedRoutes(mux, consoleHandler, adminHandler, allowlistChecker(siteOrigins))
 
 	// Static frontend hosting (apps/landing at "/", apps/console at "/app"
 	// with SPA fallback) — registered last, after every API route above,
@@ -280,7 +259,7 @@ func main() {
 
 	addr := envOr("ADDR", ":8080")
 	log.Info("listening", "addr", addr)
-	if err := http.ListenAndServe(addr, recoverMiddleware(withCORS(mux, credentialedOrigins), log)); err != nil {
+	if err := http.ListenAndServe(addr, recoverMiddleware(mux, log)); err != nil {
 		log.Error("server exited", "err", err)
 		os.Exit(1)
 	}
@@ -335,47 +314,77 @@ func handleToolTypeScript(apps *toolschema.Registry) http.HandlerFunc {
 	}
 }
 
-// withCORS enables browser fetches to the HTTP endpoints above. Policy
-// differs by path, because the security requirement differs:
-//
-//   - /apps/{appId}/tools.json|.ts (codegen) return public, non-credentialed
-//     artifacts — "*" leaks nothing there, so any origin is fine.
-//
-//   - /console/* and /auth/* run on session cookies (internal/session) or a
-//     bearer token minted through them, and cookies are ambient credentials
-//     a cross-site page can ride on — the classic case CORS exists to guard
-//     against. This used to reflect back *any* request Origin (with
-//     Access-Control-Allow-Credentials: true), which let any website that
-//     got a logged-in user to visit it read authenticated responses from
-//     their browser — including a freshly minted bearer token from
-//     POST /console/tokens or /console/cli-auth/approve. allowedOrigins
-//     (the same allowlist ws.Handler already enforces for WebSocket
-//     handshakes — one ALLOWED_ORIGINS setting governs both) is now
-//     required to get Access-Control-Allow-Origin at all here; an origin
-//     not on the list gets no such header, so the browser's own
-//     same-origin policy blocks the page from ever reading the response,
-//     regardless of what the server computed.
-func withCORS(next http.Handler, allowedOrigins ws.OriginChecker) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		origin := r.Header.Get("Origin")
-		// /admin/api/* is credentialed too (admin session cookie), so it
-		// must go through the allowlisted, credentials-true branch — never
-		// the "*" branch, which browsers refuse to combine with credentials.
-		credentialed := strings.HasPrefix(r.URL.Path, "/console/") ||
-			strings.HasPrefix(r.URL.Path, "/auth/") ||
-			strings.HasPrefix(r.URL.Path, "/admin/")
+// routeRegistrar is what mountCredentialedRoutes needs from a handler:
+// exactly the shape both console.Handler and adminconsole.Handler already
+// have. Defined here (not in either of those packages) purely so tests in
+// this package can supply a trivial fake instead of a real handler wired to
+// a live Postgres.
+type routeRegistrar interface {
+	Register(mux *http.ServeMux)
+}
 
-		switch {
-		case credentialed:
-			if origin != "" && allowedOrigins(origin) {
+// mountCredentialedRoutes wires /console/*, /auth/*, and /admin/* onto mux,
+// each behind the same ALLOWED_ORIGIN-bound CORS middleware — see
+// corsMiddleware's doc comment for why these three are deliberately kept on
+// one shared allowlist rather than one per route group. Each handler gets
+// its own sub-mux so Register's internal patterns (e.g. "/console/apps",
+// "/auth/login") keep matching unchanged once mounted under a prefix here.
+func mountCredentialedRoutes(mux *http.ServeMux, console, admin routeRegistrar, siteOrigins ws.OriginChecker) {
+	siteCORS := corsMiddleware(siteOrigins)
+
+	consoleMux := http.NewServeMux()
+	console.Register(consoleMux)
+	mux.Handle("/console/", siteCORS(consoleMux))
+	mux.Handle("/auth/", siteCORS(consoleMux))
+
+	adminMux := http.NewServeMux()
+	admin.Register(adminMux)
+	mux.Handle("/admin/", siteCORS(adminMux))
+}
+
+// corsMiddleware builds a CORS middleware bound to a single origin
+// allowlist. Each credentialed route group (/console+/auth, /admin) gets its
+// own call to this — see main()'s mounting of consoleMux/adminMux — rather
+// than one shared middleware branching on path prefix, so each group's
+// allowlist can never leak into another's by a future edit accidentally
+// merging them (see ALLOWED_ORIGIN's history: it used to be an anyOf of the
+// developer-app allowlist plus console plus admin origins, which let a
+// developer app's origin ride cookies meant only for this project's own
+// console/admin frontends).
+//
+// Cookies are ambient credentials a cross-site page can ride on — the
+// classic case CORS exists to guard against. Access-Control-Allow-Origin is
+// only ever set to the actual matched origin (never "*", which browsers
+// refuse to combine with credentials), and only when that origin is on the
+// allowlist passed in; anything else gets no such header at all, so the
+// browser's own same-origin policy blocks the page from ever reading the
+// response, regardless of what the server computed.
+func corsMiddleware(allowed ws.OriginChecker) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+			if origin != "" && allowed(origin) {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 				w.Header().Set("Vary", "Origin")
 			}
-		default:
-			w.Header().Set("Access-Control-Allow-Origin", "*")
-		}
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
+// publicCORS marks a response as a public, non-credentialed artifact — used
+// for /apps/{appId}/tools.json|.ts (codegen) — where "*" leaks nothing since
+// no cookie or token ever rides with these requests.
+func publicCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		if r.Method == http.MethodOptions {
@@ -438,8 +447,11 @@ func loadFileSettings(path string) fileSettings {
 // individual fields. AI_PROVIDER/provider unset (or "mock") keeps the
 // existing MockService so local/demo setups without any LLM credentials
 // keep working; any other value boots a want orchestrator scoped to exactly
-// the tools declared by apps (see inference.RegisterPlatformTools).
-func newInferenceService(log *slog.Logger, apps map[string]*toolschema.App) inference.Service {
+// the tools declared by apps (see inference.RegisterPlatformTools). apps is
+// also threaded through to NewWant itself — WantService.Complete reads it
+// live on every call to build a per-app tool provider, not just once at
+// startup (see inference.RegisterAppRole's doc comment).
+func newInferenceService(log *slog.Logger, apps *toolschema.Registry) inference.Service {
 	fs := loadFileSettings(envOr("SETTINGS_FILE", "configs/settings.json"))
 
 	provider := envOr("AI_PROVIDER", fs.Provider)
@@ -451,7 +463,7 @@ func newInferenceService(log *slog.Logger, apps map[string]*toolschema.App) infe
 	}
 
 	log.Info("using want orchestrator for inference", "provider", provider)
-	inference.RegisterPlatformTools(apps)
+	inference.RegisterPlatformTools(apps.All())
 	return inference.NewWant(inference.WantSettings{
 		Provider:        provider,
 		Model:           envOr("AI_MODEL", fs.Model),
@@ -460,7 +472,7 @@ func newInferenceService(log *slog.Logger, apps map[string]*toolschema.App) infe
 		GoogleAPIKey:    envOr("GOOGLE_API_KEY", fs.GoogleAPIKey),
 		AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
 		Workspace:       envOr("WANT_WORKSPACE", ""),
-	})
+	}, apps)
 }
 
 func allowlistChecker(allowed []string) ws.OriginChecker {
@@ -470,19 +482,5 @@ func allowlistChecker(allowed []string) ws.OriginChecker {
 	}
 	return func(origin string) bool {
 		return set[origin]
-	}
-}
-
-// anyOf combines origin checkers with OR: an origin is allowed if any of
-// them allows it. Used to build the credentialed-CORS allow set from the
-// developer app allowlist plus the console and admin origins.
-func anyOf(checkers ...ws.OriginChecker) ws.OriginChecker {
-	return func(origin string) bool {
-		for _, c := range checkers {
-			if c != nil && c(origin) {
-				return true
-			}
-		}
-		return false
 	}
 }

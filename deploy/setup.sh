@@ -79,15 +79,23 @@ gcloud artifacts repositories create "${AR_REPO}" \
 # -----------------------------------------------------------------------------
 # 4. 建立空的 Secret Manager secrets(容器而已，不寫入真實值）
 #
+#    只放真正敏感的機密 —— GH_PAT 不在這裡：GitHub Actions 讀的是
+#    GitHub repo 自己的 Settings > Secrets，跟 GCP Secret Manager 是兩個
+#    完全獨立的命名空間，這支腳本建了也不會被任何 workflow 讀到。
+#    ALLOWED_ORIGIN/APP_ORIGINS 也不在這裡 —— 都不是機密,只是易變動的環境
+#    設定,走 Cloud Run 一般 --update-env-vars 即可（見 deploy-cloudrun.yml）。
+#
 #    之後手動填值，例如：
 #      echo -n "postgres://user:pass@host/db?sslmode=require" | \
 #        gcloud secrets versions add DATABASE_URL --data-file=- --project="${PROJECT_ID}"
-#      echo -n "https://example-developer-site.com,https://another-site.com" | \
-#        gcloud secrets versions add ALLOWED_ORIGINS --data-file=- --project="${PROJECT_ID}"
-#      echo -n "ghp_xxxxxxxxxxxxxxxxxxxx" | \
-#        gcloud secrets versions add GH_PAT --data-file=- --project="${PROJECT_ID}"
+#      echo -n "AIzaSy..." | \
+#        gcloud secrets versions add GOOGLE_API_KEY --data-file=- --project="${PROJECT_ID}"
+#      echo -n "admin@example.com" | \
+#        gcloud secrets versions add ADMIN_BOOTSTRAP_EMAIL --data-file=- --project="${PROJECT_ID}"
+#      echo -n "a-strong-password" | \
+#        gcloud secrets versions add ADMIN_BOOTSTRAP_PASSWORD --data-file=- --project="${PROJECT_ID}"
 # -----------------------------------------------------------------------------
-for SECRET_NAME in DATABASE_URL ALLOWED_ORIGINS GH_PAT; do
+for SECRET_NAME in DATABASE_URL GOOGLE_API_KEY ADMIN_BOOTSTRAP_EMAIL ADMIN_BOOTSTRAP_PASSWORD; do
   gcloud secrets create "${SECRET_NAME}" \
     --replication-policy="automatic" \
     --project="${PROJECT_ID}" \
@@ -96,7 +104,7 @@ done
 
 echo
 echo "⚠️  以上只建立了空的 secret 容器，尚未寫入任何真實值。"
-echo "   請自行用 'gcloud secrets versions add' 補上 DATABASE_URL / ALLOWED_ORIGINS / GH_PAT 的實際內容。"
+echo "   請自行用 'gcloud secrets versions add' 補上實際內容。"
 echo
 
 # -----------------------------------------------------------------------------
