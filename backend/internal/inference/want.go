@@ -33,6 +33,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tim72117/onagent/internal/toolschema"
 	"github.com/tim72117/want/config"
 	"github.com/tim72117/want/orchestrator"
 	"github.com/tim72117/want/ui"
@@ -66,15 +67,22 @@ const completeTimeout = 90 * time.Second
 // the first Complete call (see agent_roles.go).
 type WantService struct {
 	orch *orchestrator.Orchestrator
+	apps *toolschema.Registry
 	mu   sync.Mutex
 }
 
 // NewWant builds a want orchestrator from settings and starts its
-// background dispatch loop. The initial role is a harmless placeholder —
-// Complete sets orch.Role to the requesting app's own role on every call,
-// before that app has ever been selected the orchestrator simply hasn't
-// been asked to run yet.
-func NewWant(settings WantSettings) *WantService {
+// background dispatch loop. apps is the live tool registry Complete uses to
+// build a per-app types.ToolProvider on every call (see toolProviderFor in
+// agent_roles.go) — the same *toolschema.Registry internal/console writes
+// through, so a saved tool edit is visible on the very next prompt with no
+// extra step.
+//
+// The initial role AND toolbox passed to SetupWith are harmless
+// placeholders — Complete sets both orch.Role and orch.Toolbox to the
+// requesting app's own values on every call; before any app has been
+// selected the orchestrator simply hasn't been asked to run yet.
+func NewWant(settings WantSettings, apps *toolschema.Registry) *WantService {
 	orch := orchestrator.SetupWith(&config.Settings{
 		Provider:        settings.Provider,
 		Model:           settings.Model,
@@ -84,8 +92,8 @@ func NewWant(settings WantSettings) *WantService {
 		AnthropicAPIKey: settings.AnthropicAPIKey,
 		Workspace:       settings.Workspace,
 		MockScenario:    settings.MockScenario,
-	})
-	return &WantService{orch: orch}
+	}, toolProviderFor("", apps))
+	return &WantService{orch: orch, apps: apps}
 }
 
 func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error) {
@@ -112,8 +120,17 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 	// definition per app at startup. Without this, every app would share
 	// whatever role the orchestrator happened to be constructed with,
 	// meaning app A's LLM could see app B's tools (or B's custom Thought).
+	//
+	// orch.Toolbox is set the same way, same reason: it scopes
+	// Declarations()/GetFactory() to exactly this app's own tools (see
+	// appToolProvider in agent_roles.go), read live from s.apps on every
+	// call — not a snapshot taken at registration time. want has no
+	// fallback for a nil Toolbox (an unset one fails the run outright, see
+	// want internal/run_agent.go's RunAgent), so this must be set on every
+	// call that has an AppID, mirroring orch.Role exactly.
 	if req.AppID != "" {
 		s.orch.Role = agentRoleFor(req.AppID)
+		s.orch.Toolbox = toolProviderFor(req.AppID, s.apps)
 	}
 
 	state := ui.NewCommonInferenceState()
@@ -124,7 +141,7 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 	var once sync.Once
 	finish := func() { once.Do(func() { close(done) }) }
 
-	unsub := s.orch.EventBus.Subscribe("agent.inference", func(payload interface{}) {
+	unsub := s.orch.Subscribe("agent.inference", func(payload interface{}) {
 		result, handled := ui.HandleInferenceMessage(payload, state)
 		if !handled || result == nil {
 			return

@@ -33,49 +33,39 @@ const defaultThought = "You are a tool-selection assistant embedded in a web pag
 
 // RegisterPlatformTools registers every app loaded at startup (see
 // RegisterAppRole for what registration actually does and why it's
-// per-app). This alone is NOT enough to keep want in sync for the process's
-// whole lifetime: apps created/edited afterward through the console API
-// (internal/console) exist only in the database and this process's in-memory
-// toolschema.Registry until something calls RegisterAppRole again for them
-// — which is why every console handler that creates or mutates an app's
-// tools or Thought (createApp, saveTools, setThought) also calls
-// RegisterAppRole directly after a successful toolschema.Registry write.
-// Skipping that call is exactly the bug this comment exists to prevent:
-// want's AgentLoader.GetAgent silently returns an error for an unregistered
-// role (see want internal/run_agent.go's RunAgent, which then returns an
-// empty Experience with no event ever published), which surfaces here as
-// WantService.Complete hanging until its 90s timeout — not as a clean
-// error close to the actual cause.
+// per-app).
 func RegisterPlatformTools(apps map[string]*toolschema.App) {
 	for _, app := range apps {
 		RegisterAppRole(app)
 	}
 }
 
-// RegisterAppRole (re-)registers app's tools into want's global registry and
-// a want agent role scoped to exactly that app (agentRoleFor(app.AppID)),
-// whitelisting only its own tool names and using its custom Thought (or
+// RegisterAppRole (re-)registers a want agent role scoped to exactly this
+// app (agentRoleFor(app.AppID)): its tool-name whitelist and its Thought (or
 // defaultThought if unset). Per-app roles — rather than one role shared by
 // every app — are what keep app A's LLM from ever seeing or selecting app
 // B's tools, and let each app's Thought be customized independently.
 //
-// Must be called after every change to app's tools or Thought that should
-// take effect immediately (see RegisterPlatformTools) — want has no
+// Must be called after any change to WHICH tools an app has, or to its
+// Thought — those are the only two things a role captures. want has no
 // mechanism to unregister a role, but re-registering the same role name
-// simply overwrites its AgentDefinition, so calling this again for an
-// existing app is exactly how an edit takes effect.
+// simply overwrites its AgentDefinition (a map write, not append-only), so
+// calling this again for an existing app is exactly how a whitelist/Thought
+// edit takes effect.
 //
-// Tool names are only guaranteed unique within a single app (see
-// toolschema.LoadFile's per-file uniqueness check); registering the same
-// name from two different apps overwrites the global tool declaration, but
-// each app's own whitelist still only ever contains that app's names, so
-// cross-app tool leakage isn't possible even if the underlying
-// types.RegisterTool call for a shared name was last won by another app.
+// Editing an EXISTING tool's own schema (description, parameters) does NOT
+// require calling this again: appToolProvider (see toolProviderFor) reads
+// tool declarations straight from toolschema.Registry fresh on every single
+// inference call — not from any snapshot taken at registration time — so a
+// schema edit is visible on the very next prompt. This is the fix for want
+// v0.0.2's types.GlobalRegistry.Declarations being append-only (see
+// docs/known-issues-want-dependency.md /
+// docs/TODO-want-registry-append-only.md): want v0.1.0 removed that global
+// registry entirely, so there is no stale copy left to keep in sync.
 func RegisterAppRole(app *toolschema.App) {
 	toolNames := make([]string, 0, len(app.Tools))
 	for _, t := range app.Tools {
 		toolNames = append(toolNames, t.Name)
-		registerForwardingTool(t)
 	}
 
 	thought := app.Thought
@@ -105,26 +95,93 @@ func RegisterAppRole(app *toolschema.App) {
 	})
 }
 
-// registerForwardingTool registers one platform tool into want's global
-// registry, choosing between the two Call behaviors toolschema.ToolKind
-// selects — see forwardingTool and queryTool's own doc comments for what
-// each does.
-func registerForwardingTool(t toolschema.Tool) {
-	decl := types.ToolDeclaration{
+// appLookup is the one method appToolProvider actually needs from
+// *toolschema.Registry. Defined here (not in toolschema) so this package's
+// tests can supply a trivial in-memory fake instead of a real, DB-backed
+// Registry — production code still just passes a *toolschema.Registry,
+// which already satisfies this.
+type appLookup interface {
+	Get(id string) (*toolschema.App, bool)
+}
+
+// appToolProvider implements want's types.ToolProvider by reading live from
+// an appLookup — never from a copy captured at some earlier point. Both
+// Declarations() and GetFactory() re-resolve appID's current tools on every
+// call: want's own internal/run_agent.go calls toolbox.Declarations() fresh
+// on every single RunAgent invocation (once per prompt), and
+// agent_tool.go's DispatchToolCall calls toolbox.GetFactory() at the moment
+// a tool is actually invoked — neither is cached anywhere in want. So a
+// tool schema edit saved through the console takes effect on the very next
+// prompt, with no re-registration step and no backend restart.
+//
+// Per-request, not shared: WantService.Complete constructs one of these
+// scoped to req.AppID on every call and assigns it to orch.Toolbox (see
+// want.go), the same per-call-override pattern already used for orch.Role.
+// This is also what keeps app A's tool factories from ever being reachable
+// while running app B's role — GetFactory only ever looks inside this
+// provider's own appID.
+type appToolProvider struct {
+	appID string
+	apps  appLookup
+}
+
+// toolProviderFor builds a types.ToolProvider scoped to appID's current
+// tools, backed by apps (in production, the same live, DB-synced
+// *toolschema.Registry internal/console writes through — see
+// toolschema.Registry.Reload).
+func toolProviderFor(appID string, apps appLookup) types.ToolProvider {
+	return &appToolProvider{appID: appID, apps: apps}
+}
+
+func (p *appToolProvider) Declarations() []types.ToolDeclaration {
+	app, ok := p.apps.Get(p.appID)
+	if !ok {
+		return nil
+	}
+	decls := make([]types.ToolDeclaration, 0, len(app.Tools))
+	for _, t := range app.Tools {
+		decls = append(decls, toolDeclarationFor(t))
+	}
+	return decls
+}
+
+func (p *appToolProvider) GetFactory(name string) (types.ToolFactory, bool) {
+	app, ok := p.apps.Get(p.appID)
+	if !ok {
+		return nil, false
+	}
+	for _, t := range app.Tools {
+		if t.Name != name {
+			continue
+		}
+		return toolFactoryFor(t), true
+	}
+	return nil, false
+}
+
+// toolDeclarationFor converts one developer-defined tool into the schema
+// shape want/the LLM expects.
+func toolDeclarationFor(t toolschema.Tool) types.ToolDeclaration {
+	return types.ToolDeclaration{
 		Name:        t.Name,
 		Description: t.Description,
 		Type:        "sync",
 		Parameters:  parameterSchemaToWant(t.Parameters),
 	}
+}
+
+// toolFactoryFor chooses between the two Call behaviors toolschema.ToolKind
+// selects — see forwardingTool and queryTool's own doc comments for what
+// each does.
+func toolFactoryFor(t toolschema.Tool) types.ToolFactory {
 	if t.Kind == toolschema.ToolKindQuery {
-		types.RegisterTool(decl, func() types.ToolInterface {
+		return func() types.ToolInterface {
 			return &queryTool{name: t.Name}
-		})
-		return
+		}
 	}
-	types.RegisterTool(decl, func() types.ToolInterface {
+	return func() types.ToolInterface {
 		return &forwardingTool{name: t.Name}
-	})
+	}
 }
 
 // forwardingTool blocks until the page actually executes the call and
