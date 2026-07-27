@@ -44,6 +44,13 @@ type Session struct {
 	mu           sync.Mutex
 	app          *toolschema.App
 	pendingCalls map[string]chan protocol.ToolResultPayload
+
+	// writeMessage does the actual outbound write send() ends with —
+	// defaults to s.conn's real WriteMessage/SetWriteDeadline, but tests
+	// exercising pendingCalls/AskInteraction's correlation and timeout logic
+	// (which never need a real socket) can replace it with a no-op or a
+	// recording stub instead of constructing a *websocket.Conn.
+	writeMessage func(data []byte) error
 }
 
 // NewSession wires a freshly-upgraded connection into a Session and starts
@@ -61,6 +68,10 @@ func NewSession(ctx context.Context, conn *websocket.Conn, apps *toolschema.Regi
 		authAppID:    authAppID,
 		pendingCalls: make(map[string]chan protocol.ToolResultPayload),
 	}
+	s.writeMessage = func(data []byte) error {
+		_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+		return conn.WriteMessage(websocket.TextMessage, data)
+	}
 	// Makes s reachable from a ToolKindQuery tool's Call, which runs inside
 	// want's own goroutine with no reference to this Session — see
 	// inference.RegisterAsker's doc comment for the full path back here.
@@ -74,6 +85,11 @@ func NewSession(ctx context.Context, conn *websocket.Conn, apps *toolschema.Regi
 func (s *Session) run(ctx context.Context) {
 	defer s.conn.Close()
 	defer inference.UnregisterAsker(s.id)
+	// Releases this session's want orchestrator (see inference.WantService)
+	// — without this, every connection that ever completed a prompt would
+	// leak its orchestrator's dispatch goroutine for the life of the
+	// process, growing without bound as users connect and disconnect.
+	defer s.infer.CloseSession(s.id)
 
 	s.conn.SetReadLimit(1 << 20) // 1MB: generous for large tool-call payloads, bounded against abuse.
 	_ = s.conn.SetReadDeadline(time.Now().Add(pongTimeout))
@@ -319,7 +335,10 @@ func (s *Session) handleToolResult(env protocol.Envelope) {
 // fails with a clear "the page didn't answer in time" rather than the
 // caller instead seeing whichever of those two unrelated timeouts happens
 // to fire first.
-const interactionTimeout = 20 * time.Second
+// A var, not a const, so tests exercising the timeout branch (see
+// session_test.go) can shrink it rather than actually waiting 20s.
+// Production code never reassigns it.
+var interactionTimeout = 20 * time.Second
 
 // AskInteraction implements inference.InteractionAsker: sends toolName/args
 // to the browser as a TypeToolQuery and blocks until it answers with a
@@ -388,8 +407,7 @@ func (s *Session) send(typ protocol.MessageType, requestID string, payload any) 
 
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	_ = s.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-	if err := s.conn.WriteMessage(websocket.TextMessage, out); err != nil {
+	if err := s.writeMessage(out); err != nil {
 		s.log.Info("write failed", "session", s.id, "err", err)
 	}
 }
