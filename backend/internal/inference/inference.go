@@ -53,4 +53,13 @@ type Request struct {
 // the WebSocket hub or SDK.
 type Service interface {
 	Complete(ctx context.Context, req Request) (*Result, error)
+
+	// CloseSession releases any per-session resources SessionID's prompts
+	// have accumulated (see WantService, which keeps one want orchestrator
+	// per SessionID). Callers whose connection has a clear end-of-life
+	// (ws.Session, the Playground handler) call this exactly once when that
+	// connection closes. A no-op for implementations with no per-session
+	// state to release, and safe to call with a SessionID that never
+	// completed a prompt (nothing to release).
+	CloseSession(sessionID string)
 }

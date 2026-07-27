@@ -18,6 +18,9 @@ type MockService struct{}
 
 func NewMock() *MockService { return &MockService{} }
 
+// CloseSession is a no-op: MockService keeps no per-session state.
+func (m *MockService) CloseSession(sessionID string) {}
+
 func (m *MockService) Complete(_ context.Context, req Request) (*Result, error) {
 	for _, tool := range req.Tools {
 		if containsWord(req.Prompt, tool.Name) {

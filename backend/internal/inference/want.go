@@ -15,19 +15,47 @@
 // immediately; WantService.Complete reads it back out of the shared sink
 // once the run reaches "idle".
 //
-// want.Orchestrator has one AgentID (and one Role) per orchestrator
-// instance and dispatches every Submit() onto the same activation queue,
-// processing one agent run at a time. WantService therefore serializes
-// Complete() calls with a mutex: concurrent requests would otherwise race
-// on the same AgentID/Role and the package-level callSink, each risking
-// observing the other's output — this is also what makes it safe to swap
-// AgentID/Role per call (see Complete) rather than needing one orchestrator
-// per app/session.
+// WantService keeps one want.Orchestrator per SessionID (see the sessions
+// map below), built lazily on that session's first Complete call — rather
+// than one shared orchestrator with its AgentID/Role/Toolbox swapped per
+// call, as this package used to do. That swap was safe (a mutex guaranteed
+// no run was ever in flight while the fields changed) but serialized every
+// user's every turn behind one lock, up to completeTimeout each.
+//
+// This does NOT give sessions independent LLM providers or independent
+// concurrency limits, despite giving each one its own *orchestrator.Orchestrator:
+// want (still true as of v0.2.0 — see internal/run_agent.go's package-level
+// GlobalEngine) resolves every RunAgent call's provider by reading that one
+// process-wide GlobalEngine, which orchestrator.InitializeWithConfig
+// overwrites on every call. Calling it once per session (as SetupWith does
+// internally) would race unsynchronized writes to GlobalEngine across
+// concurrent session creations, and — since every session here uses
+// identical WantSettings anyway (one Provider/Model/API key for the whole
+// process, from environment variables) — would only ever replace it with an
+// equivalent instance, never a meaningfully different one; the risk isn't
+// worth taking for zero practical benefit. initEngineOnce below calls
+// orchestrator.InitializeWithConfig exactly once for the process's whole
+// lifetime; every session's Orchestrator is otherwise assembled by hand
+// (mirroring what SetupWith does apart from that one call — see
+// buildOrchestrator) and shares the same underlying provider and its
+// concurrency=1 request queue. What per-session orchestrators DO provide:
+// each session's own AgentID/Role/Toolbox/conversation history/dispatch
+// goroutine, replacing the old design's global mutex + swapped-fields
+// pattern with actual object-level isolation, and (via Orchestrator.Stop(),
+// added in want v0.2.0) a way to release a session's resources when its
+// connection closes instead of leaking its dispatch goroutine forever.
+//
+// A session's orchestrator is created once (with its AgentID, Role, and
+// Toolbox fixed for the session's whole lifetime — see buildOrchestrator's
+// doc comment on why that's safe) and reused by every subsequent Complete
+// call carrying the same SessionID, until CloseSession releases it.
 package inference
 
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -36,6 +64,7 @@ import (
 	"github.com/tim72117/onagent/internal/toolschema"
 	"github.com/tim72117/want/config"
 	"github.com/tim72117/want/orchestrator"
+	"github.com/tim72117/want/types"
 	"github.com/tim72117/want/ui"
 )
 
@@ -62,75 +91,139 @@ const idleSettleDelay = 1500 * time.Millisecond
 // reach "idle" before giving up.
 const completeTimeout = 90 * time.Second
 
-// WantService implements Service by delegating reasoning to a want
-// orchestrator instance. RegisterPlatformTools must be called once before
-// the first Complete call (see agent_roles.go).
+// WantService implements Service by delegating reasoning to one want
+// orchestrator per session. RegisterPlatformTools must be called once
+// before the first Complete call (see agent_roles.go).
 type WantService struct {
-	orch *orchestrator.Orchestrator
-	apps *toolschema.Registry
-	mu   sync.Mutex
+	settings WantSettings
+	apps     *toolschema.Registry
+
+	initOnce sync.Once // guards the one process-wide orchestrator.InitializeWithConfig call — see package doc comment
+	initErr  error
+
+	mu       sync.Mutex // guards sessions only — never held across a Submit/wait
+	sessions map[string]*orchestrator.Orchestrator
 }
 
-// NewWant builds a want orchestrator from settings and starts its
-// background dispatch loop. apps is the live tool registry Complete uses to
-// build a per-app types.ToolProvider on every call (see toolProviderFor in
+// NewWant returns a WantService that builds one want orchestrator per
+// session lazily, on that session's first Complete call — see
+// buildOrchestrator. apps is the live tool registry each session's
+// orchestrator reads from on every call (via toolProviderFor in
 // agent_roles.go) — the same *toolschema.Registry internal/console writes
 // through, so a saved tool edit is visible on the very next prompt with no
 // extra step.
-//
-// The initial role AND toolbox passed to SetupWith are harmless
-// placeholders — Complete sets both orch.Role and orch.Toolbox to the
-// requesting app's own values on every call; before any app has been
-// selected the orchestrator simply hasn't been asked to run yet.
 func NewWant(settings WantSettings, apps *toolschema.Registry) *WantService {
-	orch := orchestrator.SetupWith(&config.Settings{
-		Provider:        settings.Provider,
-		Model:           settings.Model,
-		OllamaURL:       settings.OllamaURL,
-		VLLMBaseURL:     settings.VLLMBaseURL,
-		GoogleAPIKey:    settings.GoogleAPIKey,
-		AnthropicAPIKey: settings.AnthropicAPIKey,
-		Workspace:       settings.Workspace,
-		MockScenario:    settings.MockScenario,
-	}, toolProviderFor("", apps))
-	return &WantService{orch: orch, apps: apps}
+	return &WantService{
+		settings: settings,
+		apps:     apps,
+		sessions: make(map[string]*orchestrator.Orchestrator),
+	}
 }
 
-func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error) {
+// buildOrchestrator constructs one session's Orchestrator by hand, mirroring
+// orchestrator.SetupWith's own steps (NewOrchestrator -> set Toolbox ->
+// resolve Workspace -> Start) apart from SetupWith's call to
+// InitializeWithConfig, which s.initOnce has already made exactly once for
+// the whole process (see package doc comment for why this must not run
+// again per session).
+//
+// role and toolbox are fixed for the orchestrator's entire lifetime, not
+// re-checked on every later Complete call the way the old shared-orchestrator
+// design had to: a session's AppID cannot change mid-connection.
+// ws.Session.s.app is set once from the connection's hello message and read
+// unchanged by every later handlePrompt (backend/internal/ws/session.go),
+// and the SDK (packages/bridge/src/client.ts) sends hello exactly once, on
+// connect — so this orchestrator's Role/Toolbox stay correct without ever
+// being written to again after creation.
+func (s *WantService) buildOrchestrator(role string, toolbox types.ToolProvider) *orchestrator.Orchestrator {
+	orch := orchestrator.NewOrchestrator(role)
+	if toolbox != nil {
+		orch.Toolbox = toolbox
+	}
+
+	// Mirrors SetupWith's own Workspace resolution: NewOrchestrator has
+	// already set orch.Workspace to <initial working dir>/workspace by the
+	// time this runs (want/internal/types.InitialWorkingDir, populated from
+	// os.Getwd() on the process's first-ever NewOrchestrator call), so an
+	// empty s.settings.Workspace needs no further action here — only a
+	// non-empty override needs resolving, exactly as SetupWith does.
+	if s.settings.Workspace != "" {
+		if filepath.IsAbs(s.settings.Workspace) {
+			orch.Workspace = s.settings.Workspace
+		} else if wd, err := os.Getwd(); err == nil {
+			orch.Workspace = filepath.Join(wd, s.settings.Workspace)
+		}
+	}
+
+	orch.Start()
+	return orch
+}
+
+// getOrCreate returns key's orchestrator, building one if this is its first
+// call. key is req.SessionID normalized by sessionKeyFor — see that
+// function for what an empty/invalid SessionID maps to.
+func (s *WantService) getOrCreate(key string, appID string) (*orchestrator.Orchestrator, error) {
+	s.initOnce.Do(func() {
+		s.initErr = orchestrator.InitializeWithConfig(&config.Settings{
+			Provider:        s.settings.Provider,
+			Model:           s.settings.Model,
+			OllamaURL:       s.settings.OllamaURL,
+			VLLMBaseURL:     s.settings.VLLMBaseURL,
+			GoogleAPIKey:    s.settings.GoogleAPIKey,
+			AnthropicAPIKey: s.settings.AnthropicAPIKey,
+			Workspace:       s.settings.Workspace,
+			MockScenario:    s.settings.MockScenario,
+		})
+	})
+	if s.initErr != nil {
+		return nil, fmt.Errorf("want engine initialization failed: %w", s.initErr)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Per-user conversation isolation. want keys an agent's conversation
-	// history (sessions/session_<AgentID>.jsonl, loaded into the LLM's
-	// context on every run) by orch.AgentID — and reads that public field
-	// on each Submit. With a single process-wide orchestrator, every user
-	// of every app would otherwise share one transcript: user B's prompt
-	// would carry user A's conversation as prior turns. Swapping AgentID
-	// to the caller's session id before each Submit gives every WebSocket
-	// connection its own transcript while keeping multi-turn memory within
-	// a connection. Safe because this mutex guarantees no run is in flight
-	// while the field changes.
-	if id := sanitizeSessionID(req.SessionID); id != "" {
-		s.orch.AgentID = "WS-" + id
+	if orch, ok := s.sessions[key]; ok {
+		return orch, nil
 	}
 
-	// Per-app agent selection: orch.Role picks which want agent definition
-	// (Tools whitelist + Thought) LoadToolUseContext resolves for this run
-	// — see agent_roles.go's registerAppRole, which registered one such
-	// definition per app at startup. Without this, every app would share
-	// whatever role the orchestrator happened to be constructed with,
-	// meaning app A's LLM could see app B's tools (or B's custom Thought).
-	//
-	// orch.Toolbox is set the same way, same reason: it scopes
-	// Declarations()/GetFactory() to exactly this app's own tools (see
-	// appToolProvider in agent_roles.go), read live from s.apps on every
-	// call — not a snapshot taken at registration time. want has no
-	// fallback for a nil Toolbox (an unset one fails the run outright, see
-	// want internal/run_agent.go's RunAgent), so this must be set on every
-	// call that has an AppID, mirroring orch.Role exactly.
-	if req.AppID != "" {
-		s.orch.Role = agentRoleFor(req.AppID)
-		s.orch.Toolbox = toolProviderFor(req.AppID, s.apps)
+	var role string
+	if appID != "" {
+		role = agentRoleFor(appID)
+	}
+	toolbox := toolProviderFor(appID, s.apps)
+
+	orch := s.buildOrchestrator(role, toolbox)
+	if key != "" {
+		orch.AgentID = "WS-" + key
+	}
+
+	s.sessions[key] = orch
+	return orch, nil
+}
+
+// CloseSession stops and releases key's orchestrator (see
+// Service.CloseSession's doc comment on when callers invoke this). A no-op
+// if key never completed a prompt (nothing was ever created for it).
+func (s *WantService) CloseSession(sessionID string) {
+	key := sessionKeyFor(sessionID)
+
+	s.mu.Lock()
+	orch, ok := s.sessions[key]
+	if ok {
+		delete(s.sessions, key)
+	}
+	s.mu.Unlock()
+
+	if ok {
+		orch.Stop()
+	}
+}
+
+func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error) {
+	key := sessionKeyFor(req.SessionID)
+	orch, err := s.getOrCreate(key, req.AppID)
+	if err != nil {
+		return nil, err
 	}
 
 	state := ui.NewCommonInferenceState()
@@ -141,7 +234,7 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 	var once sync.Once
 	finish := func() { once.Do(func() { close(done) }) }
 
-	unsub := s.orch.Subscribe("agent.inference", func(payload interface{}) {
+	unsub := orch.Subscribe("agent.inference", func(payload interface{}) {
 		result, handled := ui.HandleInferenceMessage(payload, state)
 		if !handled || result == nil {
 			return
@@ -158,6 +251,14 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 				// Tool-use/text events for this turn may still be in
 				// flight; give them a window to land before finishing.
 				go func() {
+					defer func() {
+						if r := recover(); r != nil {
+							// An unrecovered panic on any goroutine kills
+							// the whole process, taking every other
+							// session's in-flight connection down with it.
+							finish()
+						}
+					}()
 					time.Sleep(idleSettleDelay)
 					finish()
 				}()
@@ -166,12 +267,14 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 	})
 	defer unsub()
 
-	s.orch.Submit(req.Prompt)
+	if _, err := orch.Submit(req.Prompt); err != nil {
+		return nil, fmt.Errorf("want submit failed: %w", err)
+	}
 
 	select {
 	case <-done:
 	case <-ctx.Done():
-		s.orch.Interrupt()
+		orch.Interrupt()
 		return nil, ctx.Err()
 	case <-time.After(completeTimeout):
 		return nil, fmt.Errorf("want inference timed out after %s", completeTimeout)
@@ -197,10 +300,12 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 // separators, dots, spaces — is rejected outright rather than escaped.
 var sessionIDRE = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,128}$`)
 
-// sanitizeSessionID returns id if it's safe to embed in want's session
-// filename, or "" (meaning: don't switch agents, keep the orchestrator's
-// own AgentID) otherwise.
-func sanitizeSessionID(id string) string {
+// sessionKeyFor normalizes req.SessionID into the sessions map key: id
+// itself if it's safe to embed in want's session filename, or "" (a single
+// shared orchestrator for every caller with no valid SessionID — mirrors
+// the old design's "no isolation requested" behavior for single-caller/dev
+// use, e.g. a direct API caller with no per-user session concept) otherwise.
+func sessionKeyFor(id string) string {
 	if sessionIDRE.MatchString(id) {
 		return id
 	}

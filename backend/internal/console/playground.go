@@ -124,6 +124,11 @@ func (h *Handler) playgroundWS(w http.ResponseWriter, r *http.Request, user *ses
 	// switching), isolated both from the app's real end-user sessions and
 	// from other developers' playground runs against the same app.
 	sessionID := fmt.Sprintf("PG-%d-%s", user.ID, appID)
+	// Releases this run's want orchestrator (see inference.WantService) —
+	// without this, every playground run that ever completed a prompt would
+	// leak its orchestrator's dispatch goroutine for the life of the
+	// process.
+	defer h.Inference.CloseSession(sessionID)
 	var writeMu sync.Mutex
 	send := func(env playgroundEnvelope) {
 		data, err := json.Marshal(env)
