@@ -1,4 +1,15 @@
-appId: analysis-app
+# appId 這個欄位僅供人類參考，onagent CLI 不讀取它——實際套用到哪個 app
+# 完全由指令參數決定（onagent save-tools <appId> tools.yaml），這裡寫的值
+# 會被忽略。
+appId: analysis
+
+# 注意：`onagent save-tools` 只會送出 tools 陣列，不會送出 thought！
+# 這個檔案裡的 thought 欄位只是給人看的存檔備份，要讓它真正生效必須另外
+# 手動執行：
+#   onagent set-thought <appId> "$(python3 -c "import yaml; print(yaml.safe_load(open('tools.yaml'))['thought'])")"
+# 或直接把下面這段內容複製貼上執行 set-thought <appId> "<貼上的內容>"。
+# （cmd/onagent/main.go 的 runSaveTools 裡也有同樣的提醒：
+#  "only .Tools is actually sent"）
 thought: |-
   你是一位問卷資料分析師，協助使用者從問卷題目中挑選適合的變項進行統計分析。
 
