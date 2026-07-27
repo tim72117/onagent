@@ -74,9 +74,9 @@
 
 ### 有趣（需要設計討論或重構）
 
-11. **升級 want 並改用 `ToolProvider` 注入，而非它的全域單例** — 本機那份 want 已經有 `SetupWith(settings, toolbox types.ToolProvider, ...)`（`want/orchestrator/init_helper.go:63`）與 `toolregistry.NewRegistry()`。升上去之後，`agent_roles.go:74` 就能注入**每個 app 專屬的 registry**，而不是往 `types.GlobalRegistry` 寫——這是從根本修掉 append-only 洩漏，而不是靠 per-role 白名單去遮掩。1-2 週（破壞性 API 變更：`EventBus` 也已改為未匯出）。
+11. ~~**升級 want 並改用 `ToolProvider` 注入，而非它的全域單例**~~ — **已完成（2026-07-27，`want` v0.0.2 → v0.1.0 → v0.2.0）**。`agent_roles.go` 的 `appToolProvider` 現在實作 `types.ToolProvider`，每次呼叫即時讀 `toolschema.Registry`，不再寫入任何全域 registry；驗收測試見 `agent_roles_test.go`。詳見 `docs/known-issues-want-dependency.md` 更新後的內容。
 
-12. **🔴 並發的 console 寫入正在 race want 的全域 registry — 而且是致命的** — `console.syncWantRole`（`console.go:70`）→ `RegisterAppRole` → `types.RegisterTool`（`agent_roles.go:120,125`）會從 HTTP goroutine 改寫一個 slice 和一個 map，同一時間 dispatch 正在讀它們（`want@v0.0.2/internal/run_agent.go:79`、`ui/handler.go:75`）。未同步的 map 同時讀寫會觸發 **`fatal error: concurrent map read and map write`，這是 `recover()` 攔不住的**——`main.go:297` 剛加的 middleware 救不了你。需要上一項，或至少一把註冊鎖。數天。
+12. ~~**🔴 並發的 console 寫入正在 race want 的全域 registry — 而且是致命的**~~ — **已隨上一項解除**：`agent_roles.go` 不再呼叫 `types.RegisterTool` 或寫入任何全域 slice/map，`console.syncWantRole` 現在只是重新註冊角色白名單（一個獨立的、per-app 的 map 條目），與 dispatch 讀取的是完全不同的資料結構，原本描述的並發 race 情境已不存在。
 
 13. **把 view-model 事件路徑換成有序的串流** — `want@v0.0.2/events/event_bus.go:79-88` 每個 handler 都開一條自己的 goroutine，所以 `want.go:134-138` 是**以任意順序**在串接文字片段；`textMu` 防的是資料競爭，不是順序錯亂，而 `idleSettleDelay`（`want.go:58`）那個 1.5 秒的 sleep 根本就是為了掩蓋同一個問題硬加上去的——**而且是在持有全域鎖的狀態下睡**。應改成消費有序的 per-run channel（want 在 `orchestrator.go:228` 已有 `uiEvents`）或加上序號。1 週，部分在上游。
 
