@@ -35,7 +35,7 @@ type Request struct {
 
 	// AppID identifies which developer app this prompt belongs to.
 	// Implementations use it to select app-specific reasoning behavior
-	// (see WantSettings' per-app agent role, driven by
+	// (see WantService's per-app agent role, driven by
 	// toolschema.App.Thought) — distinct from SessionID, which scopes
 	// per-user conversation history within that app.
 	AppID string

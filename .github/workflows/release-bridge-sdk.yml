@@ -1,0 +1,58 @@
+name: Release @onagent/bridge SDK
+
+# Manual-only on purpose: publishing to npm is a one-way action (a version
+# can be unpublished but not reused), so this never fires automatically off
+# a tag push the way deploy-cloudrun.yml/release-onagent.yml do. Bump
+# packages/bridge/package.json's version in a normal commit first, then run
+# this by hand when you're ready to publish that version.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/bridge
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Check version isn't already published
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_ENV"
+          if npm view "@onagent/bridge@$version" version >/dev/null 2>&1; then
+            echo "::error::@onagent/bridge@$version is already on npm — bump package.json's version first."
+            exit 1
+          fi
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Show published version
+        run: |
+          echo "### 已發布" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "npm install @onagent/bridge@${{ env.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

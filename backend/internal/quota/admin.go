@@ -42,14 +42,14 @@ func (s *Service) SetTier(ctx context.Context, userID int64, tier Tier) error {
 // standing. QuotaOverride is non-nil only when this user has a manual
 // per-user override set (see subscriptions.monthly_quota).
 type UserSummary struct {
-	ID            int64      `json:"id"`
-	Email         string     `json:"email"`
-	Tier          Tier       `json:"tier"`
-	PlanName      string     `json:"planName"`
-	Limit         int        `json:"limit"` // effective allowance (override if set, else plan value)
-	Used          int        `json:"used"`  // prompts used in the current period
-	QuotaOverride *int       `json:"quotaOverride,omitempty"`
-	CreatedAt     time.Time  `json:"createdAt"`
+	ID            int64     `json:"id"`
+	Email         string    `json:"email"`
+	Tier          Tier      `json:"tier"`
+	PlanName      string    `json:"planName"`
+	Limit         int       `json:"limit"` // effective allowance (override if set, else plan value)
+	Used          int       `json:"used"`  // prompts used in the current period
+	QuotaOverride *int      `json:"quotaOverride,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
 }
 
 // CountUsers returns the total number of registered developer accounts.

@@ -1,11 +1,12 @@
 name: Release public Docker image
 
 # Independent from deploy-cloudrun.yml / release-onagent.yml on purpose —
-# those trigger on every "v*" tag (Cloud Run deploy + CLI binaries); this
-# publishes the landing-free image (Dockerfile.release) to GHCR, which is
-# a separate decision from "cut a new onagent.shuttle.tools deploy". Only
-# fires on workflow_dispatch (manual) or its own "release-v*" tag prefix,
-# never automatically alongside the other two.
+# those trigger on every "v*" tag push (Cloud Run deploy + CLI binaries);
+# this publishes the landing-free image (Dockerfile.release) to GHCR, which
+# is a separate decision from "cut a new onagent.shuttle.tools deploy".
+# Fires on workflow_dispatch (manual) or when a GitHub Release is published
+# — a distinct event from a raw tag push, so no special tag prefix is
+# needed to avoid triggering the other two workflows.
 on:
   workflow_dispatch:
     inputs:
@@ -13,9 +14,8 @@ on:
         description: 'Image tag to publish (e.g. v1.2.0). Defaults to the short commit SHA.'
         type: string
         default: ''
-  push:
-    tags:
-      - 'release-v*'
+  release:
+    types: [published]
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/onagent-server-release
@@ -36,10 +36,8 @@ jobs:
         run: |
           if [ -n "${{ inputs.tag }}" ]; then
             echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.ref_type }}" = "tag" ]; then
-            # strip the "release-" prefix so the published image tag reads
-            # as a plain version (release-v1.2.0 -> v1.2.0).
-            echo "value=${GITHUB_REF_NAME#release-}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.release.tag_name }}" ]; then
+            echo "value=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
           else
             echo "value=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi

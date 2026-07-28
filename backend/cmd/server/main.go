@@ -27,6 +27,7 @@ import (
 	"github.com/tim72117/onagent/internal/toolschema"
 	"github.com/tim72117/onagent/internal/usertoken"
 	"github.com/tim72117/onagent/internal/ws"
+	"github.com/tim72117/want/config"
 )
 
 const usage = `Usage: server [-h|--help]
@@ -63,13 +64,15 @@ Configured entirely via environment variables (optionally loaded from a
                           entirely — for self-hosters running this as their
                           own infrastructure, not onagent's SaaS. Default
                           "true".
-  SETTINGS_FILE           Path to the AI provider settings JSON
-                          (default "configs/settings.json").
-  AI_PROVIDER             Overrides the provider from SETTINGS_FILE.
-  AI_MODEL                Overrides the model from SETTINGS_FILE.
+  AI_PROVIDER             AI provider to use ("mock" if unset).
+  AI_MODEL                Model name.
   OLLAMA_URL              Ollama base URL (default "http://localhost:11434").
   VLLM_BASE_URL           vLLM base URL.
-  GOOGLE_API_KEY          Overrides the Google API key from SETTINGS_FILE.
+  GOOGLE_API_KEY          Google API key.
+  ANTHROPIC_API_KEY       Anthropic API key.
+  AI_MOCK_SCENARIO        Scenario file path for AI_PROVIDER=mock, passed
+                          through to want (want's own provider=mock, not
+                          this package's inference.MockService).
   WANT_WORKSPACE          Workspace path for the want registry (default "").
 `
 
@@ -424,62 +427,33 @@ func parseOrigins(csv string) []string {
 	return out
 }
 
-// fileSettings mirrors the JSON shape of configs/settings.json. Loaded
-// separately from want's own config.Settings because that type marks
-// credential fields json:"-" (deliberately unreadable from a committable
-// file); this project's settings.json is gitignored and keeps them alongside
-// the rest of the config for local/dev convenience.
-type fileSettings struct {
-	OllamaURL    string `json:"ollama_url"`
-	VLLMBaseURL  string `json:"vllm_base_url"`
-	Provider     string `json:"provider"`
-	Model        string `json:"model"`
-	GoogleAPIKey string `json:"google_api_key"`
-}
-
-func loadFileSettings(path string) fileSettings {
-	var fs fileSettings
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return fs
-	}
-	if err := json.Unmarshal(data, &fs); err != nil {
-		return fs
-	}
-	return fs
-}
-
-// newInferenceService selects the reasoning backend. Settings are read from
-// configs/settings.json first, with environment variables overriding
-// individual fields. AI_PROVIDER/provider unset (or "mock") keeps the
-// existing MockService so local/demo setups without any LLM credentials
-// keep working; any other value boots a want orchestrator scoped to exactly
-// the tools declared by apps (see inference.RegisterPlatformTools). apps is
+// newInferenceService selects the reasoning backend from environment
+// variables alone. AI_PROVIDER unset (or "mock") keeps the existing
+// MockService so local/demo setups without any LLM credentials keep
+// working; any other value boots a want orchestrator scoped to exactly the
+// tools declared by apps (see inference.RegisterPlatformTools). apps is
 // also threaded through to NewWant itself — WantService.Complete reads it
 // live on every call to build a per-app tool provider, not just once at
 // startup (see inference.RegisterAppRole's doc comment).
 func newInferenceService(log *slog.Logger, apps *toolschema.Registry) inference.Service {
-	fs := loadFileSettings(envOr("SETTINGS_FILE", "configs/settings.json"))
-
-	provider := envOr("AI_PROVIDER", fs.Provider)
-	if provider == "" {
-		provider = "mock"
-	}
-	if provider == "mock" {
+	// settings covers exactly the fields want's own config.FromEnv() reads
+	// from the environment (Provider/Model/GoogleAPIKey/AnthropicAPIKey/
+	// MockScenario), so want's env var names stay in one place instead of
+	// being duplicated by hand. OllamaURL/VLLMBaseURL/Workspace aren't
+	// covered by FromEnv() (want has no VLLM/workspace concept of its own)
+	// and are overridden below with their own envOr calls.
+	settings := config.FromEnv()
+	settings.Provider = cmp.Or(settings.Provider, "mock")
+	if settings.Provider == "mock" {
 		return inference.NewMock()
 	}
+	settings.OllamaURL = envOr("OLLAMA_URL", "http://localhost:11434")
+	settings.VLLMBaseURL = envOr("VLLM_BASE_URL", "")
+	settings.Workspace = envOr("WANT_WORKSPACE", "")
 
-	log.Info("using want orchestrator for inference", "provider", provider)
+	log.Info("using want orchestrator for inference", "provider", settings.Provider)
 	inference.RegisterPlatformTools(apps.All())
-	return inference.NewWant(inference.WantSettings{
-		Provider:        provider,
-		Model:           envOr("AI_MODEL", fs.Model),
-		OllamaURL:       envOr("OLLAMA_URL", cmp.Or(fs.OllamaURL, "http://localhost:11434")),
-		VLLMBaseURL:     envOr("VLLM_BASE_URL", fs.VLLMBaseURL),
-		GoogleAPIKey:    envOr("GOOGLE_API_KEY", fs.GoogleAPIKey),
-		AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
-		Workspace:       envOr("WANT_WORKSPACE", ""),
-	}, apps)
+	return inference.NewWant(settings, apps)
 }
 
 func allowlistChecker(allowed []string) ws.OriginChecker {

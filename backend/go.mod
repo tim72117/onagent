@@ -18,7 +18,7 @@ require golang.org/x/sys v0.46.0 // indirect
 
 require (
 	github.com/go-rod/rod v0.116.2 // indirect
-	github.com/tim72117/want v0.2.0
+	github.com/tim72117/want v0.3.0
 	github.com/ysmood/fetchup v0.2.3 // indirect
 	github.com/ysmood/goob v0.4.0 // indirect
 	github.com/ysmood/got v0.40.0 // indirect

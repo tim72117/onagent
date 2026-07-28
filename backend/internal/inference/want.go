@@ -24,16 +24,16 @@
 //
 // This does NOT give sessions independent LLM providers or independent
 // concurrency limits, despite giving each one its own *orchestrator.Orchestrator:
-// want (still true as of v0.2.0 — see internal/run_agent.go's package-level
+// want (still true as of v0.3.0 — see internal/run_agent.go's package-level
 // GlobalEngine) resolves every RunAgent call's provider by reading that one
 // process-wide GlobalEngine, which orchestrator.InitializeWithConfig
 // overwrites on every call. Calling it once per session (as SetupWith does
 // internally) would race unsynchronized writes to GlobalEngine across
-// concurrent session creations, and — since every session here uses
-// identical WantSettings anyway (one Provider/Model/API key for the whole
+// concurrent session creations, and — since every session here uses the
+// same *config.Settings anyway (one Provider/Model/API key for the whole
 // process, from environment variables) — would only ever replace it with an
 // equivalent instance, never a meaningfully different one; the risk isn't
-// worth taking for zero practical benefit. initEngineOnce below calls
+// worth taking for zero practical benefit. WantService.initOnce below calls
 // orchestrator.InitializeWithConfig exactly once for the process's whole
 // lifetime; every session's Orchestrator is otherwise assembled by hand
 // (mirroring what SetupWith does apart from that one call — see
@@ -68,20 +68,6 @@ import (
 	"github.com/tim72117/want/ui"
 )
 
-// WantSettings configures the underlying want orchestrator. Mirrors
-// want/config.Settings; kept as a separate type so callers of this package
-// never need to import want directly.
-type WantSettings struct {
-	Provider        string
-	Model           string
-	OllamaURL       string
-	VLLMBaseURL     string
-	GoogleAPIKey    string
-	AnthropicAPIKey string
-	Workspace       string
-	MockScenario    string
-}
-
 // idleSettleDelay gives text/tool-use events a window to arrive after the
 // "idle" status event, since event ordering isn't guaranteed to put them
 // first. Mirrors the same wait used in want_analyzer.go.
@@ -95,7 +81,7 @@ const completeTimeout = 90 * time.Second
 // orchestrator per session. RegisterPlatformTools must be called once
 // before the first Complete call (see agent_roles.go).
 type WantService struct {
-	settings WantSettings
+	settings *config.Settings
 	apps     *toolschema.Registry
 
 	initOnce sync.Once // guards the one process-wide orchestrator.InitializeWithConfig call — see package doc comment
@@ -112,7 +98,7 @@ type WantService struct {
 // agent_roles.go) — the same *toolschema.Registry internal/console writes
 // through, so a saved tool edit is visible on the very next prompt with no
 // extra step.
-func NewWant(settings WantSettings, apps *toolschema.Registry) *WantService {
+func NewWant(settings *config.Settings, apps *toolschema.Registry) *WantService {
 	return &WantService{
 		settings: settings,
 		apps:     apps,
@@ -164,16 +150,7 @@ func (s *WantService) buildOrchestrator(role string, toolbox types.ToolProvider)
 // function for what an empty/invalid SessionID maps to.
 func (s *WantService) getOrCreate(key string, appID string) (*orchestrator.Orchestrator, error) {
 	s.initOnce.Do(func() {
-		s.initErr = orchestrator.InitializeWithConfig(&config.Settings{
-			Provider:        s.settings.Provider,
-			Model:           s.settings.Model,
-			OllamaURL:       s.settings.OllamaURL,
-			VLLMBaseURL:     s.settings.VLLMBaseURL,
-			GoogleAPIKey:    s.settings.GoogleAPIKey,
-			AnthropicAPIKey: s.settings.AnthropicAPIKey,
-			Workspace:       s.settings.Workspace,
-			MockScenario:    s.settings.MockScenario,
-		})
+		s.initErr = orchestrator.InitializeWithConfig(s.settings)
 	})
 	if s.initErr != nil {
 		return nil, fmt.Errorf("want engine initialization failed: %w", s.initErr)

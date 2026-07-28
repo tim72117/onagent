@@ -16,9 +16,8 @@ schema. For local/demo setups without any LLM credentials,
 `tool_call` for whichever tool name appears in the prompt, so the rest of
 the pipeline (tool loading, codegen, WebSocket protocol, SDK, demo app)
 still works end-to-end without a real model. `cmd/server/main.go` picks
-between them based on `AI_PROVIDER`/`configs/settings.json` (unset or
-`mock` uses `MockService`; any other provider boots the want
-orchestrator).
+between them based on `AI_PROVIDER` (unset or `mock` uses `MockService`;
+any other provider boots the want orchestrator).
 
 ## Layout
 
