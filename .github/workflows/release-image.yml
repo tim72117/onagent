@@ -1,12 +1,16 @@
 name: Release public Docker image
 
-# Independent from deploy-cloudrun.yml / release-onagent.yml on purpose —
-# those trigger on every "v*" tag push (Cloud Run deploy + CLI binaries);
-# this publishes the landing-free image (Dockerfile.release) to GHCR, which
-# is a separate decision from "cut a new onagent.shuttle.tools deploy".
-# Fires on workflow_dispatch (manual) or when a GitHub Release is published
-# — a distinct event from a raw tag push, so no special tag prefix is
-# needed to avoid triggering the other two workflows.
+# Same "v*" tag push as deploy-cloudrun.yml / release-onagent.yml,
+# triggered independently and in parallel with them — no cross-workflow
+# dependency. An earlier version of this file tried to trigger off "a
+# GitHub Release gets published" instead, on the theory that publishing a
+# Release is a more deliberate signal than a tag push; in practice the
+# Release release-onagent.yml creates is itself just an automatic result
+# of the same tag push (no human review step in between), so it added an
+# extra hop with no real gain — and GitHub Actions doesn't chain-trigger
+# workflows off events caused by the default GITHUB_TOKEN anyway, which
+# silently broke it for v0.2.1. The one genuinely deliberate moment in
+# this whole pipeline is the tag push itself, so react to that directly.
 on:
   workflow_dispatch:
     inputs:
@@ -14,8 +18,9 @@ on:
         description: 'Image tag to publish (e.g. v1.2.0). Defaults to the short commit SHA.'
         type: string
         default: ''
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/onagent-server-release
@@ -36,8 +41,8 @@ jobs:
         run: |
           if [ -n "${{ inputs.tag }}" ]; then
             echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          elif [ -n "${{ github.event.release.tag_name }}" ]; then
-            echo "value=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
           else
             echo "value=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
