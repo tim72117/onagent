@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { App as AppSchema, Tool } from './schema'
 import { DEFAULT_THOUGHT, emptyTool } from './schema'
 import { api, ApiError } from './api'
-import type { AppSummary, CurrentUser, IssuedKey, Quota } from './api'
+import type { AppSummary, CurrentUser, Quota } from './api'
 import { Login } from './Login'
 import { KeyModal } from './KeyModal'
 import { AddAppModal } from './AddAppModal'
@@ -13,6 +13,7 @@ import { Playground } from './Playground'
 import { PreviewPanel } from './PreviewPanel'
 import { validateApp } from './validate'
 import { useToast } from './Toast'
+import { useAppMutations } from './useAppMutations'
 
 type AuthState = 'checking' | 'anonymous' | 'authenticated'
 
@@ -38,18 +39,14 @@ export default function App() {
   const [activeToolIndex, setActiveToolIndex] = useState<number | null>(null)
   const [agentSelected, setAgentSelected] = useState(false)
   const [playgroundSelected, setPlaygroundSelected] = useState(false)
-  const [issuedKey, setIssuedKey] = useState<IssuedKey | null>(null)
   const [showAddApp, setShowAddApp] = useState(false)
-  const [busy, setBusy] = useState(false)
   // Origin edits save immediately on submit (unlike tool edits, which batch
   // into draft/dirty until Save) — it's a single field with its own PUT
   // endpoint, and there's no half-finished intermediate state worth
   // protecting against an accidental navigate-away.
   const [originDraft, setOriginDraft] = useState('')
-  const [originBusy, setOriginBusy] = useState(false)
   // Thought edits follow the same immediate-save pattern as origin.
   const [thoughtDraft, setThoughtDraft] = useState('')
-  const [thoughtBusy, setThoughtBusy] = useState(false)
 
   const logout = useCallback((message: string | null) => {
     setUser(null)
@@ -156,19 +153,32 @@ export default function App() {
     return !dirty || confirm('Discard unsaved changes to this app?')
   }
 
-  async function selectApp(appId: string) {
-    if (!confirmDiscard()) return
-    try {
-      const app = await api.getApp(appId)
-      setDraft({ appId: app.appId, tools: app.tools ?? [] })
-      setDirty(false)
-      setActiveToolIndex(null)
-      setAgentSelected(false)
-      setPlaygroundSelected(false)
-    } catch (err) {
-      reportError(err)
-    }
-  }
+  const {
+    busy,
+    originBusy,
+    thoughtBusy,
+    issuedKey,
+    setIssuedKey,
+    selectApp,
+    createApp: createAppMutation,
+    deleteApp,
+    saveDraft,
+    issueKey: issueKeyMutation,
+    revokeKey,
+    saveOrigin: saveOriginMutation,
+    saveThought: saveThoughtMutation,
+    refreshDraftForSwitch,
+  } = useAppMutations({
+    draft,
+    setDraft,
+    setDirty,
+    setActiveToolIndex,
+    setAgentSelected,
+    setPlaygroundSelected,
+    refreshSummaries,
+    reportError,
+    confirmDiscard,
+  })
 
   function addApp() {
     if (!confirmDiscard()) return
@@ -176,105 +186,22 @@ export default function App() {
   }
 
   async function createApp(appId: string) {
-    try {
-      await api.createApp(appId)
-      await refreshSummaries()
-      const app = await api.getApp(appId)
-      setDraft({ appId: app.appId, tools: app.tools ?? [] })
-      setDirty(false)
-      setActiveToolIndex(null)
-      setAgentSelected(false)
-      setPlaygroundSelected(false)
-      setShowAddApp(false)
-    } catch (err) {
-      reportError(err)
-    }
+    await createAppMutation(appId)
+    setShowAddApp(false)
   }
 
-  async function deleteApp() {
-    if (!draft) return
-    if (!confirm(`Delete app "${draft.appId}" and its tools? Its API key is revoked too.`)) return
-    try {
-      await api.deleteApp(draft.appId)
-      await refreshSummaries()
-      setDraft(null)
-      setDirty(false)
-      setActiveToolIndex(null)
-      setAgentSelected(false)
-      setPlaygroundSelected(false)
-    } catch (err) {
-      reportError(err)
-    }
+  function issueKey() {
+    return issueKeyMutation(activeSummary?.hasKey ?? false)
   }
 
-  async function saveDraft() {
-    if (!draft) return
-    setBusy(true)
-    try {
-      await api.saveTools(draft.appId, draft.tools)
-      setDirty(false)
-      await refreshSummaries()
-    } catch (err) {
-      reportError(err)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function issueKey() {
-    if (!draft) return
-    if (
-      activeSummary?.hasKey &&
-      !confirm('This app already has a key. Issuing a new one revokes the old key immediately. Continue?')
-    ) {
-      return
-    }
-    try {
-      const issued = await api.issueKey(draft.appId)
-      setIssuedKey(issued)
-      await refreshSummaries()
-    } catch (err) {
-      reportError(err)
-    }
-  }
-
-  async function saveOrigin(e: React.FormEvent) {
+  function saveOrigin(e: React.FormEvent) {
     e.preventDefault()
-    if (!draft) return
-    setOriginBusy(true)
-    try {
-      await api.setOrigin(draft.appId, originDraft.trim())
-      await refreshSummaries()
-    } catch (err) {
-      reportError(err)
-    } finally {
-      setOriginBusy(false)
-    }
+    return saveOriginMutation(originDraft)
   }
 
-  async function saveThought(e: React.FormEvent) {
+  function saveThought(e: React.FormEvent) {
     e.preventDefault()
-    if (!draft) return
-    setThoughtBusy(true)
-    try {
-      await api.setThought(draft.appId, thoughtDraft.trim())
-      await refreshSummaries()
-    } catch (err) {
-      reportError(err)
-    } finally {
-      setThoughtBusy(false)
-    }
-  }
-
-  async function revokeKey() {
-    if (!draft) return
-    if (!confirm(`Revoke the API key for "${draft.appId}"? Connected sites stop working immediately.`)) return
-    try {
-      await api.revokeKey(draft.appId)
-      await refreshSummaries()
-    } catch (err) {
-      reportError(err)
-    }
+    return saveThoughtMutation(thoughtDraft)
   }
 
   function updateDraft(next: AppSchema) {
@@ -301,26 +228,6 @@ export default function App() {
     if (!draft) return
     updateDraft({ ...draft, tools: draft.tools.filter((_, i) => i !== index) })
     setActiveToolIndex(null)
-  }
-
-  // Re-fetches draft (and, via refreshSummaries, the thought/origin/key
-  // fields selectApp's fetch doesn't cover) before switching sub-views
-  // within the same app — so e.g. a Thought edit saved from another tab
-  // shows up here without a full app reselect. Gated by the same
-  // confirmDiscard() every other draft-replacing action here uses: if
-  // there are unsaved local edits, ask before overwriting them with the
-  // server's copy, rather than either silently discarding or silently
-  // skipping the refresh.
-  async function refreshDraftForSwitch() {
-    if (!draft || !confirmDiscard()) return
-    try {
-      const app = await api.getApp(draft.appId)
-      setDraft({ appId: app.appId, tools: app.tools ?? [] })
-      setDirty(false)
-      await refreshSummaries()
-    } catch (err) {
-      reportError(err)
-    }
   }
 
   async function selectTool(index: number) {

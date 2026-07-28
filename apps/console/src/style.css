@@ -1060,6 +1060,40 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+.yaml-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.yaml-editor-hint {
+  padding: 8px 14px;
+  font-size: 11px;
+  color: var(--ink-faint);
+  background: var(--bg-raised);
+  border-bottom: 1px dashed var(--border);
+  flex: none;
+}
+
+.yaml-editor-host {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.yaml-editor-host .cm-editor {
+  height: 100%;
+}
+
+.yaml-editor-host .cm-scroller {
+  font-family: var(--font-mono);
+  line-height: 1.6;
+}
+
 /* ---------------------------------------------------------------------- */
 /* Login                                                                    */
 /* ---------------------------------------------------------------------- */
