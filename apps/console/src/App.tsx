@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import type { App as AppSchema, Tool } from './schema'
 import { DEFAULT_THOUGHT, emptyTool } from './schema'
 import { api, ApiError } from './api'
@@ -8,11 +8,38 @@ import { KeyModal } from './KeyModal'
 import { AddAppModal } from './AddAppModal'
 import { Sidebar } from './Sidebar'
 import { ToolForm } from './ToolForm'
-import { ThoughtEditor } from './ThoughtEditor'
 import { Playground } from './Playground'
 import { PreviewPanel } from './PreviewPanel'
 import { validateApp } from './validate'
 import { useToast } from './Toast'
+
+// Lazy: Tiptap + its markdown extension add ~145kB gzip to whatever bundle
+// imports them (see docs/thought-markdown-editor-design.md) — not worth
+// paying on every console load when most sessions never open the thought
+// panel. Split into its own chunk, fetched only the first time it renders.
+const ThoughtEditor = lazy(() => import('./ThoughtEditor').then((m) => ({ default: m.ThoughtEditor })))
+
+// Matches ThoughtEditor's own markup shape (.thought-editor/.thought-header/
+// .thought-copy/.thought-textarea) so the real component's chunk finishing
+// its fetch doesn't cause a layout shift — see PostToolUse review finding on
+// the bare <div className="empty-state" /> this replaced.
+function ThoughtEditorFallback() {
+  return (
+    <div className="thought-editor">
+      <div className="thought-header">
+        <span className="micro-label">Agent thought</span>
+        <button type="button" className="primary" disabled>
+          Save
+        </button>
+      </div>
+      <p className="thought-copy">
+        Custom system prompt for the LLM that selects this app's tools — tone, domain knowledge,
+        or rules specific to this app. Leave empty to use the platform default shown below.
+      </p>
+      <div className="thought-textarea" aria-hidden="true" />
+    </div>
+  )
+}
 
 type AuthState = 'checking' | 'anonymous' | 'authenticated'
 
@@ -466,14 +493,16 @@ export default function App() {
               <div className="workspace-body">
                 <section className="editor-pane">
                   {agentSelected ? (
-                    <ThoughtEditor
-                      value={thoughtDraft}
-                      defaultPreview={DEFAULT_THOUGHT}
-                      busy={thoughtBusy}
-                      dirty={thoughtDraft.trim() !== (activeSummary?.thought ?? '')}
-                      onChange={setThoughtDraft}
-                      onSave={saveThought}
-                    />
+                    <Suspense fallback={<ThoughtEditorFallback />}>
+                      <ThoughtEditor
+                        value={thoughtDraft}
+                        defaultPreview={DEFAULT_THOUGHT}
+                        busy={thoughtBusy}
+                        dirty={thoughtDraft.trim() !== (activeSummary?.thought ?? '')}
+                        onChange={setThoughtDraft}
+                        onSave={saveThought}
+                      />
+                    </Suspense>
                   ) : selectedTool ? (
                     <ToolForm
                       key={activeToolIndex}

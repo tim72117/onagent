@@ -66,7 +66,6 @@ Configured entirely via environment variables (optionally loaded from a
                           "true".
   AI_PROVIDER             AI provider to use ("mock" if unset).
   AI_MODEL                Model name.
-  OLLAMA_URL              Ollama base URL (default "http://localhost:11434").
   VLLM_BASE_URL           vLLM base URL.
   GOOGLE_API_KEY          Google API key.
   ANTHROPIC_API_KEY       Anthropic API key.
@@ -439,17 +438,21 @@ func newInferenceService(log *slog.Logger, apps *toolschema.Registry) inference.
 	// settings covers exactly the fields want's own config.FromEnv() reads
 	// from the environment (Provider/Model/GoogleAPIKey/AnthropicAPIKey/
 	// MockScenario), so want's env var names stay in one place instead of
-	// being duplicated by hand. OllamaURL/VLLMBaseURL/Workspace aren't
-	// covered by FromEnv() (want has no VLLM/workspace concept of its own)
-	// and are overridden below with their own envOr calls.
+	// being duplicated by hand. VLLMBaseURL/Workspace aren't covered by
+	// FromEnv() (want has no VLLM/workspace concept of its own) and are
+	// overridden below with their own envOr calls. Ollama support (an
+	// OLLAMA_URL override) isn't wired up — no deployment of this project
+	// uses it today; add it back if that changes.
 	settings := config.FromEnv()
 	settings.Provider = cmp.Or(settings.Provider, "mock")
 	if settings.Provider == "mock" {
 		return inference.NewMock()
 	}
-	settings.OllamaURL = envOr("OLLAMA_URL", "http://localhost:11434")
 	settings.VLLMBaseURL = envOr("VLLM_BASE_URL", "")
 	settings.Workspace = envOr("WANT_WORKSPACE", "")
+	if os.Getenv("OLLAMA_URL") != "" {
+		log.Warn("OLLAMA_URL is set but not wired up (no deployment of this project uses Ollama today); it has no effect — want will use its own default (http://localhost:11434)")
+	}
 
 	log.Info("using want orchestrator for inference", "provider", settings.Provider)
 	inference.RegisterPlatformTools(apps.All())

@@ -483,6 +483,9 @@ select:focus-visible {
 
 .thought-editor {
   max-width: 720px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .thought-header {
@@ -499,12 +502,90 @@ select:focus-visible {
   margin: 0 0 14px;
 }
 
+/* .thought-textarea is Tiptap's EditorContent wrapper (a contenteditable
+   div), not a native <textarea> — the box styling (border/padding/background)
+   that used to come free from the global `input, textarea, select` rule is
+   restated explicitly here, since that rule no longer matches this element. */
 .thought-textarea {
   width: 100%;
+  flex: 1;
+  min-height: 240px;
+  overflow-y: auto;
+  padding: 7px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--ink);
+}
+
+.thought-textarea:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Below 1100px, .editor-pane's grid row switches from stretched to
+   content-sized (see .workspace-body's own <1100px rule), so
+   .thought-editor's height:100% resolves against an indeterminate
+   ancestor and collapses toward .thought-textarea's min-height alone.
+   Raise that floor to something viewport-relative instead of the
+   desktop-only 240px so mobile isn't permanently capped regardless of
+   actual available space. */
+@media (max-width: 1100px) {
+  .thought-textarea {
+    min-height: 50vh;
+  }
+}
+
+.thought-textarea .ProseMirror {
+  height: 100%;
   font-family: var(--font-body);
   font-size: 13px;
   line-height: 1.6;
-  resize: vertical;
+  outline: none;
+}
+
+.thought-textarea .ProseMirror :first-child {
+  margin-top: 0;
+}
+
+/* @tiptap/extension-placeholder renders via a data-placeholder attribute +
+   ::before on the empty node — unlike a native <textarea placeholder>,
+   nothing shows up without this rule. */
+.thought-textarea .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+.thought-textarea .ProseMirror :last-child {
+  margin-bottom: 0;
+}
+.thought-textarea .ProseMirror p,
+.thought-textarea .ProseMirror ul,
+.thought-textarea .ProseMirror ol {
+  margin: 0.5em 0;
+}
+.thought-textarea .ProseMirror ul,
+.thought-textarea .ProseMirror ol {
+  padding-left: 1.4em;
+}
+.thought-textarea .ProseMirror code {
+  background: var(--sidebar-bg);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+  font-family: var(--font-mono);
+}
+.thought-textarea .ProseMirror pre {
+  background: var(--sidebar-bg);
+  border-radius: 8px;
+  padding: 8px 10px;
+  overflow-x: auto;
+}
+.thought-textarea .ProseMirror pre code {
+  background: none;
+  padding: 0;
 }
 
 .thought-default {
