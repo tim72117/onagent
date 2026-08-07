@@ -27,7 +27,7 @@
 
 ## 🟡 中優先
 
-- **測試覆蓋率偏低**：Go 後端 14 個 `internal/` package 只有 4 個（`adminauth`、`adminconsole`、`db`、`quota`，29%）有測試，且多為 `*_integration_test.go`（需真實 DB）。`auth`、`ws`、`session`、`usertoken`、`cliauth`、`inference`（LLM 核心邏輯）等安全/核心敏感模組完全沒有單元測試。前端（`apps/console`、`apps/admin`、`packages/bridge`）**零測試**，`package.json` 連 test script 都沒有。`quota/quota_test.go`（222 行）是最完整的測試，顯示團隊有測試意識但尚未鋪開。
+- **測試覆蓋率偏低**：Go 後端 14 個 `internal/` package 只有 4 個（`adminauth`、`adminconsole`、`db`、`quota`，29%）有測試，且多為 `*_integration_test.go`（需真實 DB）。`auth`、`ws`、`session`、`usertoken`、`cliauth`、`inference`（LLM 核心邏輯）等安全/核心敏感模組完全沒有單元測試。前端 `apps/admin`、`packages/bridge` 仍是**零測試**；`apps/console` 已補上 vitest + jsdom（2026-08-07，`ThoughtEditor.markdown.test.ts`，14 個測試涵蓋 Markdown 編輯的字元/段落層級狀態），但僅此一支測試檔，其餘元件（`App.tsx`、`Sidebar.tsx` 等）仍未覆蓋。`quota/quota_test.go`（222 行）是後端最完整的測試，顯示團隊有測試意識但尚未鋪開。
 - **`playground.go` 同步阻塞模式（A2，已知但仍存在）**：不同於 `ws/session.go:112` 用 `go func()` dispatch，playground 的 prompt 迴圈直接在讀 `conn.ReadMessage()` 的同一 goroutine 內同步呼叫 `Inference.Complete`。
 - **日誌內含完整明文對話紀錄**：`backend/tmp/logs/*.json` 有 gitignore 保護（不會進 repo），但硬碟上是無限保留、無 redaction、無 rotation 的完整對話與 system prompt 明文。此記錄行為來自 `want` 依賴本身（`want/internal/provider/vllm.go`），非 onagent 自有程式碼，但任何跑這個 backend 的機器都會累積使用者資料，屬營運面資料保存風險。
 - **前後端程式碼重複**：`apps/console/src/api.ts` 與 `apps/admin/src/api.ts` 幾乎是複製貼上的同一份 fetch wrapper（相同的 `ApiError`、`credentials: 'include'` 模式、`BASE` 環境變數 fallback）。已有 `packages/bridge` 先例，值得抽出共用 package。
