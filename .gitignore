@@ -23,6 +23,9 @@ dist/
 /backend/.bin/
 /backend/workspace/
 
+# Repo-root scratch space (notes, one-off files not meant for version control).
+/tmp/
+
 # apps/landing and apps/console build straight into these two directories
 # (see apps/console/vite.config.ts's outDir and cmd/server/web.go's
 # //go:embed all:web/{landing,console} — Go's embed can't reach outside its
