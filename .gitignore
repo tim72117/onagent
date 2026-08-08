@@ -40,3 +40,12 @@ dist/
 # placeholder's own content (e.g. its explanatory comment).
 /backend/cmd/server/web/landing/assets/
 /backend/cmd/server/web/console/assets/
+
+# macOS Finder metadata — never meant to be committed, can appear in any
+# directory a Finder window has opened.
+.DS_Store
+
+# Local dev provider/model settings (backend/cmd/server/main.go's
+# newInferenceService reads this as a fallback when AI_PROVIDER isn't set).
+# Personal/machine-specific, not meant to be shared or committed.
+/backend/configs/
