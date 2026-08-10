@@ -14,13 +14,14 @@ package usertoken
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // User mirrors session.User's shape (id + email) without importing
@@ -41,11 +42,26 @@ type Token struct {
 	LastUsedAt *time.Time `json:"lastUsedAt"`
 }
 
-type Store struct {
-	db *sql.DB
+// userTokenRow is the GORM-mapped shape of the user_tokens table (see
+// internal/db/schema.sql for the authoritative column definitions — schema
+// management stays there, not AutoMigrate).
+type userTokenRow struct {
+	ID         int64      `gorm:"column:id;primaryKey"`
+	TokenHash  string     `gorm:"column:token_hash"`
+	UserID     int64      `gorm:"column:user_id"`
+	Name       string     `gorm:"column:name"`
+	CreatedAt  time.Time  `gorm:"column:created_at"`
+	LastUsedAt *time.Time `gorm:"column:last_used_at"`
 }
 
-func New(db *sql.DB) *Store {
+func (userTokenRow) TableName() string { return "user_tokens" }
+
+
+type Store struct {
+	db *gorm.DB
+}
+
+func New(db *gorm.DB) *Store {
 	return &Store{db: db}
 }
 
@@ -66,15 +82,12 @@ func (s *Store) Issue(userID int64, name string) (id int64, plaintext string, er
 	}
 	hash := HashToken(token)
 
-	err = s.db.QueryRow(
-		`INSERT INTO user_tokens (token_hash, user_id, name) VALUES ($1, $2, $3) RETURNING id`,
-		hash, userID, name,
-	).Scan(&id)
-	if err != nil {
+	row := userTokenRow{TokenHash: hash, UserID: userID, Name: name}
+	if err := s.db.Create(&row).Error; err != nil {
 		return 0, "", fmt.Errorf("usertoken: issue: %w", err)
 	}
 
-	return id, token, nil
+	return row.ID, token, nil
 }
 
 // Verify resolves the bearer token in r's Authorization header (if any) to
@@ -89,21 +102,21 @@ func (s *Store) Verify(r *http.Request) (user *User, ok bool) {
 	hash := HashToken(token)
 
 	var u User
-	err := s.db.QueryRow(`
-		SELECT users.id, users.email
-		  FROM user_tokens
-		  JOIN users ON users.id = user_tokens.user_id
-		 WHERE user_tokens.token_hash = $1`,
-		hash,
-	).Scan(&u.ID, &u.Email)
-	if err != nil {
+	res := s.db.
+		Table("user_tokens").
+		Select("users.id, users.email").
+		Joins("JOIN users ON users.id = user_tokens.user_id").
+		Where("user_tokens.token_hash = ?", hash).
+		Scan(&u)
+	if res.Error != nil || res.RowsAffected == 0 {
 		return nil, false
 	}
 
 	// Best-effort: a failed touch shouldn't fail the request it's riding
 	// along with — last_used_at is a convenience for List, not a
-	// correctness-critical value.
-	_, _ = s.db.Exec(`UPDATE user_tokens SET last_used_at = now() WHERE token_hash = $1`, hash)
+	// correctness-critical value. Error deliberately discarded, same as the
+	// pre-GORM version.
+	_ = s.db.Model(&userTokenRow{}).Where("token_hash = ?", hash).Update("last_used_at", time.Now()).Error
 
 	return &u, true
 }
@@ -111,31 +124,24 @@ func (s *Store) Verify(r *http.Request) (user *User, ok bool) {
 // List returns userID's tokens, most recently created first, without their
 // plaintext (unrecoverable) or hash (no reason for a caller to ever see it).
 func (s *Store) List(userID int64) ([]Token, error) {
-	rows, err := s.db.Query(`
-		SELECT id, name, created_at, last_used_at
-		  FROM user_tokens
-		 WHERE user_id = $1
-		 ORDER BY created_at DESC`,
-		userID,
-	)
-	if err != nil {
+	var rows []userTokenRow
+	if err := s.db.
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("usertoken: list: %w", err)
 	}
-	defer rows.Close()
 
-	out := []Token{}
-	for rows.Next() {
-		var t Token
-		var lastUsed sql.NullTime
-		if err := rows.Scan(&t.ID, &t.Name, &t.CreatedAt, &lastUsed); err != nil {
-			return nil, fmt.Errorf("usertoken: scan: %w", err)
-		}
-		if lastUsed.Valid {
-			t.LastUsedAt = &lastUsed.Time
-		}
-		out = append(out, t)
+	out := make([]Token, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Token{
+			ID:         r.ID,
+			Name:       r.Name,
+			CreatedAt:  r.CreatedAt,
+			LastUsedAt: r.LastUsedAt,
+		})
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // Revoke deletes userID's token identified by tokenID. Scoped to userID so
@@ -143,9 +149,9 @@ func (s *Store) List(userID int64) ([]Token, error) {
 // error if no matching row existed — the caller's desired end state (that
 // token no longer works) already holds either way.
 func (s *Store) Revoke(userID, tokenID int64) error {
-	if _, err := s.db.Exec(
-		`DELETE FROM user_tokens WHERE id = $1 AND user_id = $2`, tokenID, userID,
-	); err != nil {
+	if err := s.db.
+		Where("id = ? AND user_id = ?", tokenID, userID).
+		Delete(&userTokenRow{}).Error; err != nil {
 		return fmt.Errorf("usertoken: revoke: %w", err)
 	}
 	return nil

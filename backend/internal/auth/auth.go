@@ -16,11 +16,12 @@ package auth
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"regexp"
+
+	"gorm.io/gorm"
 )
 
 // appIDRE mirrors toolschema's app-id pattern (kept local so auth stays
@@ -29,31 +30,52 @@ import (
 // future caller skips toolschema's own check.
 var appIDRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
+// appAuthRow is auth's own narrow view of the shared `apps` table —
+// deliberately declared independently of toolschema's own view of the same
+// table (see toolschema/registry.go's appRow) rather than a shared model
+// package. The two packages never import each other and each only ever
+// reads/writes the columns it declares here, so there is no struct-level
+// coupling to keep in sync. This independence is also why every write in
+// this file uses Model(&appAuthRow{}).Where(...).Update/Updates(...) and
+// NEVER a bare Save() — Save() would write every column this struct
+// declares (just api_key_hash/allowed_origin here, so it's safe today), but
+// the moment this struct grows a field, a bare Save() risks clobbering a
+// column toolschema owns. Scoped Updates() calls stay safe regardless of
+// how either struct's field set evolves.
+type appAuthRow struct {
+	AppID         string  `gorm:"column:app_id;primaryKey"`
+	APIKeyHash    *string `gorm:"column:api_key_hash"`
+	AllowedOrigin *string `gorm:"column:allowed_origin"`
+}
+
+func (appAuthRow) TableName() string { return "apps" }
+
+
 // Store looks up the appId bound to an API key. Every method talks directly
 // to Postgres — there's no in-memory cache to keep consistent, since key
 // checks are infrequent (once per WebSocket handshake, not once per
 // message) and a stale cache here is exactly the kind of bug that would let
 // a revoked key keep working.
 type Store struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
 // New wraps db for key verification/issuance. Assumes the `apps` table
 // already exists (internal/db.Open applies the schema before this is ever
 // constructed).
-func New(db *sql.DB) *Store {
+func New(db *gorm.DB) *Store {
 	return &Store{db: db}
 }
 
 // Count returns the number of apps with an active API key, for startup
 // logging.
 func (s *Store) Count() int {
-	var n int
+	var n int64
 	// Errors here are startup-logging-only; a failed count shouldn't stop
 	// the server, so it's swallowed to zero rather than propagated as
 	// Count has no error return (kept for call-site simplicity elsewhere).
-	_ = s.db.QueryRow(`SELECT count(*) FROM apps WHERE api_key_hash IS NOT NULL`).Scan(&n)
-	return n
+	_ = s.db.Model(&appAuthRow{}).Where("api_key_hash IS NOT NULL").Count(&n).Error
+	return int(n)
 }
 
 // VerifyResult is what a successful Verify reveals about the key's app —
@@ -84,25 +106,30 @@ func (s *Store) Verify(apiKey string) (result VerifyResult, ok bool) {
 	}
 	hash := HashKey(apiKey)
 
-	var id string
-	var origin sql.NullString
-	err := s.db.QueryRow(
-		`SELECT app_id, allowed_origin FROM apps WHERE api_key_hash = $1`, hash,
-	).Scan(&id, &origin)
-	if err != nil {
+	var row appAuthRow
+	res := s.db.Select("app_id, allowed_origin").Where("api_key_hash = ?", hash).Take(&row)
+	if res.Error != nil {
 		return VerifyResult{}, false
 	}
-	return VerifyResult{AppID: id, AllowedOrigin: origin.String}, true
+	var origin string
+	if row.AllowedOrigin != nil {
+		origin = *row.AllowedOrigin
+	}
+	return VerifyResult{AppID: row.AppID, AllowedOrigin: origin}, true
 }
 
 // HasKey reports whether appID currently has an active key, without
 // revealing it.
 func (s *Store) HasKey(appID string) bool {
+	// GORM has no builder-level EXISTS subquery; Where(...).Limit(1).Find()
+	// would work but actually fetches a row to prove existence rather than
+	// letting Postgres answer via the index alone. Kept as raw SQL,
+	// unchanged from the pre-GORM version, for that reason.
 	var exists bool
-	_ = s.db.QueryRow(
-		`SELECT EXISTS(SELECT 1 FROM apps WHERE app_id = $1 AND api_key_hash IS NOT NULL)`,
+	_ = s.db.Raw(
+		`SELECT EXISTS(SELECT 1 FROM apps WHERE app_id = ? AND api_key_hash IS NOT NULL)`,
 		appID,
-	).Scan(&exists)
+	).Scan(&exists).Error
 	return exists
 }
 
@@ -123,15 +150,13 @@ func (s *Store) Issue(appID string) (plaintextKey string, err error) {
 	}
 	hash := HashKey(key)
 
-	result, err := s.db.Exec(`UPDATE apps SET api_key_hash = $1 WHERE app_id = $2`, hash, appID)
-	if err != nil {
-		return "", fmt.Errorf("auth: issue key for %s: %w", appID, err)
+	// Column-scoped Update, not Save — see appAuthRow's doc comment on why
+	// this file never uses a bare Save().
+	res := s.db.Model(&appAuthRow{}).Where("app_id = ?", appID).Update("api_key_hash", hash)
+	if res.Error != nil {
+		return "", fmt.Errorf("auth: issue key for %s: %w", appID, res.Error)
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return "", fmt.Errorf("auth: issue key for %s: %w", appID, err)
-	}
-	if n == 0 {
+	if res.RowsAffected == 0 {
 		return "", fmt.Errorf("auth: no such app %q", appID)
 	}
 
@@ -145,7 +170,7 @@ func (s *Store) Revoke(appID string) error {
 	if !appIDRE.MatchString(appID) {
 		return fmt.Errorf("auth: invalid appId %q", appID)
 	}
-	if _, err := s.db.Exec(`UPDATE apps SET api_key_hash = NULL WHERE app_id = $1`, appID); err != nil {
+	if err := s.db.Model(&appAuthRow{}).Where("app_id = ?", appID).Update("api_key_hash", nil).Error; err != nil {
 		return fmt.Errorf("auth: revoke key for %s: %w", appID, err)
 	}
 	return nil
@@ -159,19 +184,15 @@ func (s *Store) SetOrigin(appID, origin string) error {
 	if !appIDRE.MatchString(appID) {
 		return fmt.Errorf("auth: invalid appId %q", appID)
 	}
-	var val sql.NullString
+	var val *string
 	if origin != "" {
-		val = sql.NullString{String: origin, Valid: true}
+		val = &origin
 	}
-	result, err := s.db.Exec(`UPDATE apps SET allowed_origin = $1 WHERE app_id = $2`, val, appID)
-	if err != nil {
-		return fmt.Errorf("auth: set origin for %s: %w", appID, err)
+	res := s.db.Model(&appAuthRow{}).Where("app_id = ?", appID).Update("allowed_origin", val)
+	if res.Error != nil {
+		return fmt.Errorf("auth: set origin for %s: %w", appID, res.Error)
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("auth: set origin for %s: %w", appID, err)
-	}
-	if n == 0 {
+	if res.RowsAffected == 0 {
 		return fmt.Errorf("auth: no such app %q", appID)
 	}
 	return nil
@@ -179,9 +200,12 @@ func (s *Store) SetOrigin(appID, origin string) error {
 
 // OriginFor returns appID's configured allowed origin, or "" if unset.
 func (s *Store) OriginFor(appID string) string {
-	var origin sql.NullString
-	_ = s.db.QueryRow(`SELECT allowed_origin FROM apps WHERE app_id = $1`, appID).Scan(&origin)
-	return origin.String
+	var row appAuthRow
+	_ = s.db.Select("allowed_origin").Where("app_id = ?", appID).Take(&row).Error
+	if row.AllowedOrigin == nil {
+		return ""
+	}
+	return *row.AllowedOrigin
 }
 
 // HashKey computes the sha256 hex digest of a plaintext key — what's

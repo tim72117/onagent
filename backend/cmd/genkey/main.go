@@ -25,14 +25,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	conn, err := db.Open(*dsn)
+	database, err := db.Open(*dsn)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "genkey:", err)
 		os.Exit(1)
 	}
-	defer conn.Close()
+	if sqlDB, err := database.DB(); err == nil {
+		defer sqlDB.Close()
+	}
 
-	key, err := auth.New(conn).Issue(appID)
+	key, err := auth.New(database).Issue(appID)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "genkey:", err)
 		os.Exit(1)

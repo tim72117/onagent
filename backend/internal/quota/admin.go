@@ -2,9 +2,10 @@ package quota
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
+
+	"gorm.io/gorm/clause"
 )
 
 // This file holds the read/write operations the admin back-office
@@ -27,16 +28,30 @@ func (s *Service) SetTier(ctx context.Context, userID int64, tier Tier) error {
 	if _, ok := plans[tier]; !ok {
 		return fmt.Errorf("quota: unknown tier %q", tier)
 	}
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO subscriptions (user_id, tier, updated_at)
-		VALUES ($1, $2, now())
-		ON CONFLICT (user_id) DO UPDATE SET tier = EXCLUDED.tier, updated_at = now()`,
-		userID, string(tier))
+	err := s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"tier", "updated_at"}),
+		}).
+		Create(&subscriptionUpsertRow{UserID: userID, Tier: string(tier), UpdatedAt: time.Now()}).Error
 	if err != nil {
 		return fmt.Errorf("quota: set tier: %w", err)
 	}
 	return nil
 }
+
+// subscriptionUpsertRow is a narrower view of subscriptions than
+// subscriptionRow — this file's Create only ever supplies user_id/tier/
+// updated_at, and giving it its own struct keeps the OnConflict clause's
+// DoUpdates list obviously in sync with exactly the columns being set.
+type subscriptionUpsertRow struct {
+	UserID    int64     `gorm:"column:user_id;primaryKey"`
+	Tier      string    `gorm:"column:tier"`
+	UpdatedAt time.Time `gorm:"column:updated_at"`
+}
+
+func (subscriptionUpsertRow) TableName() string { return "subscriptions" }
+
 
 // UserSummary is one row of the admin user list: identity plus current plan
 // standing. QuotaOverride is non-nil only when this user has a manual
@@ -58,11 +73,11 @@ func (s *Service) CountUsers(ctx context.Context) (int, error) {
 	if s == nil {
 		return 0, fmt.Errorf("quota: service is disabled")
 	}
-	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM users`).Scan(&n); err != nil {
+	var n int64
+	if err := s.db.WithContext(ctx).Model(&userRow{}).Count(&n).Error; err != nil {
 		return 0, fmt.Errorf("quota: count users: %w", err)
 	}
-	return n, nil
+	return int(n), nil
 }
 
 // ListUsers returns every developer account with its plan standing, newest
@@ -81,46 +96,41 @@ func (s *Service) ListUsers(ctx context.Context) ([]UserSummary, error) {
 	if s == nil {
 		return nil, fmt.Errorf("quota: service is disabled")
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT u.id, u.email, u.created_at,
-		       COALESCE(sub.tier, $1) AS tier,
-		       sub.monthly_quota,
-		       COALESCE(sub.started_at, now()) AS started_at
-		  FROM users u
-		  LEFT JOIN subscriptions sub ON sub.user_id = u.id
-		 ORDER BY u.id DESC`,
-		string(DefaultTier))
+	var scanned []struct {
+		ID            int64     `gorm:"column:id"`
+		Email         string    `gorm:"column:email"`
+		CreatedAt     time.Time `gorm:"column:created_at"`
+		Tier          string    `gorm:"column:tier"`
+		QuotaOverride *int64    `gorm:"column:monthly_quota"`
+		StartedAt     time.Time `gorm:"column:started_at"`
+	}
+	err := s.db.WithContext(ctx).
+		Table("users u").
+		Select("u.id, u.email, u.created_at, COALESCE(sub.tier, ?) AS tier, sub.monthly_quota, COALESCE(sub.started_at, now()) AS started_at", string(DefaultTier)).
+		Joins("LEFT JOIN subscriptions sub ON sub.user_id = u.id").
+		Order("u.id DESC").
+		Scan(&scanned).Error
 	if err != nil {
 		return nil, fmt.Errorf("quota: list users: %w", err)
 	}
-	defer rows.Close()
 
 	type rawUser struct {
 		st        ownerStandingRow
 		email     string
 		createdAt time.Time
 	}
-	var raw []rawUser
-	for rows.Next() {
-		var (
-			ru       rawUser
-			tier     string
-			override *int
-		)
-		var overrideN sql.NullInt64
-		if err := rows.Scan(&ru.st.ownerID, &ru.email, &ru.createdAt, &tier, &overrideN, &ru.st.startedAt); err != nil {
-			return nil, fmt.Errorf("quota: scan user: %w", err)
+	raw := make([]rawUser, 0, len(scanned))
+	for _, row := range scanned {
+		ru := rawUser{
+			st:        ownerStandingRow{ownerID: row.ID, tier: Tier(row.Tier), startedAt: row.StartedAt},
+			email:     row.Email,
+			createdAt: row.CreatedAt,
 		}
-		ru.st.tier = Tier(tier)
-		if overrideN.Valid {
-			v := int(overrideN.Int64)
-			override = &v
+		if row.QuotaOverride != nil {
+			v := int(*row.QuotaOverride)
+			ru.st.quotaOverride = &v
 		}
-		ru.st.quotaOverride = override
 		raw = append(raw, ru)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("quota: iterate users: %w", err)
 	}
 
 	now := time.Now()

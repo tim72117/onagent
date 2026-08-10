@@ -11,12 +11,13 @@ package cliauth
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"fmt"
 	"regexp"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 const ttl = 10 * time.Minute
@@ -28,11 +29,26 @@ const ttl = 10 * time.Minute
 // client-supplied value from the page's own URL later.
 var loopbackRedirectRE = regexp.MustCompile(`^http://(localhost|127\.0\.0\.1):\d+/`)
 
-type Store struct {
-	db *sql.DB
+// cliAuthSessionRow is the GORM-mapped shape of the cli_auth_sessions table
+// (see internal/db/schema.sql for the authoritative column definitions —
+// schema management stays there, not AutoMigrate).
+type cliAuthSessionRow struct {
+	ID          string    `gorm:"column:id;primaryKey"`
+	RedirectURI string    `gorm:"column:redirect_uri"`
+	Name        string    `gorm:"column:name"`
+	Token       *string   `gorm:"column:token"`
+	Approved    bool      `gorm:"column:approved"`
+	ExpiresAt   time.Time `gorm:"column:expires_at"`
 }
 
-func New(db *sql.DB) *Store {
+func (cliAuthSessionRow) TableName() string { return "cli_auth_sessions" }
+
+
+type Store struct {
+	db *gorm.DB
+}
+
+func New(db *gorm.DB) *Store {
 	return &Store{db: db}
 }
 
@@ -52,10 +68,8 @@ func (s *Store) Start(redirectURI, name string) (id string, err error) {
 		return "", fmt.Errorf("cliauth: generate id: %w", err)
 	}
 
-	if _, err := s.db.Exec(
-		`INSERT INTO cli_auth_sessions (id, redirect_uri, name, expires_at) VALUES ($1, $2, $3, $4)`,
-		id, redirectURI, name, time.Now().Add(ttl),
-	); err != nil {
+	row := cliAuthSessionRow{ID: id, RedirectURI: redirectURI, Name: name, ExpiresAt: time.Now().Add(ttl)}
+	if err := s.db.Create(&row).Error; err != nil {
 		return "", fmt.Errorf("cliauth: start: %w", err)
 	}
 	return id, nil
@@ -65,10 +79,12 @@ func (s *Store) Start(redirectURI, name string) (id string, err error) {
 // sign in" consent screen, or as the label passed to usertoken.Issue on
 // approval) — ok is false if id is unknown or its session has expired.
 func (s *Store) NameFor(id string) (name string, ok bool) {
-	err := s.db.QueryRow(
-		`SELECT name FROM cli_auth_sessions WHERE id = $1 AND expires_at > now()`, id,
-	).Scan(&name)
-	return name, err == nil
+	var row cliAuthSessionRow
+	err := s.db.
+		Select("name").
+		Where("id = ? AND expires_at > ?", id, time.Now()).
+		First(&row).Error
+	return row.Name, err == nil
 }
 
 // Approve records token (already minted by the caller via usertoken.Issue
@@ -78,20 +94,23 @@ func (s *Store) NameFor(id string) (name string, ok bool) {
 // twice would let a second tab re-collect a token for a session the user
 // already completed, which has no legitimate use.
 func (s *Store) Approve(id, token string) (redirectURI string, ok bool) {
-	res, err := s.db.Exec(
-		`UPDATE cli_auth_sessions SET token = $1, approved = true
-		  WHERE id = $2 AND expires_at > now() AND approved = false`,
-		token, id,
-	)
-	if err != nil {
-		return "", false
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	// Conditional UPDATE + RowsAffected is the single-use guarantee here —
+	// this MUST stay a WHERE-scoped Updates(), never rewritten as a
+	// First()-then-Save(). A read-then-write pair would leave a TOCTOU
+	// window where two concurrent Approve calls could both read
+	// approved=false before either writes, letting a session be approved
+	// twice. The conditional UPDATE lets Postgres's own row lock serialize
+	// concurrent attempts instead.
+	res := s.db.Model(&cliAuthSessionRow{}).
+		Where("id = ? AND expires_at > ? AND approved = ?", id, time.Now(), false).
+		Updates(map[string]any{"token": token, "approved": true})
+	if res.Error != nil || res.RowsAffected == 0 {
 		return "", false
 	}
 
-	err = s.db.QueryRow(`SELECT redirect_uri FROM cli_auth_sessions WHERE id = $1`, id).Scan(&redirectURI)
-	return redirectURI, err == nil
+	var row cliAuthSessionRow
+	err := s.db.Select("redirect_uri").Where("id = ?", id).First(&row).Error
+	return row.RedirectURI, err == nil
 }
 
 // Exchange collects id's approved token — the CLI's local callback server
@@ -100,14 +119,21 @@ func (s *Store) Approve(id, token string) (redirectURI string, ok bool) {
 // replayed or duplicated callback finds nothing left to collect. ok is
 // false if id is unknown, not yet approved, or already collected.
 func (s *Store) Exchange(id string) (token string, ok bool) {
-	err := s.db.QueryRow(
-		`SELECT token FROM cli_auth_sessions WHERE id = $1 AND approved = true AND token IS NOT NULL`, id,
-	).Scan(&token)
-	if err != nil {
+	var row cliAuthSessionRow
+	err := s.db.
+		Select("token").
+		Where("id = ? AND approved = ? AND token IS NOT NULL", id, true).
+		First(&row).Error
+	if err != nil || row.Token == nil {
 		return "", false
 	}
+	token = *row.Token
 
-	_, _ = s.db.Exec(`UPDATE cli_auth_sessions SET token = NULL WHERE id = $1`, id)
+	// Best-effort: the token was already read above, so a failure here
+	// doesn't invalidate this call's result — same as the pre-GORM version,
+	// error deliberately discarded. This clears the column so a replayed or
+	// duplicated callback finds nothing left to collect.
+	_ = s.db.Model(&cliAuthSessionRow{}).Where("id = ?", id).Update("token", nil).Error
 	return token, true
 }
 

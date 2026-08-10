@@ -19,11 +19,49 @@ package quota
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"time"
+
+	"gorm.io/gorm"
 )
+
+// usageEventRow/subscriptionStandingRow are the GORM-mapped shapes queried
+// by this file (see internal/db/schema.sql for the authoritative column
+// definitions — schema management stays there, not AutoMigrate). Only the
+// columns this file actually reads/writes are declared, same convention as
+// the other migrated packages.
+type usageEventRow struct {
+	AppID     *string   `gorm:"column:app_id"`
+	OwnerID   *int64    `gorm:"column:owner_id"`
+	EventID   string    `gorm:"column:event_id"`
+	Kind      string    `gorm:"column:kind"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+func (usageEventRow) TableName() string { return "usage_events" }
+
+// userRow is quota's own narrow view of the users table — deliberately not
+// shared with internal/session's own userRow, same convention as apps being
+// independently modeled by internal/auth and internal/toolschema. This
+// package only ever counts/reads id/email/created_at.
+type userRow struct {
+	ID        int64     `gorm:"column:id;primaryKey"`
+	Email     string    `gorm:"column:email"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+func (userRow) TableName() string { return "users" }
+
+
+// standingScanRow is the shared Scan() target for StandingFor/ownerStanding
+// — both run a COALESCE'd users/apps + subscriptions join and only differ
+// in which table they join from and whether owner_id is selected.
+type standingScanRow struct {
+	OwnerID       int64     `gorm:"column:owner_id"`
+	Tier          string    `gorm:"column:tier"`
+	QuotaOverride *int64    `gorm:"column:quota_override"`
+	StartedAt     time.Time `gorm:"column:started_at"`
+}
 
 // Service checks and records usage against the database. A nil *Service is
 // a valid, fully-disabled quota system: every method is a no-op that allows
@@ -31,13 +69,14 @@ import (
 // runs that have no database — quota enforcement is opt-in on having a real
 // DB, and never gets in the way of a no-auth dev server.
 type Service struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
-// New returns a Service backed by db. Pass the same *sql.DB the other
-// stores use. Callers that have no database should keep a nil *Service
-// instead of constructing one, which disables enforcement entirely.
-func New(db *sql.DB) *Service {
+// New returns a Service backed by db. Pass the same *gorm.DB the other
+// migrated stores use. Callers that have no database should keep a nil
+// *Service instead of constructing one, which disables enforcement
+// entirely.
+func New(db *gorm.DB) *Service {
 	return &Service{db: db}
 }
 
@@ -112,13 +151,20 @@ func (s *Service) Record(ctx context.Context, appID, eventID string) error {
 	if s == nil {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx, `
+	// Insert-select with an ON CONFLICT clause has no GORM builder
+	// equivalent, and deliberately isn't split into "look up owner_id, then
+	// insert" — that would open a race window where the app is deleted
+	// between the two steps, leaving an orphaned or missing usage row. Kept
+	// as raw SQL, unchanged from the pre-GORM version, executed through
+	// *gorm.DB so it still runs on the same connection/pool as everything
+	// else this Service does.
+	err := s.db.WithContext(ctx).Exec(`
 		INSERT INTO usage_events (app_id, owner_id, event_id, kind)
 		SELECT $1, a.owner_id, $2, 'prompt'
 		  FROM apps a
 		 WHERE a.app_id = $1
 		ON CONFLICT (app_id, event_id) DO NOTHING`,
-		appID, eventID)
+		appID, eventID).Error
 	if err != nil {
 		return fmt.Errorf("quota: record usage event: %w", err)
 	}
@@ -160,27 +206,32 @@ func (s *Service) StandingFor(ctx context.Context, ownerID int64) (Standing, err
 		return Standing{}, fmt.Errorf("quota: service is disabled")
 	}
 
-	var quotaOverride sql.NullInt64
-	var tier string
-	var startedAt time.Time
-	row := s.db.QueryRowContext(ctx, `
-		SELECT COALESCE(sub.tier, $2),
-		       sub.monthly_quota,
-		       COALESCE(sub.started_at, now())
-		  FROM users u
-		  LEFT JOIN subscriptions sub ON sub.user_id = u.id
-		 WHERE u.id = $1`,
-		ownerID, string(DefaultTier))
-	err := row.Scan(&tier, &quotaOverride, &startedAt)
-	if err != nil {
-		return Standing{}, fmt.Errorf("quota: resolve standing: %w", err)
+	var scanned standingScanRow
+	// started_at's COALESCE fallback is the SQL now() function, evaluated by
+	// Postgres at query execution time — deliberately not a Go-side
+	// time.Now() bound as a parameter, which would evaluate slightly
+	// earlier and shift the period-boundary race this package's tests
+	// already document (see quota_integration_test.go's comments on
+	// COALESCE(sub.started_at, now()) timing).
+	res := s.db.WithContext(ctx).
+		Table("users u").
+		Select("COALESCE(sub.tier, ?) AS tier, sub.monthly_quota AS quota_override, COALESCE(sub.started_at, now()) AS started_at", string(DefaultTier)).
+		Joins("LEFT JOIN subscriptions sub ON sub.user_id = u.id").
+		Where("u.id = ?", ownerID).
+		Scan(&scanned)
+	if res.Error != nil {
+		return Standing{}, fmt.Errorf("quota: resolve standing: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return Standing{}, fmt.Errorf("quota: resolve standing: %w", gorm.ErrRecordNotFound)
 	}
 
-	st := ownerStandingRow{ownerID: ownerID, tier: Tier(tier), startedAt: startedAt}
-	if quotaOverride.Valid {
-		v := int(quotaOverride.Int64)
+	st := ownerStandingRow{ownerID: ownerID, tier: Tier(scanned.Tier), startedAt: scanned.StartedAt}
+	if scanned.QuotaOverride != nil {
+		v := int(*scanned.QuotaOverride)
 		st.quotaOverride = &v
 	}
+	startedAt := scanned.StartedAt
 
 	now := time.Now()
 	periodStart := currentPeriodStart(startedAt, now)
@@ -214,28 +265,22 @@ func (s *Service) StandingFor(ctx context.Context, ownerID int64) (Standing, err
 // this is the manual "grant this one user more" lever, without which the
 // plan value applies.
 func (s *Service) ownerStanding(ctx context.Context, appID string) (st ownerStandingRow, ok bool, err error) {
-	var quotaOverride sql.NullInt64
-	var tier string
-	row := s.db.QueryRowContext(ctx, `
-		SELECT a.owner_id,
-		       COALESCE(sub.tier, $2),
-		       sub.monthly_quota,
-		       COALESCE(sub.started_at, now())
-		  FROM apps a
-		  LEFT JOIN subscriptions sub ON sub.user_id = a.owner_id
-		 WHERE a.app_id = $1
-		   AND a.owner_id IS NOT NULL`,
-		appID, string(DefaultTier))
-	err = row.Scan(&st.ownerID, &tier, &quotaOverride, &st.startedAt)
-	if errors.Is(err, sql.ErrNoRows) {
+	var scanned standingScanRow
+	res := s.db.WithContext(ctx).
+		Table("apps a").
+		Select("a.owner_id, COALESCE(sub.tier, ?) AS tier, sub.monthly_quota AS quota_override, COALESCE(sub.started_at, now()) AS started_at", string(DefaultTier)).
+		Joins("LEFT JOIN subscriptions sub ON sub.user_id = a.owner_id").
+		Where("a.app_id = ? AND a.owner_id IS NOT NULL", appID).
+		Scan(&scanned)
+	if res.Error != nil {
+		return ownerStandingRow{}, false, fmt.Errorf("quota: resolve owner standing: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
 		return ownerStandingRow{}, false, nil
 	}
-	if err != nil {
-		return ownerStandingRow{}, false, fmt.Errorf("quota: resolve owner standing: %w", err)
-	}
-	st.tier = Tier(tier)
-	if quotaOverride.Valid {
-		v := int(quotaOverride.Int64)
+	st = ownerStandingRow{ownerID: scanned.OwnerID, tier: Tier(scanned.Tier), startedAt: scanned.StartedAt}
+	if scanned.QuotaOverride != nil {
+		v := int(*scanned.QuotaOverride)
 		st.quotaOverride = &v
 	}
 	return st, true, nil
@@ -269,17 +314,14 @@ func (r ownerStandingRow) limit() int {
 // FK still cascaded, stopped existing at all), so deleting and recreating an
 // app reset the period's usage to zero.
 func (s *Service) usageSince(ctx context.Context, ownerID int64, periodStart time.Time) (int, error) {
-	var n int
-	err := s.db.QueryRowContext(ctx, `
-		SELECT count(*)
-		  FROM usage_events
-		 WHERE owner_id = $1
-		   AND created_at >= $2`,
-		ownerID, periodStart).Scan(&n)
-	if err != nil {
+	var n int64
+	if err := s.db.WithContext(ctx).
+		Model(&usageEventRow{}).
+		Where("owner_id = ? AND created_at >= ?", ownerID, periodStart).
+		Count(&n).Error; err != nil {
 		return 0, fmt.Errorf("quota: count usage: %w", err)
 	}
-	return n, nil
+	return int(n), nil
 }
 
 // currentPeriodStart returns the start of the billing period containing now,

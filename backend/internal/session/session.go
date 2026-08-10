@@ -8,7 +8,6 @@ package session
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
 	"github.com/tim72117/onagent/internal/quota"
 )
@@ -48,17 +48,44 @@ type User struct {
 	Email string
 }
 
+// userRow/sessionRow/subscriptionRow are the GORM-mapped shapes of their
+// respective tables (see internal/db/schema.sql for the authoritative
+// column definitions — schema management stays there, not AutoMigrate).
+type userRow struct {
+	ID           int64  `gorm:"column:id;primaryKey"`
+	Email        string `gorm:"column:email"`
+	PasswordHash string `gorm:"column:password_hash"`
+}
+
+func (userRow) TableName() string { return "users" }
+
+type sessionRow struct {
+	ID        string    `gorm:"column:id;primaryKey"`
+	UserID    int64     `gorm:"column:user_id"`
+	ExpiresAt time.Time `gorm:"column:expires_at"`
+}
+
+func (sessionRow) TableName() string { return "sessions" }
+
+type subscriptionRow struct {
+	UserID int64  `gorm:"column:user_id;primaryKey"`
+	Tier   string `gorm:"column:tier"`
+}
+
+func (subscriptionRow) TableName() string { return "subscriptions" }
+
+
 // Store implements registration, login, and session verification against
 // the users/sessions tables (internal/db/schema.sql).
 type Store struct {
-	db *sql.DB
+	db *gorm.DB
 	// Secure controls the cookie's Secure attribute. true in any real
 	// deployment (HTTPS-only cookie); false only for http://localhost dev,
 	// where the browser would otherwise silently refuse to store it.
 	Secure bool
 }
 
-func New(db *sql.DB, secure bool) *Store {
+func New(db *gorm.DB, secure bool) *Store {
 	return &Store{db: db, Secure: secure}
 }
 
@@ -85,41 +112,41 @@ func (s *Store) Register(email, password string) (*User, error) {
 	// tier), but writing it here keeps subscriptions 1:1 with users on the
 	// happy path and gives billing a row to later UPDATE in place. All-or-
 	// nothing avoids a half-created account if the second insert fails.
-	tx, err := s.db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("session: begin tx: %w", err)
-	}
-	defer tx.Rollback() // no-op after a successful Commit
-
 	var id int64
-	err = tx.QueryRow(
-		`INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id`,
-		email, string(hash),
-	).Scan(&id)
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		u := userRow{Email: email, PasswordHash: string(hash)}
+		if err := tx.Create(&u).Error; err != nil {
+			// internal/db.Open configures GORM's postgres driver to reuse
+			// the *sql.DB opened via lib/pq (see that file's comment), so
+			// errors surfacing here are still *pq.Error, not pgx's
+			// pgconn.PgError — GORM's own driver choice doesn't change what
+			// actually executes the query underneath database/sql.
+			var pqErr *pq.Error
+			if errors.As(err, &pqErr) && pqErr.Code == "23505" { // unique_violation
+				return ErrEmailTaken
+			}
+			return fmt.Errorf("session: insert user: %w", err)
+		}
+		id = u.ID
+
+		// Start every account on the default tier. The actual allowance is
+		// NOT stored on the row — internal/quota derives it from the tier's
+		// plan at check time (quota.PlanFor), so a plan's number can change
+		// without touching existing rows. monthly_quota is left NULL: it's
+		// an optional per-user override, not the source of the limit.
+		// started_at and tier both have schema defaults, but tier is set
+		// explicitly here so the account's plan is unambiguous from the row
+		// itself.
+		if err := tx.Create(&subscriptionRow{UserID: id, Tier: string(quota.DefaultTier)}).Error; err != nil {
+			return fmt.Errorf("session: insert subscription: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
-		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" { // unique_violation
+		if errors.Is(err, ErrEmailTaken) {
 			return nil, ErrEmailTaken
 		}
-		return nil, fmt.Errorf("session: insert user: %w", err)
-	}
-
-	// Start every account on the default tier. The actual allowance is NOT
-	// stored on the row — internal/quota derives it from the tier's plan at
-	// check time (quota.PlanFor), so a plan's number can change without
-	// touching existing rows. monthly_quota is left NULL: it's an optional
-	// per-user override, not the source of the limit. started_at and tier
-	// both have schema defaults, but tier is set explicitly here so the
-	// account's plan is unambiguous from the row itself.
-	_, err = tx.Exec(
-		`INSERT INTO subscriptions (user_id, tier) VALUES ($1, $2)`,
-		id, string(quota.DefaultTier),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("session: insert subscription: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("session: commit signup: %w", err)
+		return nil, err
 	}
 
 	return &User{ID: id, Email: email}, nil
@@ -129,25 +156,20 @@ func (s *Store) Register(email, password string) (*User, error) {
 // ErrInvalidCredentials covers both a nonexistent email and a wrong
 // password — see that error's doc comment for why.
 func (s *Store) Login(email, password string) (*User, error) {
-	var (
-		id   int64
-		hash string
-	)
-	err := s.db.QueryRow(
-		`SELECT id, password_hash FROM users WHERE lower(email) = lower($1)`, email,
-	).Scan(&id, &hash)
-	if errors.Is(err, sql.ErrNoRows) {
+	var row userRow
+	err := s.db.Where("lower(email) = lower(?)", email).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrInvalidCredentials
 	}
 	if err != nil {
 		return nil, fmt.Errorf("session: query user: %w", err)
 	}
 
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+	if bcrypt.CompareHashAndPassword([]byte(row.PasswordHash), []byte(password)) != nil {
 		return nil, ErrInvalidCredentials
 	}
 
-	return &User{ID: id, Email: email}, nil
+	return &User{ID: row.ID, Email: email}, nil
 }
 
 // CreateSession mints a new session for userID and sets its cookie on w.
@@ -160,10 +182,7 @@ func (s *Store) CreateSession(w http.ResponseWriter, userID int64) (string, erro
 	}
 	expiresAt := time.Now().Add(sessionTTL)
 
-	if _, err := s.db.Exec(
-		`INSERT INTO sessions (id, user_id, expires_at) VALUES ($1, $2, $3)`,
-		id, userID, expiresAt,
-	); err != nil {
+	if err := s.db.Create(&sessionRow{ID: id, UserID: userID, ExpiresAt: expiresAt}).Error; err != nil {
 		return "", fmt.Errorf("session: insert: %w", err)
 	}
 
@@ -190,22 +209,18 @@ func (s *Store) Verify(r *http.Request) (user *User, ok bool) {
 		return nil, false
 	}
 
-	var (
-		id    int64
-		email string
-	)
-	err = s.db.QueryRow(`
-		SELECT users.id, users.email
-		  FROM sessions
-		  JOIN users ON users.id = sessions.user_id
-		 WHERE sessions.id = $1 AND sessions.expires_at > now()`,
-		cookie.Value,
-	).Scan(&id, &email)
-	if err != nil {
+	var row userRow
+	res := s.db.
+		Table("sessions").
+		Select("users.id, users.email").
+		Joins("JOIN users ON users.id = sessions.user_id").
+		Where("sessions.id = ? AND sessions.expires_at > ?", cookie.Value, time.Now()).
+		Scan(&row)
+	if res.Error != nil || res.RowsAffected == 0 {
 		return nil, false
 	}
 
-	return &User{ID: id, Email: email}, true
+	return &User{ID: row.ID, Email: row.Email}, true
 }
 
 // Logout deletes the session named by r's cookie (if any) and clears the
@@ -213,7 +228,7 @@ func (s *Store) Verify(r *http.Request) (user *User, ok bool) {
 // a no-op, not a failure.
 func (s *Store) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(CookieName); err == nil {
-		_, _ = s.db.Exec(`DELETE FROM sessions WHERE id = $1`, cookie.Value)
+		s.db.Where("id = ?", cookie.Value).Delete(&sessionRow{})
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,

@@ -22,11 +22,13 @@ var dsn = flag.String("dsn", "postgres://platform:platform@localhost:5434/platfo
 // quota tables/indexes exist and the (app_id, event_id) idempotency
 // constraint actually collapses duplicate inserts to one row.
 func TestSchemaApplyIsIdempotent(t *testing.T) {
-	conn, err := Open(*dsn)
+	database, err := Open(*dsn)
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v) — skipping integration test", *dsn, err)
 	}
-	defer conn.Close()
+	defer func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } }()
+	sqlDB, _ := database.DB()
+	conn := sqlDB
 
 	// Second apply must not error (every statement is CREATE ... IF NOT
 	// EXISTS / ADD COLUMN IF NOT EXISTS).
@@ -34,7 +36,9 @@ func TestSchemaApplyIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-applying schema was not idempotent: %v", err)
 	}
-	conn2.Close()
+	if sqlDB2, err := conn2.DB(); err == nil {
+		sqlDB2.Close()
+	}
 
 	for _, c := range []struct {
 		label string
@@ -87,11 +91,13 @@ func TestSchemaApplyIsIdempotent(t *testing.T) {
 // The ledger now carries its own owner_id and the FK is ON DELETE SET NULL,
 // so the rows (and the count) survive the app they were recorded against.
 func TestDeletingAnAppKeepsItsUsageLedger(t *testing.T) {
-	conn, err := Open(*dsn)
+	database, err := Open(*dsn)
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v) — skipping integration test", *dsn, err)
 	}
-	defer conn.Close()
+	defer func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } }()
+	sqlDB, _ := database.DB()
+	conn := sqlDB
 
 	// Dedicated ids so this never collides with real data or the other test.
 	const userID = 999998

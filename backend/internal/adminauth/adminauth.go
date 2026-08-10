@@ -16,7 +16,6 @@ package adminauth
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -26,6 +25,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // CookieName is the admin session cookie. Distinct from
@@ -47,17 +47,39 @@ type Admin struct {
 	Email string
 }
 
-// Store is the admin identity/session store, backed by the same *sql.DB as
-// everything else but operating only on the admin_* tables.
+// adminUserRow/adminSessionRow are the GORM-mapped shapes of the admin_users
+// / admin_sessions tables (see internal/db/schema.sql for the authoritative
+// column definitions — these structs describe how to query them, not how
+// they're created; schema management stays on schema.sql, not AutoMigrate).
+type adminUserRow struct {
+	ID           int64  `gorm:"column:id;primaryKey"`
+	Email        string `gorm:"column:email"`
+	PasswordHash string `gorm:"column:password_hash"`
+}
+
+func (adminUserRow) TableName() string { return "admin_users" }
+
+type adminSessionRow struct {
+	ID          string    `gorm:"column:id;primaryKey"`
+	AdminUserID int64     `gorm:"column:admin_user_id"`
+	ExpiresAt   time.Time `gorm:"column:expires_at"`
+}
+
+func (adminSessionRow) TableName() string { return "admin_sessions" }
+
+
+// Store is the admin identity/session store, backed by the same connection
+// pool as everything else (internal/db.DB) but operating only on the
+// admin_* tables.
 type Store struct {
-	db *sql.DB
+	db *gorm.DB
 	// Secure controls the session cookie's Secure attribute; true in any
 	// real (HTTPS) deployment, false only for plain-HTTP local dev. Mirrors
 	// session.Store.Secure.
 	Secure bool
 }
 
-func New(db *sql.DB, secure bool) *Store {
+func New(db *gorm.DB, secure bool) *Store {
 	return &Store{db: db, Secure: secure}
 }
 
@@ -84,12 +106,12 @@ func (s *Store) Bootstrap(email, password string) (created bool, err error) {
 		return false, fmt.Errorf("adminauth: bootstrap password must be at least 8 characters")
 	}
 
-	var existing int64
-	err = s.db.QueryRow(`SELECT id FROM admin_users WHERE lower(email) = lower($1)`, email).Scan(&existing)
+	var existing adminUserRow
+	err = s.db.Where("lower(email) = lower(?)", email).First(&existing).Error
 	if err == nil {
 		return false, nil // already present — leave it alone
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return false, fmt.Errorf("adminauth: check existing admin: %w", err)
 	}
 
@@ -98,39 +120,36 @@ func (s *Store) Bootstrap(email, password string) (created bool, err error) {
 		return false, fmt.Errorf("adminauth: hash bootstrap password: %w", err)
 	}
 	// ON CONFLICT guards the race where two instances bootstrap at once
-	// (unique index on lower(email)); the loser just no-ops.
-	res, err := s.db.Exec(
-		`INSERT INTO admin_users (email, password_hash) VALUES ($1, $2)
+	// (unique index on lower(email)). This is a functional (expression)
+	// unique index, which GORM's clause.OnConflict can't target reliably —
+	// kept as raw SQL rather than the builder, string unchanged from the
+	// pre-GORM version.
+	res := s.db.Exec(
+		`INSERT INTO admin_users (email, password_hash) VALUES (?, ?)
 		 ON CONFLICT (lower(email)) DO NOTHING`,
 		email, string(hash),
 	)
-	if err != nil {
-		return false, fmt.Errorf("adminauth: insert bootstrap admin: %w", err)
+	if res.Error != nil {
+		return false, fmt.Errorf("adminauth: insert bootstrap admin: %w", res.Error)
 	}
-	n, _ := res.RowsAffected()
-	return n > 0, nil
+	return res.RowsAffected > 0, nil
 }
 
 // Login verifies an admin's email/password. ErrInvalidCredentials covers
 // both a nonexistent email and a wrong password.
 func (s *Store) Login(email, password string) (*Admin, error) {
-	var (
-		id   int64
-		hash string
-	)
-	err := s.db.QueryRow(
-		`SELECT id, password_hash FROM admin_users WHERE lower(email) = lower($1)`, email,
-	).Scan(&id, &hash)
-	if errors.Is(err, sql.ErrNoRows) {
+	var row adminUserRow
+	err := s.db.Where("lower(email) = lower(?)", email).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrInvalidCredentials
 	}
 	if err != nil {
 		return nil, fmt.Errorf("adminauth: query admin: %w", err)
 	}
-	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+	if bcrypt.CompareHashAndPassword([]byte(row.PasswordHash), []byte(password)) != nil {
 		return nil, ErrInvalidCredentials
 	}
-	return &Admin{ID: id, Email: email}, nil
+	return &Admin{ID: row.ID, Email: email}, nil
 }
 
 // CreateSession mints an admin session for adminID and sets its cookie on w.
@@ -141,10 +160,7 @@ func (s *Store) CreateSession(w http.ResponseWriter, adminID int64) (string, err
 	}
 	expiresAt := time.Now().Add(sessionTTL)
 
-	if _, err := s.db.Exec(
-		`INSERT INTO admin_sessions (id, admin_user_id, expires_at) VALUES ($1, $2, $3)`,
-		id, adminID, expiresAt,
-	); err != nil {
+	if err := s.db.Create(&adminSessionRow{ID: id, AdminUserID: adminID, ExpiresAt: expiresAt}).Error; err != nil {
 		return "", fmt.Errorf("adminauth: insert session: %w", err)
 	}
 
@@ -167,27 +183,21 @@ func (s *Store) Verify(r *http.Request) (admin *Admin, ok bool) {
 	if err != nil {
 		return nil, false
 	}
-	var (
-		id    int64
-		email string
-	)
-	err = s.db.QueryRow(`
-		SELECT admin_users.id, admin_users.email
-		  FROM admin_sessions
-		  JOIN admin_users ON admin_users.id = admin_sessions.admin_user_id
-		 WHERE admin_sessions.id = $1 AND admin_sessions.expires_at > now()`,
-		cookie.Value,
-	).Scan(&id, &email)
+	var row adminUserRow
+	err = s.db.
+		Joins("JOIN admin_sessions ON admin_sessions.admin_user_id = admin_users.id").
+		Where("admin_sessions.id = ? AND admin_sessions.expires_at > ?", cookie.Value, time.Now()).
+		First(&row).Error
 	if err != nil {
 		return nil, false
 	}
-	return &Admin{ID: id, Email: email}, true
+	return &Admin{ID: row.ID, Email: row.Email}, true
 }
 
 // Logout deletes the admin session named by r's cookie and clears it on w.
 func (s *Store) Logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(CookieName); err == nil {
-		_, _ = s.db.Exec(`DELETE FROM admin_sessions WHERE id = $1`, cookie.Value)
+		s.db.Where("id = ?", cookie.Value).Delete(&adminSessionRow{})
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     CookieName,
@@ -203,9 +213,9 @@ func (s *Store) Logout(w http.ResponseWriter, r *http.Request) {
 
 // Count returns how many admins exist. Used at startup for a log line.
 func (s *Store) Count() int {
-	var n int
-	_ = s.db.QueryRow(`SELECT count(*) FROM admin_users`).Scan(&n)
-	return n
+	var n int64
+	_ = s.db.Model(&adminUserRow{}).Count(&n).Error
+	return int(n)
 }
 
 // sameSite mirrors session.sameSite: None (requires Secure) for real HTTPS

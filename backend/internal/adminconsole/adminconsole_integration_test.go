@@ -25,23 +25,25 @@ import (
 var dsn = flag.String("dsn", "postgres://platform:platform@localhost:5434/platform?sslmode=disable", "Postgres DSN")
 
 func TestAdminAPIEndToEnd(t *testing.T) {
-	conn, err := db.Open(*dsn)
+	database, err := db.Open(*dsn)
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v)", *dsn, err)
 	}
-	defer conn.Close()
+	defer func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } }()
+	sqlDB, _ := database.DB()
+	conn := sqlDB
 
 	const email = "admin-api-test@example.com"
 	const password = "supersecret123"
 	_, _ = conn.Exec(`DELETE FROM admin_users WHERE lower(email) = lower($1)`, email)
 	t.Cleanup(func() { _, _ = conn.Exec(`DELETE FROM admin_users WHERE lower(email) = lower($1)`, email) })
 
-	adminAuth := adminauth.New(conn, false)
+	adminAuth := adminauth.New(database, false)
 	if _, err := adminAuth.Bootstrap(email, password); err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
 
-	h := NewHandler(adminAuth, quota.New(conn))
+	h := NewHandler(adminAuth, quota.New(database), database)
 	mux := http.NewServeMux()
 	h.Register(mux)
 	srv := httptest.NewServer(mux)

@@ -1,11 +1,43 @@
 package toolschema
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sync"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// appRow is toolschema's own narrow view of the shared `apps` table —
+// deliberately declared independently of internal/auth's own view of the
+// same table (see auth.go's appAuthRow), same rationale: no shared model
+// package, no cross-package coupling. Every write in this file uses either
+// Create with an OnConflict clause, or a column-scoped Update/Updates —
+// never a bare Save() — for the same "don't risk clobbering a column the
+// other package owns" reason documented on appAuthRow.
+type appRow struct {
+	AppID   string  `gorm:"column:app_id;primaryKey"`
+	OwnerID *int64  `gorm:"column:owner_id"`
+	Thought *string `gorm:"column:thought"`
+}
+
+func (appRow) TableName() string { return "apps" }
+
+// toolRow is the GORM-mapped shape of the `tools` table (composite primary
+// key app_id+name — see internal/db/schema.sql).
+type toolRow struct {
+	AppID       string `gorm:"column:app_id;primaryKey"`
+	Name        string `gorm:"column:name;primaryKey"`
+	Description string `gorm:"column:description"`
+	Parameters  []byte `gorm:"column:parameters"`
+	Returns     []byte `gorm:"column:returns"`
+	Kind        string `gorm:"column:kind"`
+	Position    int    `gorm:"column:position"`
+}
+
+func (toolRow) TableName() string { return "tools" }
+
 
 // Registry is a thread-safe, database-backed holder for the set of
 // registered apps. Introduced so the console API (internal/console) can
@@ -19,14 +51,14 @@ import (
 // rather than hitting the database on every WebSocket hello — a session
 // resolving its tool set shouldn't pay a query per connection.
 type Registry struct {
-	db   *sql.DB
+	db   *gorm.DB
 	mu   sync.RWMutex
 	apps map[string]*App
 }
 
 // NewRegistry loads every app from db once and returns a Registry serving
 // that snapshot.
-func NewRegistry(db *sql.DB) (*Registry, error) {
+func NewRegistry(db *gorm.DB) (*Registry, error) {
 	r := &Registry{db: db}
 	if err := r.Reload(); err != nil {
 		return nil, err
@@ -91,7 +123,7 @@ func (r *Registry) Delete(appID string) error {
 	if !ValidAppID(appID) {
 		return fmt.Errorf("toolschema: invalid appId %q", appID)
 	}
-	if _, err := r.db.Exec(`DELETE FROM apps WHERE app_id = $1`, appID); err != nil {
+	if err := r.db.Where("app_id = ?", appID).Delete(&appRow{}).Error; err != nil {
 		return fmt.Errorf("toolschema: delete app %s: %w", appID, err)
 	}
 	return r.Reload()
@@ -114,9 +146,7 @@ func (r *Registry) Create(appID string, ownerID int64) error {
 	if _, exists := r.Get(appID); exists {
 		return fmt.Errorf("toolschema: appId %q already exists", appID)
 	}
-	if _, err := r.db.Exec(
-		`INSERT INTO apps (app_id, owner_id) VALUES ($1, $2)`, appID, ownerID,
-	); err != nil {
+	if err := r.db.Create(&appRow{AppID: appID, OwnerID: &ownerID}).Error; err != nil {
 		return fmt.Errorf("toolschema: create app %s: %w", appID, err)
 	}
 	return r.Reload()
@@ -126,12 +156,12 @@ func (r *Registry) Create(appID string, ownerID int64) error {
 // doesn't exist or (only possible for apps migrated before multi-user
 // existed) has no owner recorded.
 func (r *Registry) OwnerOf(appID string) (ownerID int64, ok bool) {
-	var id sql.NullInt64
-	err := r.db.QueryRow(`SELECT owner_id FROM apps WHERE app_id = $1`, appID).Scan(&id)
-	if err != nil || !id.Valid {
+	var row appRow
+	err := r.db.Select("owner_id").Where("app_id = ?", appID).Take(&row).Error
+	if err != nil || row.OwnerID == nil {
 		return 0, false
 	}
-	return id.Int64, true
+	return *row.OwnerID, true
 }
 
 // SetThought sets or clears (thought == "") appID's custom want agent
@@ -141,19 +171,15 @@ func (r *Registry) SetThought(appID, thought string) error {
 	if !ValidAppID(appID) {
 		return fmt.Errorf("toolschema: invalid appId %q", appID)
 	}
-	var val sql.NullString
+	var val *string
 	if thought != "" {
-		val = sql.NullString{String: thought, Valid: true}
+		val = &thought
 	}
-	result, err := r.db.Exec(`UPDATE apps SET thought = $1 WHERE app_id = $2`, val, appID)
-	if err != nil {
-		return fmt.Errorf("toolschema: set thought for %s: %w", appID, err)
+	res := r.db.Model(&appRow{}).Where("app_id = ?", appID).Update("thought", val)
+	if res.Error != nil {
+		return fmt.Errorf("toolschema: set thought for %s: %w", appID, res.Error)
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("toolschema: set thought for %s: %w", appID, err)
-	}
-	if n == 0 {
+	if res.RowsAffected == 0 {
 		return fmt.Errorf("toolschema: no such app %q", appID)
 	}
 	return r.Reload()
@@ -161,94 +187,66 @@ func (r *Registry) SetThought(appID, thought string) error {
 
 // OwnedBy returns every appId owned by ownerID, for a user's app list.
 func (r *Registry) OwnedBy(ownerID int64) ([]string, error) {
-	rows, err := r.db.Query(`SELECT app_id FROM apps WHERE owner_id = $1 ORDER BY app_id`, ownerID)
-	if err != nil {
+	var rows []appRow
+	if err := r.db.
+		Select("app_id").
+		Where("owner_id = ?", ownerID).
+		Order("app_id").
+		Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("toolschema: query apps for owner %d: %w", ownerID, err)
 	}
-	defer rows.Close()
-
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("toolschema: scan app_id: %w", err)
-		}
-		ids = append(ids, id)
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.AppID)
 	}
-	return ids, rows.Err()
+	return ids, nil
 }
 
 // --- database access ---------------------------------------------------
 
-func loadAllApps(db *sql.DB) (map[string]*App, error) {
-	appRows, err := db.Query(`SELECT app_id, thought FROM apps ORDER BY app_id`)
-	if err != nil {
+func loadAllApps(db *gorm.DB) (map[string]*App, error) {
+	var appRows []appRow
+	if err := db.Order("app_id").Find(&appRows).Error; err != nil {
 		return nil, fmt.Errorf("toolschema: query apps: %w", err)
 	}
-	defer appRows.Close()
 
-	apps := make(map[string]*App)
-	var ids []string
-	for appRows.Next() {
-		var (
-			id      string
-			thought sql.NullString
-		)
-		if err := appRows.Scan(&id, &thought); err != nil {
-			return nil, fmt.Errorf("toolschema: scan app_id: %w", err)
+	apps := make(map[string]*App, len(appRows))
+	for _, row := range appRows {
+		var thought string
+		if row.Thought != nil {
+			thought = *row.Thought
 		}
-		apps[id] = &App{AppID: id, Tools: []Tool{}, Thought: thought.String}
-		ids = append(ids, id)
-	}
-	if err := appRows.Err(); err != nil {
-		return nil, fmt.Errorf("toolschema: iterate apps: %w", err)
+		apps[row.AppID] = &App{AppID: row.AppID, Tools: []Tool{}, Thought: thought}
 	}
 
-	toolRows, err := db.Query(`
-		SELECT app_id, name, description, parameters, returns, kind
-		  FROM tools
-		 ORDER BY app_id, position`)
-	if err != nil {
+	var toolRows []toolRow
+	if err := db.Order("app_id, position").Find(&toolRows).Error; err != nil {
 		return nil, fmt.Errorf("toolschema: query tools: %w", err)
 	}
-	defer toolRows.Close()
 
-	for toolRows.Next() {
-		var (
-			appID, name, description string
-			parametersJSON           []byte
-			returnsJSON              []byte // NULL-able
-			kind                     string
-		)
-		if err := toolRows.Scan(&appID, &name, &description, &parametersJSON, &returnsJSON, &kind); err != nil {
-			return nil, fmt.Errorf("toolschema: scan tool: %w", err)
-		}
-
+	for _, tr := range toolRows {
 		var params ParameterSchema
-		if err := json.Unmarshal(parametersJSON, &params); err != nil {
-			return nil, fmt.Errorf("toolschema: unmarshal parameters for %s.%s: %w", appID, name, err)
+		if err := json.Unmarshal(tr.Parameters, &params); err != nil {
+			return nil, fmt.Errorf("toolschema: unmarshal parameters for %s.%s: %w", tr.AppID, tr.Name, err)
 		}
 
-		tool := Tool{Name: name, Description: description, Parameters: params, Kind: ToolKind(kind)}
-		if returnsJSON != nil {
+		tool := Tool{Name: tr.Name, Description: tr.Description, Parameters: params, Kind: ToolKind(tr.Kind)}
+		if tr.Returns != nil {
 			var ret ParameterSchema
-			if err := json.Unmarshal(returnsJSON, &ret); err != nil {
-				return nil, fmt.Errorf("toolschema: unmarshal returns for %s.%s: %w", appID, name, err)
+			if err := json.Unmarshal(tr.Returns, &ret); err != nil {
+				return nil, fmt.Errorf("toolschema: unmarshal returns for %s.%s: %w", tr.AppID, tr.Name, err)
 			}
 			tool.Returns = &ret
 		}
 
-		app, ok := apps[appID]
+		app, ok := apps[tr.AppID]
 		if !ok {
 			// A tool row referencing an app_id not in `apps` would mean the
 			// foreign key / cascade delete didn't do its job — a schema
 			// invariant violation, not a normal runtime condition.
-			return nil, fmt.Errorf("toolschema: tool %s.%s references missing app", appID, name)
+			return nil, fmt.Errorf("toolschema: tool %s.%s references missing app", tr.AppID, tr.Name)
 		}
 		app.Tools = append(app.Tools, tool)
-	}
-	if err := toolRows.Err(); err != nil {
-		return nil, fmt.Errorf("toolschema: iterate tools: %w", err)
 	}
 
 	return apps, nil
@@ -257,54 +255,54 @@ func loadAllApps(db *sql.DB) (map[string]*App, error) {
 // saveApp upserts the app row and replaces its entire tool set inside one
 // transaction, so a Registry.Reload can never observe a half-written
 // save (e.g. old tools deleted but new ones not yet inserted).
-func saveApp(db *sql.DB, app *App) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("toolschema: begin tx: %w", err)
-	}
-	defer tx.Rollback() //nolint:errcheck // no-op if already committed
-
-	if _, err := tx.Exec(
-		`INSERT INTO apps (app_id) VALUES ($1) ON CONFLICT (app_id) DO NOTHING`,
-		app.AppID,
-	); err != nil {
-		return fmt.Errorf("toolschema: upsert app %s: %w", app.AppID, err)
-	}
-
-	// Replace-all semantics: saveApp always receives the tool editor's full
-	// intended tool list, so deleting the old set and inserting the new one
-	// is simpler and less error-prone than diffing for adds/removes/renames.
-	if _, err := tx.Exec(`DELETE FROM tools WHERE app_id = $1`, app.AppID); err != nil {
-		return fmt.Errorf("toolschema: clear tools for %s: %w", app.AppID, err)
-	}
-
-	for i, t := range app.Tools {
-		paramsJSON, err := json.Marshal(t.Parameters)
-		if err != nil {
-			return fmt.Errorf("toolschema: marshal parameters for %s: %w", t.Name, err)
+func saveApp(db *gorm.DB, app *App) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		// OnConflict DoNothing here is deliberate: it must only ever create
+		// the row's app_id, never touch owner_id/thought if the row already
+		// exists (Registry.Create/SetThought own those). A bare Create()
+		// without this clause would error on conflict instead.
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "app_id"}},
+			DoNothing: true,
+		}).Create(&appRow{AppID: app.AppID}).Error; err != nil {
+			return fmt.Errorf("toolschema: upsert app %s: %w", app.AppID, err)
 		}
-		var returnsJSON []byte
-		if t.Returns != nil {
-			returnsJSON, err = json.Marshal(t.Returns)
+
+		// Replace-all semantics: saveApp always receives the tool editor's
+		// full intended tool list, so deleting the old set and inserting the
+		// new one is simpler and less error-prone than diffing for
+		// adds/removes/renames.
+		if err := tx.Where("app_id = ?", app.AppID).Delete(&toolRow{}).Error; err != nil {
+			return fmt.Errorf("toolschema: clear tools for %s: %w", app.AppID, err)
+		}
+
+		rows := make([]toolRow, 0, len(app.Tools))
+		for i, t := range app.Tools {
+			paramsJSON, err := json.Marshal(t.Parameters)
 			if err != nil {
-				return fmt.Errorf("toolschema: marshal returns for %s: %w", t.Name, err)
+				return fmt.Errorf("toolschema: marshal parameters for %s: %w", t.Name, err)
+			}
+			var returnsJSON []byte
+			if t.Returns != nil {
+				returnsJSON, err = json.Marshal(t.Returns)
+				if err != nil {
+					return fmt.Errorf("toolschema: marshal returns for %s: %w", t.Name, err)
+				}
+			}
+			kind := t.Kind
+			if kind == "" {
+				kind = ToolKindAction
+			}
+			rows = append(rows, toolRow{
+				AppID: app.AppID, Name: t.Name, Description: t.Description,
+				Parameters: paramsJSON, Returns: returnsJSON, Kind: string(kind), Position: i,
+			})
+		}
+		if len(rows) > 0 {
+			if err := tx.Create(&rows).Error; err != nil {
+				return fmt.Errorf("toolschema: insert tools for %s: %w", app.AppID, err)
 			}
 		}
-		kind := t.Kind
-		if kind == "" {
-			kind = ToolKindAction
-		}
-		if _, err := tx.Exec(
-			`INSERT INTO tools (app_id, name, description, parameters, returns, kind, position)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-			app.AppID, t.Name, t.Description, paramsJSON, returnsJSON, string(kind), i,
-		); err != nil {
-			return fmt.Errorf("toolschema: insert tool %s: %w", t.Name, err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("toolschema: commit: %w", err)
-	}
-	return nil
+		return nil
+	})
 }

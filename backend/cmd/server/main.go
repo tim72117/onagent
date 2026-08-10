@@ -101,14 +101,16 @@ func main() {
 	isProd := os.Getenv("APP_ENV") == "production"
 
 	dsn := envOr("DATABASE_URL", "postgres://platform:platform@localhost:5434/platform?sslmode=disable")
-	conn, err := db.Open(dsn)
+	database, err := db.Open(dsn)
 	if err != nil {
 		log.Error("failed to connect to database", "err", err)
 		os.Exit(1)
 	}
-	defer conn.Close()
+	if sqlDB, err := database.DB(); err == nil {
+		defer sqlDB.Close()
+	}
 
-	apps, err := toolschema.NewRegistry(conn)
+	apps, err := toolschema.NewRegistry(database)
 	if err != nil {
 		log.Error("failed to load tool definitions", "err", err)
 		os.Exit(1)
@@ -131,7 +133,7 @@ func main() {
 		log.Warn("no APP_ORIGINS set; accepting WebSocket handshakes from any origin (dev mode only — set this before any real deployment)")
 	}
 
-	authStore := auth.New(conn)
+	authStore := auth.New(database)
 
 	// cookieSecure=false only makes sense for http://localhost dev, where
 	// the browser would otherwise refuse to store a Secure cookie at all.
@@ -146,9 +148,9 @@ func main() {
 		}
 		log.Warn("COOKIE_SECURE not set to \"true\"; session cookie will be sent over plain HTTP (dev mode only)")
 	}
-	sessionStore := session.New(conn, cookieSecure)
-	tokenStore := usertoken.New(conn)
-	cliAuthStore := cliauth.New(conn)
+	sessionStore := session.New(database, cookieSecure)
+	tokenStore := usertoken.New(database)
+	cliAuthStore := cliauth.New(database)
 
 	// Monthly prompt quota, enforced at the WebSocket handshake and per
 	// prompt (see internal/quota, ws.Handler, ws.Session). onagent's own
@@ -161,7 +163,7 @@ func main() {
 	quotaEnabled := envOr("QUOTA_ENABLED", "true") == "true"
 	var quotaSvc *quota.Service
 	if quotaEnabled {
-		quotaSvc = quota.New(conn)
+		quotaSvc = quota.New(database)
 	} else {
 		log.Info("QUOTA_ENABLED=false: monthly prompt quota is not enforced")
 	}
@@ -172,7 +174,7 @@ func main() {
 	// admin store shares the same HTTPS/plain-HTTP decision, so read it here
 	// via the same env the developer session uses below.
 	adminSecure := envOr("COOKIE_SECURE", "false") == "true"
-	adminAuthStore := adminauth.New(conn, adminSecure)
+	adminAuthStore := adminauth.New(database, adminSecure)
 
 	// Seed the first admin from the environment — the ONLY way an admin comes
 	// into being (there is no admin-signup endpoint), so the trust root is
@@ -247,7 +249,7 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	adminHandler := adminconsole.NewHandler(adminAuthStore, quotaSvc)
+	adminHandler := adminconsole.NewHandler(adminAuthStore, quotaSvc, database)
 	mountCredentialedRoutes(mux, consoleHandler, adminHandler, allowlistChecker(siteOrigins))
 
 	// Static frontend hosting (apps/landing at "/", apps/console at "/app"

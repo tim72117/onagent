@@ -16,17 +16,21 @@ import (
 
 	"github.com/tim72117/onagent/internal/adminauth"
 	"github.com/tim72117/onagent/internal/quota"
+	"gorm.io/gorm"
 )
 
 // Handler serves /admin/api/*. Auth is the admin identity/session store;
-// Quota provides the account listing and plan changes.
+// Quota provides the account listing and plan changes; DB backs the
+// schema-check endpoint, which reads every migrated package's GORM struct
+// definitions directly rather than through any one of them.
 type Handler struct {
 	Auth  *adminauth.Store
 	Quota *quota.Service
+	DB    *gorm.DB
 }
 
-func NewHandler(auth *adminauth.Store, quotaSvc *quota.Service) *Handler {
-	return &Handler{Auth: auth, Quota: quotaSvc}
+func NewHandler(authStore *adminauth.Store, quotaSvc *quota.Service, database *gorm.DB) *Handler {
+	return &Handler{Auth: authStore, Quota: quotaSvc, DB: database}
 }
 
 // Register mounts the admin API routes on mux. Login is unauthenticated (it
@@ -40,6 +44,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /admin/api/users", h.withAdmin(h.listUsers))
 	mux.HandleFunc("PUT /admin/api/users/{userId}/plan", h.withAdmin(h.setUserPlan))
 	mux.HandleFunc("GET /admin/api/integrity", h.withAdmin(h.integrity))
+	mux.HandleFunc("GET /admin/api/schema-check", h.withAdmin(h.schemaCheck))
 }
 
 // withAdmin is the single gate for every privileged admin route: it

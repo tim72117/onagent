@@ -92,8 +92,12 @@ func (s *Service) CheckIntegrity(ctx context.Context) ([]IntegrityCheck, error) 
 	}
 	out := make([]IntegrityCheck, 0, len(integrityQueries))
 	for _, q := range integrityQueries {
+		// Kept as raw SQL, unchanged from the pre-GORM version: this
+		// registry's whole point is that adding an invariant is just adding
+		// a query string here, with no handler/frontend changes needed —
+		// forcing each one through a GORM builder would undermine that.
 		var n int
-		if err := s.db.QueryRowContext(ctx, q.query).Scan(&n); err != nil {
+		if err := s.db.WithContext(ctx).Raw(q.query).Scan(&n).Error; err != nil {
 			return nil, fmt.Errorf("quota: integrity check %q: %w", q.key, err)
 		}
 		out = append(out, IntegrityCheck{

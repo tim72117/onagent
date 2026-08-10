@@ -17,16 +17,36 @@
 package main
 
 import (
-	"database/sql"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"gorm.io/gorm"
+
 	"github.com/tim72117/onagent/internal/db"
 	"github.com/tim72117/onagent/internal/toolschema"
 )
+
+// userLookupRow/appKeyRow are this command's own narrow, independent views
+// of the shared users/apps tables — same convention internal/auth and
+// internal/toolschema use for apps (see auth.go's appAuthRow doc comment):
+// no shared model package, and every write here is a column-scoped
+// Update(), never a bare Save(), so this can never clobber owner_id/thought
+// (toolschema's columns) or allowed_origin (auth's other column).
+type userLookupRow struct {
+	ID int64 `gorm:"column:id"`
+}
+
+func (userLookupRow) TableName() string { return "users" }
+
+type appKeyRow struct {
+	AppID      string `gorm:"column:app_id"`
+	APIKeyHash string `gorm:"column:api_key_hash"`
+}
+
+func (appKeyRow) TableName() string { return "apps" }
 
 type keyFile struct {
 	AppID      string `json:"appId"`
@@ -40,23 +60,27 @@ func main() {
 	ownerEmail := flag.String("owner-email", "", "existing user account email to assign as owner of every migrated app (must already be registered); omit to leave apps unowned")
 	flag.Parse()
 
-	conn, err := db.Open(*dsn)
+	database, err := db.Open(*dsn)
 	if err != nil {
 		fatal("connect to database", err)
 	}
-	defer conn.Close()
+	if sqlDB, err := database.DB(); err == nil {
+		defer sqlDB.Close()
+	}
 
 	var ownerID int64
 	var hasOwner bool
 	if *ownerEmail != "" {
-		err := conn.QueryRow(`SELECT id FROM users WHERE lower(email) = lower($1)`, *ownerEmail).Scan(&ownerID)
+		var row userLookupRow
+		err := database.Where("lower(email) = lower(?)", *ownerEmail).First(&row).Error
 		if err != nil {
 			fatal(fmt.Sprintf("look up owner %q (register this account first via POST /auth/register)", *ownerEmail), err)
 		}
+		ownerID = row.ID
 		hasOwner = true
 	}
 
-	registry, err := toolschema.NewRegistry(conn)
+	registry, err := toolschema.NewRegistry(database)
 	if err != nil {
 		fatal("open registry", err)
 	}
@@ -86,7 +110,7 @@ func main() {
 		fmt.Printf("Migrated app %-20s %d tool(s)\n", appID, len(app.Tools))
 	}
 
-	keyCount, err := migrateKeys(conn, *appsDir, apps)
+	keyCount, err := migrateKeys(database, *appsDir, apps)
 	if err != nil {
 		fatal("migrate API keys", err)
 	}
@@ -100,10 +124,10 @@ func main() {
 
 // migrateKeys reads every backend/apps/<appId>.json that has a matching
 // migrated app and writes its hash directly into the apps table — directly
-// via SQL, not through auth.Store.Issue, because Issue generates a *new*
-// key and this must preserve the existing hash so already-deployed sites
-// don't break.
-func migrateKeys(conn *sql.DB, appsDir string, apps map[string]*toolschema.App) (int, error) {
+// via a column-scoped GORM Update, not through auth.Store.Issue, because
+// Issue generates a *new* key and this must preserve the existing hash so
+// already-deployed sites don't break.
+func migrateKeys(database *gorm.DB, appsDir string, apps map[string]*toolschema.App) (int, error) {
 	entries, err := os.ReadDir(appsDir)
 	if os.IsNotExist(err) {
 		return 0, nil
@@ -133,7 +157,8 @@ func migrateKeys(conn *sql.DB, appsDir string, apps map[string]*toolschema.App) 
 			fmt.Printf("Skipping key for %-20s (no matching app in %s)\n", kf.AppID, path)
 			continue
 		}
-		if _, err := conn.Exec(`UPDATE apps SET api_key_hash = $1 WHERE app_id = $2`, kf.ApiKeyHash, kf.AppID); err != nil {
+		if err := database.Model(&appKeyRow{}).Where("app_id = ?", kf.AppID).
+			Update("api_key_hash", kf.ApiKeyHash).Error; err != nil {
 			return count, fmt.Errorf("apply key for %s: %w", kf.AppID, err)
 		}
 		fmt.Printf("Migrated key for %-20s\n", kf.AppID)
