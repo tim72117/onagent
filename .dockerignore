@@ -20,6 +20,8 @@ backend/onagent.exe
 backend/logs/
 backend/sessions/
 backend/entries.jsonl
+backend/tmp/
+backend/configs/
 
 # node_modules 排除:Dockerfile 用 npm ci 在容器內安裝
 **/node_modules/

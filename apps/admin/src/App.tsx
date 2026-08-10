@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError } from './api'
-import type { IntegrityResponse, PlanInfo, UserSummary } from './api'
+import type { IntegrityResponse, PlanInfo, SchemaCheck, UserSummary } from './api'
 
 export default function App() {
   const [me, setMe] = useState<string | null>(null)
@@ -63,7 +63,47 @@ function Login({ onLoggedIn }: { onLoggedIn: (email: string) => void }) {
   )
 }
 
+type Tab = 'users' | 'schema'
+
 function Dashboard({ adminEmail, onLoggedOut }: { adminEmail: string; onLoggedOut: () => void }) {
+  const [tab, setTab] = useState<Tab>('users')
+
+  const logout = async () => {
+    try {
+      await api.logout()
+    } finally {
+      onLoggedOut()
+    }
+  }
+
+  return (
+    <div className="page">
+      <header className="topbar">
+        <div>
+          <h1>onagent admin</h1>
+          <span className="muted">{adminEmail}</span>
+        </div>
+        <button className="ghost" onClick={logout}>
+          Sign out
+        </button>
+      </header>
+
+      <nav className="tabs">
+        <button className={tab === 'users' ? 'tab active' : 'tab'} onClick={() => setTab('users')}>
+          Users
+        </button>
+        <button className={tab === 'schema' ? 'tab active' : 'tab'} onClick={() => setTab('schema')}>
+          Schema check
+        </button>
+      </nav>
+
+      {tab === 'users' && <UsersTab onLoggedOut={onLoggedOut} />}
+      {tab === 'schema' && <SchemaCheckTab onLoggedOut={onLoggedOut} />}
+    </div>
+  )
+}
+
+function UsersTab({ onLoggedOut }: { onLoggedOut: () => void }) {
   const [total, setTotal] = useState<number | null>(null)
   const [users, setUsers] = useState<UserSummary[]>([])
   const [plans, setPlans] = useState<PlanInfo[]>([])
@@ -111,26 +151,8 @@ function Dashboard({ adminEmail, onLoggedOut }: { adminEmail: string; onLoggedOu
     }
   }
 
-  const logout = async () => {
-    try {
-      await api.logout()
-    } finally {
-      onLoggedOut()
-    }
-  }
-
   return (
-    <div className="page">
-      <header className="topbar">
-        <div>
-          <h1>onagent admin</h1>
-          <span className="muted">{adminEmail}</span>
-        </div>
-        <button className="ghost" onClick={logout}>
-          Sign out
-        </button>
-      </header>
-
+    <>
       <section className="stats">
         <div className="stat card">
           <div className="stat-num">{total ?? '—'}</div>
@@ -234,6 +256,111 @@ function Dashboard({ adminEmail, onLoggedOut }: { adminEmail: string; onLoggedOu
           </table>
         </div>
       </section>
-    </div>
+    </>
+  )
+}
+
+// SchemaCheckTab compares every migrated table's GORM struct definitions
+// against the live database — see db.CheckTable's doc comment on the
+// backend for what this catches (a column or primary key renamed on one
+// side and not the other) that a hand-maintained schema.sql alone wouldn't
+// surface until someone went looking for it.
+function SchemaCheckTab({ onLoggedOut }: { onLoggedOut: () => void }) {
+  const [tables, setTables] = useState<SchemaCheck[] | null>(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await api.checkSchema()
+      setTables(res.tables)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onLoggedOut()
+        return
+      }
+      setError(err instanceof ApiError ? err.message : 'Failed to load')
+    } finally {
+      setLoading(false)
+    }
+  }, [onLoggedOut])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const problemCount = (tables ?? []).filter((t) => !t.ok).length
+
+  return (
+    <>
+      {error && <div className="error banner">{error}</div>}
+
+      <section className="card">
+        <div className="section-head">
+          <h2>Schema check</h2>
+          <button className="ghost" onClick={() => void load()} disabled={loading}>
+            {loading ? 'Checking…' : 'Recheck'}
+          </button>
+        </div>
+        {tables !== null && (
+          <p className="muted">
+            {problemCount === 0
+              ? `All ${tables.length} tables match their struct definitions.`
+              : `${problemCount} of ${tables.length} tables have drifted from their struct definitions.`}
+          </p>
+        )}
+        <div className="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Table</th>
+                <th>Status</th>
+                <th>Missing columns</th>
+                <th>Extra columns</th>
+                <th>Primary key</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(tables ?? []).map((t) => (
+                <tr key={t.table}>
+                  <td>{t.table}</td>
+                  <td>
+                    <span className={`status-dot ${t.ok ? 'status-ok' : 'status-error'}`} />
+                    {t.ok ? 'OK' : 'Drifted'}
+                  </td>
+                  <td className={t.missingColumns?.length ? 'error-cell' : 'muted'}>
+                    {t.missingColumns?.length ? t.missingColumns.join(', ') : '—'}
+                  </td>
+                  <td className={t.extraColumns?.length ? 'error-cell' : 'muted'}>
+                    {t.extraColumns?.length ? t.extraColumns.join(', ') : '—'}
+                  </td>
+                  <td className={t.primaryKeyMismatch ? 'error-cell' : 'muted'}>
+                    {t.primaryKeyMismatch
+                      ? `expected (${t.primaryKeyMismatch.expected.join(', ')}), actual (${t.primaryKeyMismatch.actual.join(', ')})`
+                      : '—'}
+                  </td>
+                </tr>
+              ))}
+              {(tables === null || tables.length === 0) && !loading && (
+                <tr>
+                  <td colSpan={5} className="muted center-cell">
+                    No data yet.
+                  </td>
+                </tr>
+              )}
+              {loading && tables === null && (
+                <tr>
+                  <td colSpan={5} className="muted center-cell">
+                    Checking…
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </>
   )
 }

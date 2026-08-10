@@ -40,6 +40,7 @@ dist/
 # placeholder's own content (e.g. its explanatory comment).
 /backend/cmd/server/web/landing/assets/
 /backend/cmd/server/web/console/assets/
+/backend/cmd/server/web/admin/assets/
 
 # macOS Finder metadata — never meant to be committed, can appear in any
 # directory a Finder window has opened.

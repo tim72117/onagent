@@ -130,6 +130,27 @@ button.ghost {
   font-size: 0.85rem;
 }
 
+.tabs {
+  display: flex;
+  gap: 0.4rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+.tab {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  padding: 0.4rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.tab.active {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
 .stats {
   display: flex;
   gap: 1rem;
@@ -182,6 +203,25 @@ td.over {
 .center-cell {
   text-align: center;
   padding: 1.5rem;
+}
+.error-cell {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+.status-ok {
+  background: #2ecc71;
+}
+.status-error {
+  background: var(--error);
 }
 
 .badge {

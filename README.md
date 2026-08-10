@@ -1,113 +1,71 @@
 # onagent
 
-A platform that lets developers describe front-end capabilities as LLM
-tools, then generates both the LLM-facing tool schema and the matching
-TypeScript front-end code. A browser SDK ("Agent Bridge") connects any
-web page to a backend inference service over WebSocket: it pushes page
-context/state, and dispatches `tool_call`s the inference service returns
-back into the page (fill a form, navigate, highlight an element, etc.).
+[![License: BSL 1.1](https://img.shields.io/badge/license-BSL%201.1-blue.svg)](LICENSE)
 
-LLM reasoning/inference is provided by want (a private LLM orchestration
-library)'s `orchestrator.Orchestrator`: `internal/inference.NewWant` wires
-a provider (Anthropic, Ollama, vLLM, Google) into the `inference.Service`
-boundary and does real tool-calling inference against the app's tool
-schema. For local/demo setups without any LLM credentials,
-`internal/inference.MockService` is a fallback that echoes a plausible
-`tool_call` for whichever tool name appears in the prompt, so the rest of
-the pipeline (tool loading, codegen, WebSocket protocol, SDK, demo app)
-still works end-to-end without a real model. `cmd/server/main.go` picks
-between them based on `AI_PROVIDER` (unset or `mock` uses `MockService`;
-any other provider boots the want orchestrator).
+onagent 是一個推論服務：開發者把自己的網站或軟體串接上 onagent，終端使用者就能直接用自然語言操作，不需要自建一套 LLM agent 系統。
 
-## Layout
+## Features
 
-```
-backend/                     Go backend
-  cmd/server/                 HTTP + WebSocket entrypoint
-  internal/toolschema/        Developer tool-definition format (YAML) + loader
-  internal/codegen/           tool defs -> LLM tool JSON, and -> TypeScript
-  internal/protocol/          WebSocket message envelope types
-  internal/ws/                WebSocket session/handler (Origin allowlist, dispatch)
-  internal/inference/         Boundary to the inference service (want orchestrator; mock fallback for local dev)
-  tools/                      Developer tool-definition YAML files (one per app)
+- **開箱即用的推論服務**：開發者描述自己網站有哪些操作（搜尋、填表單、導航、下單等），onagent 負責把使用者的自然語言請求轉成實際的工具呼叫，不需要自己架設或維運 LLM agent 邏輯。
+- **Agent Bridge SDK**：瀏覽器端 SDK，處理與推論服務的連線、重連、指令派發，讓 LLM 能就地操作頁面（填表單、跳轉、標示元素）——串接幾行程式碼就能為自己的網站加上 AI 操作能力。
+- **BackendDispatch**：工具呼叫也可派發到開發者自己的後端服務，不限於瀏覽器端操作，串接既有的後端系統一樣適用。
+- **工具 schema 自動產生**：從描述的操作自動產生 LLM 工具定義與對應的前端型別，串接時不用自己手刻 schema。
+- **開發者主控台**：管理應用、工具定義、API 金鑰、允許連線網域、agent 系統提示詞，並附即時測試用的 Playground。同樣的操作也可透過 CLI 完成。
+- **帳號與配額系統**：開發者帳號、CLI 長效權杖、應用專屬 API 金鑰各自獨立管理；用量以不可竄改的紀錄逐筆累加，依訂閱方案限制每月額度。
+- **營運後台**：獨立於開發者帳號體系之外，供內部人員管理帳號、方案，並提供資料庫結構一致性檢查。
 
-packages/bridge/             Browser SDK developers embed in their site
-examples/react-demo/         Vite + React app demonstrating the SDK end-to-end
-docs/security-and-transport.md   Cross-site transport design notes (GA-derived)
-```
+## Quick Start
 
-## How it fits together
-
-1. A developer describes their app's tools in `backend/tools/<app>.yaml`
-   (name, description, JSON-Schema-style parameters — same shape as
-   OpenAI/Anthropic tool calling).
-2. The backend loads all app definitions at startup and exposes, per app:
-   - `GET /apps/{appId}/tools.json` — the LLM tool schema to hand to the
-     inference service.
-   - `GET /apps/{appId}/tools.ts` — generated TypeScript (`ToolHandlers`
-     interface + arg/result types) the developer implements against.
-3. The developer's page embeds `@onagent/bridge`,
-   constructs an `AgentBridge` with `appId` + a `tools` object implementing
-   the generated `ToolHandlers` interface, and calls `prompt()`.
-4. The backend's `/ws` endpoint receives `hello` (selects the app's tool
-   set) and `prompt` messages; forwards prompts to
-   `inference.Service` along with the app's tool schema; and relays any
-   resulting `tool_call`s back to the browser, which dispatches them to
-   the registered handler and returns a `tool_result`.
-
-See `backend/internal/protocol/message.go` for the full message set.
-
-## Quick start
-
-Requires Go 1.22+ and Node 20+.
+需要 Go 1.26+、Node 20+、Postgres（本機開發可用預設連線字串，見下方）。
 
 ```bash
-# Backend
+# 1. 啟動後端（AI_PROVIDER 未設定時使用 mock 推論，不需要任何 LLM 憑證即可跑起來）
 cd backend
-go run ./cmd/server                      # serves on :8080 by default
-# Optional: ALLOWED_ORIGINS=https://your-site.example (CSV) restricts
-# which page origins may open a WebSocket connection; unset = dev mode,
-# any origin accepted (a warning is logged).
+go run ./cmd/server
 
-# SDK (build once so examples/react-demo can import it)
-cd packages/bridge
+# 2. 開發者主控台（另開一個終端機）
+cd apps/console
 npm install
-npm run build
+npm run dev   # http://localhost:5173
 
-# Demo app
-cd examples/react-demo
+# 3. 營運後台（選用，非開發第三方應用時不需要）
+cd apps/admin
 npm install
-echo "VITE_AGENT_WS_URL=ws://localhost:8080/ws" > .env.local
-npm run dev
+npm run dev   # http://localhost:5174
 ```
 
-Open the demo app and type a prompt — with an `AI_PROVIDER` configured,
-the want orchestrator reasons over the prompt and the app's tool schema
-and returns real `tool_call`s; with no provider configured, the mock
-inference service echoes back a matching `tool_call` for any tool name
-mentioned in the prompt (e.g. "please fill_search_form for me"). Either
-way, the SDK dispatches the resulting `tool_call` to the handler
-registered in `examples/react-demo/src/App.tsx`.
+大多數情境只需要 backend + console 就能開發、測試工具定義；admin 是給內部維運用的獨立介面。
 
-## Adding a new tool
+## Configuration
 
-1. Add an entry under `tools:` in `backend/tools/<app>.yaml` (or a new file
-   for a new `appId`).
-2. Restart the backend; fetch `/apps/<appId>/tools.ts` and copy the
-   generated `ToolHandlers` interface into your front-end project (or wire
-   up a build step that fetches it automatically — not set up yet).
-3. Implement the new method in the object passed as `tools` to
-   `AgentBridge`.
+後端透過環境變數設定（可放在 `backend/.env`）：
 
-## Status / what's not built yet
+| 變數 | 說明 |
+|---|---|
+| `ADDR` | 監聽位址，預設 `:8080` |
+| `DATABASE_URL` | Postgres 連線字串 |
+| `APP_ORIGINS` | 允許開啟 `/ws` 的第三方網站來源（CSV），正式環境必填 |
+| `ALLOWED_ORIGIN` | 本專案自己前端（console/admin）的來源（CSV），正式環境必填 |
+| `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` | 啟動時建立的第一個營運後台帳號 |
+| `QUOTA_ENABLED` | 設為 `false` 停用每月額度限制（自建部署適用） |
+| `AI_PROVIDER` / `AI_MODEL` | LLM 供應商與模型，未設定時使用 mock 推論 |
+| `VLLM_BASE_URL` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` | 對應供應商所需的連線資訊 |
 
-- Real inference is wired up via want's `orchestrator.Orchestrator` (see
-  `internal/inference.NewWant`); `internal/inference.MockService` remains
-  as an opt-in fallback for local dev without LLM credentials.
-- No per-session auth (token issuance/verification) — currently identity
-  is just whatever `appId` the client claims in `hello`. See
-  `docs/security-and-transport.md` for what's needed before this is
-  production-facing.
-- No `beaconUrl` HTTP endpoint on the backend yet (the SDK supports
-  calling one on page unload; nothing serves it server-side).
-- No automated test suite yet.
+完整清單與說明：`go run ./cmd/server -h`。
+
+## Development
+
+```bash
+cd backend
+go build ./...
+go vet ./...
+go test ./...                          # 不需要資料庫的單元測試
+go test -tags integration ./... \
+  -args -dsn "<your-postgres-dsn>"     # 需要真實 Postgres 的整合測試
+```
+
+前端各 app（`apps/console`、`apps/admin`）皆使用 Vite + React，`npm run build` 產生 production build。
+
+## License
+
+[Business Source License 1.1](LICENSE) — 發布 4 年後自動轉為 Apache License 2.0。

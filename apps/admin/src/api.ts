@@ -51,6 +51,25 @@ export interface IntegrityResponse {
   checks: IntegrityCheck[]
 }
 
+// One table's struct-vs-database comparison. Mirrors db.SchemaCheck on the
+// backend (backend/internal/db/schema_check.go). Schema management here
+// stays on internal/db/schema.sql rather than GORM's AutoMigrate, but the
+// same drift AutoMigrate would silently miss (a column or primary key
+// renamed on one side and not the other) can still happen by hand — this
+// check surfaces it instead of leaving it to be found by accident.
+export interface SchemaCheck {
+  table: string
+  missingColumns?: string[]
+  extraColumns?: string[]
+  primaryKeyMismatch?: { expected: string[]; actual: string[] }
+  ok: boolean
+}
+
+export interface SchemaCheckResponse {
+  ok: boolean
+  tables: SchemaCheck[]
+}
+
 // Same resolution strategy as the console's api.ts BASE: an explicit
 // VITE_ADMIN_API_URL for local dev against a separately-running backend,
 // falling back to the serving origin (correct in production, where the
@@ -101,4 +120,10 @@ export const api = {
 
   checkIntegrity: (): Promise<IntegrityResponse> =>
     request('GET', '/admin/api/integrity').then((r) => r.json()),
+
+  // Read-only comparison query (information_schema under the hood via
+  // GORM's Migrator) — no schema is modified by calling this, safe to call
+  // on page load / manual refresh.
+  checkSchema: (): Promise<SchemaCheckResponse> =>
+    request('GET', '/admin/api/schema-check').then((r) => r.json()),
 }
