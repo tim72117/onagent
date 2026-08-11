@@ -6,16 +6,23 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
-## v0.3.0
+## v0.2.4
 
-**Breaking:** `backend/internal/db.Open` now returns `*gorm.DB` instead of
-`*sql.DB`, and every `internal/*` database-access package's
-`New()`/`NewRegistry()` constructor now takes `*gorm.DB` instead of `*sql.DB`
-(adminauth, auth, cliauth, quota, session, toolschema, usertoken). Any
-external caller constructing these directly must update accordingly. Schema
-management is unchanged — still hand-maintained `internal/db/schema.sql`
-applied via idempotent `CREATE`/`ALTER` statements, not GORM `AutoMigrate`.
-See `docs/backend-gorm-migration-2026-08-11.md` for the full rationale and
+No breaking changes — patch release. `backend/internal/db.Open` now returns
+`*gorm.DB` instead of `*sql.DB`, and every `internal/*` database-access
+package's `New()`/`NewRegistry()` constructor now takes `*gorm.DB` instead
+of `*sql.DB` (adminauth, auth, cliauth, quota, session, toolschema,
+usertoken) — but per this project's breaking-change judgment
+(`.claude/skills/version-tagging/override.md`: onagent is an app, not a
+library other repos import, and every one of these packages lives under
+`internal/`, which Go's compiler already makes unreachable from outside this
+module), this doesn't count as breaking — no external caller could ever
+have depended on these signatures. No env var, CLI flag, HTTP/WebSocket API
+shape, or SDK-facing type changed; the database schema only gained a new
+nullable column. Schema management itself is unchanged — still
+hand-maintained `internal/db/schema.sql` applied via idempotent
+`CREATE`/`ALTER` statements, not GORM `AutoMigrate`. See
+`docs/backend-gorm-migration-2026-08-11.md` for the full rationale and
 per-package migration approach (regression-test-first: each package's
 existing `//go:build integration` test was re-run unmodified after its
 rewrite).
