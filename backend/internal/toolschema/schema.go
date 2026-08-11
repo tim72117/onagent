@@ -45,6 +45,32 @@ type Tool struct {
 	// stalls every other user of every app on this backend, not just this
 	// one request.
 	Kind ToolKind `yaml:"kind,omitempty" json:"kind,omitempty"`
+
+	// BackendDispatch, if set, routes this tool's calls to the developer's
+	// own backend over outbound HTTP instead of to the connected browser
+	// page (the only dispatch path that existed before this field — see
+	// internal/inference's askPage). Orthogonal to Kind: a BackendDispatch
+	// tool always blocks and feeds its result back into the LLM's context,
+	// the same as Kind == ToolKindQuery, regardless of what Kind is set to.
+	//
+	// PoC scope only (see docs/backend-tool-dispatch-design-2026-08-08.md):
+	// no request signing/auth, no retry, no idempotency keys, no async/
+	// callback mode. This is deliberately unauthenticated — do not point it
+	// at an endpoint that isn't already trusted out of band.
+	BackendDispatch *BackendDispatch `yaml:"backendDispatch,omitempty" json:"backendDispatch,omitempty"`
+}
+
+// BackendDispatch configures the outbound HTTP call for a Tool.BackendDispatch
+// tool. See Tool.BackendDispatch's doc comment for what's deliberately not
+// implemented yet.
+type BackendDispatch struct {
+	// Endpoint is the full URL onagent POSTs to. Must be set.
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
+
+	// TimeoutMS bounds how long onagent waits for a response before giving
+	// up. Defaults to 20000 (20s, matching the browser-dispatch
+	// interactionTimeout) if zero/unset.
+	TimeoutMS int `yaml:"timeoutMs,omitempty" json:"timeoutMs,omitempty"`
 }
 
 // ToolKind distinguishes the two tool-call flows a developer can declare.

@@ -1,5 +1,7 @@
 # BackendDispatch：第三方後端工具串接方案
 
+> **目前實作狀態（最小可行版本）**：已實作 `Tool.BackendDispatch`（`Endpoint`、`TimeoutMS` 兩個欄位），工具呼叫可派發到第三方後端、同步等待回應並餵回 LLM 上下文，觸發路徑僅限既有 WS `hello`/`prompt`。以下皆**尚未實作**：`POST /v1/apps/{appId}/complete` 後端直觸端點、HMAC 簽章與雙密鑰輪替（目前是明文、無驗證的請求，僅適合已透過其他管道信任的端點）、`conversationId`/閒置逾時的多輪 session 機制。其餘章節為完整設計方案，尚待後續版本補齊。
+
 > 本文件是 [third-party-backend-tool-integration-discussion-2026-08-07.md](third-party-backend-tool-integration-discussion-2026-08-07.md) 第二輪討論拍板後的方案結論，完整討論逐字稿與決策過程請見該文件。這裡只保留最終方案本身，方便日後查閱時不用重新讀完整場會議記錄。
 
 第一輪基於前端架構的結論已隨第一輪內容一併移除，不再適用。以下是第二輪、第三輪拍板的完整方案。

@@ -108,6 +108,9 @@ func (a *App) Validate() error {
 		if t.Kind == ToolKindQuery && t.Returns == nil {
 			return fmt.Errorf("tool %q is kind %q but has no returns schema — a query tool must declare the shape of the frontend's answer", t.Name, ToolKindQuery)
 		}
+		if t.BackendDispatch != nil && t.BackendDispatch.Endpoint == "" {
+			return fmt.Errorf("tool %q has a backendDispatch block but no endpoint", t.Name)
+		}
 	}
 
 	return nil

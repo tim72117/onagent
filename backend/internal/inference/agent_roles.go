@@ -170,10 +170,18 @@ func toolDeclarationFor(t toolschema.Tool) types.ToolDeclaration {
 	}
 }
 
-// toolFactoryFor chooses between the two Call behaviors toolschema.ToolKind
-// selects — see forwardingTool and queryTool's own doc comments for what
-// each does.
+// toolFactoryFor chooses between the three Call behaviors a tool can have:
+// BackendDispatch (checked first — orthogonal to Kind, see
+// toolschema.Tool.BackendDispatch's doc comment) takes priority over
+// toolschema.ToolKind's own two behaviors when both are somehow set on the
+// same tool. See forwardingTool, queryTool, and backendDispatchTool's own
+// doc comments for what each does.
 func toolFactoryFor(t toolschema.Tool) types.ToolFactory {
+	if t.BackendDispatch != nil {
+		return func() types.ToolInterface {
+			return &backendDispatchTool{name: t.Name, config: t.BackendDispatch}
+		}
+	}
 	if t.Kind == toolschema.ToolKindQuery {
 		return func() types.ToolInterface {
 			return &queryTool{name: t.Name}

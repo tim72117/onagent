@@ -96,13 +96,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS apps_api_key_hash_idx
     ON apps (api_key_hash) WHERE api_key_hash IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS tools (
-    app_id      TEXT NOT NULL REFERENCES apps (app_id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    description TEXT NOT NULL,
-    parameters  JSONB NOT NULL, -- toolschema.ParameterSchema, serialized
-    returns     JSONB,          -- toolschema.ParameterSchema, serialized; NULL if undeclared
-    kind        TEXT NOT NULL DEFAULT 'action', -- toolschema.ToolKind: "action" (default) or "query"
-    position    INTEGER NOT NULL, -- preserves declaration order within an app
+    app_id           TEXT NOT NULL REFERENCES apps (app_id) ON DELETE CASCADE,
+    name             TEXT NOT NULL,
+    description      TEXT NOT NULL,
+    parameters       JSONB NOT NULL, -- toolschema.ParameterSchema, serialized
+    returns          JSONB,          -- toolschema.ParameterSchema, serialized; NULL if undeclared
+    kind             TEXT NOT NULL DEFAULT 'action', -- toolschema.ToolKind: "action" (default) or "query"
+    backend_dispatch JSONB,          -- toolschema.BackendDispatch, serialized; NULL if this tool dispatches to the browser (the default)
+    position         INTEGER NOT NULL, -- preserves declaration order within an app
     PRIMARY KEY (app_id, name)
 );
 
@@ -111,6 +112,7 @@ CREATE TABLE IF NOT EXISTS tools (
 -- needs its own idempotent migration here — this runs on every startup
 -- (see internal/db.Open), so it must stay safe to re-run indefinitely.
 ALTER TABLE tools ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'action';
+ALTER TABLE tools ADD COLUMN IF NOT EXISTS backend_dispatch JSONB;
 
 -- Subscription tier + billing-cycle anchor per user. One row per user,
 -- written at signup (session.Register) with just a tier; readers still

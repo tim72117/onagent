@@ -25,15 +25,18 @@ type appRow struct {
 func (appRow) TableName() string { return "apps" }
 
 // toolRow is the GORM-mapped shape of the `tools` table (composite primary
-// key app_id+name — see internal/db/schema.sql).
+// key app_id+name — see internal/db/schema.sql). BackendDispatch is NULL
+// (nil) for the common case of a tool that dispatches to the connected
+// browser page — see Tool.BackendDispatch's doc comment.
 type toolRow struct {
-	AppID       string `gorm:"column:app_id;primaryKey"`
-	Name        string `gorm:"column:name;primaryKey"`
-	Description string `gorm:"column:description"`
-	Parameters  []byte `gorm:"column:parameters"`
-	Returns     []byte `gorm:"column:returns"`
-	Kind        string `gorm:"column:kind"`
-	Position    int    `gorm:"column:position"`
+	AppID           string `gorm:"column:app_id;primaryKey"`
+	Name            string `gorm:"column:name;primaryKey"`
+	Description     string `gorm:"column:description"`
+	Parameters      []byte `gorm:"column:parameters"`
+	Returns         []byte `gorm:"column:returns"`
+	Kind            string `gorm:"column:kind"`
+	BackendDispatch []byte `gorm:"column:backend_dispatch"`
+	Position        int    `gorm:"column:position"`
 }
 
 func (toolRow) TableName() string { return "tools" }
@@ -238,6 +241,13 @@ func loadAllApps(db *gorm.DB) (map[string]*App, error) {
 			}
 			tool.Returns = &ret
 		}
+		if tr.BackendDispatch != nil {
+			var bd BackendDispatch
+			if err := json.Unmarshal(tr.BackendDispatch, &bd); err != nil {
+				return nil, fmt.Errorf("toolschema: unmarshal backend_dispatch for %s.%s: %w", tr.AppID, tr.Name, err)
+			}
+			tool.BackendDispatch = &bd
+		}
 
 		app, ok := apps[tr.AppID]
 		if !ok {
@@ -293,9 +303,17 @@ func saveApp(db *gorm.DB, app *App) error {
 			if kind == "" {
 				kind = ToolKindAction
 			}
+			var backendDispatchJSON []byte
+			if t.BackendDispatch != nil {
+				backendDispatchJSON, err = json.Marshal(t.BackendDispatch)
+				if err != nil {
+					return fmt.Errorf("toolschema: marshal backend_dispatch for %s: %w", t.Name, err)
+				}
+			}
 			rows = append(rows, toolRow{
 				AppID: app.AppID, Name: t.Name, Description: t.Description,
-				Parameters: paramsJSON, Returns: returnsJSON, Kind: string(kind), Position: i,
+				Parameters: paramsJSON, Returns: returnsJSON, Kind: string(kind),
+				BackendDispatch: backendDispatchJSON, Position: i,
 			})
 		}
 		if len(rows) > 0 {

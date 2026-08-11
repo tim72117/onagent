@@ -90,13 +90,14 @@ type appsFull struct {
 func (appsFull) TableName() string { return "apps" }
 
 type toolsFull struct {
-	AppID       string `gorm:"column:app_id;primaryKey"`
-	Name        string `gorm:"column:name;primaryKey"`
-	Description string `gorm:"column:description"`
-	Parameters  []byte `gorm:"column:parameters"`
-	Returns     []byte `gorm:"column:returns"`
-	Kind        string `gorm:"column:kind"`
-	Position    int    `gorm:"column:position"`
+	AppID           string `gorm:"column:app_id;primaryKey"`
+	Name            string `gorm:"column:name;primaryKey"`
+	Description     string `gorm:"column:description"`
+	Parameters      []byte `gorm:"column:parameters"`
+	Returns         []byte `gorm:"column:returns"`
+	Kind            string `gorm:"column:kind"`
+	BackendDispatch []byte `gorm:"column:backend_dispatch"`
+	Position        int    `gorm:"column:position"`
 }
 
 func (toolsFull) TableName() string { return "tools" }
