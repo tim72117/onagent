@@ -6,6 +6,27 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.5
+
+No breaking changes — patch release. Landing page (`apps/landing`) SEO
+fixes only; no `internal/*`, CLI, HTTP/WebSocket API, or database change.
+
+- Add `favicon.svg` and wire `<link rel="icon">` into all five pages
+  (index, zh-tw/index, docs, pricing, zh-tw/pricing).
+- Add `<link rel="canonical">` to all five pages, each pointing at its own
+  canonical URL.
+- Add Open Graph (`og:type`, `og:title`, `og:description`, `og:url`,
+  `og:locale` on the zh-tw pages) and Twitter Card meta tags to all five
+  pages, reusing each page's existing title/description copy.
+  `og:image` intentionally omitted — no image asset exists yet to point
+  it at.
+- Audited `sitemap.xml`/`robots.txt` and confirmed every listed URL
+  resolves (200) on the live production site; the local `apps/landing/dist/`
+  build artifact was stale (missing the `pricing/` pages) but this never
+  affected production, since `deploy-cloudrun.yml`'s Docker build always
+  rebuilds `apps/landing` from source rather than using a locally
+  committed `dist/`.
+
 ## v0.2.4
 
 No breaking changes — patch release. `backend/internal/db.Open` now returns
