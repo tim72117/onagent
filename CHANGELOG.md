@@ -6,6 +6,52 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.6
+
+No breaking changes — patch release. Per this project's breaking-change
+judgment (`.claude/skills/version-tagging/override.md`), none of this
+release's changes are externally visible: the new `agent_experiences` table
+and `app_id` column are purely additive (`CREATE TABLE IF NOT EXISTS`,
+`ADD COLUMN IF NOT EXISTS`), `newInferenceService`'s new `*gorm.DB`
+parameter is an `internal/*`-only signature change, and `onagent version`
+is a brand-new CLI subcommand that doesn't touch any existing flag or
+default behavior.
+
+- Add a database-backed `sessionstore.Store` implementing want's
+  `types.SessionStore` against Postgres, so a WebSocket session's
+  conversation history survives a process restart instead of living only
+  in the orchestrator's memory. Scoped to `app_id` from the start —
+  `Store.ForApp(appID)` returns a store bound to one app, so two apps
+  sharing the same `sessionID` never see each other's history, and a
+  caller with no valid `SessionID` doesn't leak into a shared history
+  either. See `docs/sessionstore-architecture-review-2026-08-14.md` for
+  the remaining known gaps (no cleanup/retention mechanism, dangling
+  tool_use recovery, sync write latency, write-quota guarding, and three
+  upstream `want` proposals).
+- Upgrade the `want` dependency to `v0.4.0` — the released tag containing
+  the `types.SessionStore` interface and its `SessionStoreErrorMessage`
+  event (the previous pin was a pseudo-version pointing at the commit that
+  introduced the interface, before it was tagged).
+- Add `onagent version` / `onagent --version` / `onagent -v` to the CLI,
+  printing a build-time-injected version string (`-X main.version=<tag>`,
+  wired into `release-onagent.yml`). Local `go build`/`go run` leaves it at
+  the `dev` fallback since there's no tag to derive it from there.
+- Audit and clean up `docs/`: removed sections describing already-fixed
+  issues (cross-tenant tool leakage, missing panic recovery, per-app
+  SessionStore isolation) from `project-audit.md` and
+  `project-health-review-2026-07-22.md`; merged
+  `known-issues-want-dependency.md` into `improvement-backlog-2026-07-24.md`
+  (only remaining item: orchestrator throughput serialization); deleted
+  three docs describing already-completed or superseded work
+  (`subscription-usage-quota-design.md`, `thought-markdown-editor-design.md`,
+  and the user's own removal of
+  `secret-sync-without-ai-exposure-2026-07-26.md`); translated
+  `security-and-transport.md` to Chinese; condensed
+  `third-party-backend-tool-integration-discussion-2026-08-07.md` from a
+  432-line transcript to a concept summary (all its concepts remain
+  unimplemented); corrected environment variable names and the Secret
+  Manager list in `deployment.md`.
+
 ## v0.2.5
 
 No breaking changes — patch release. Landing page (`apps/landing`) SEO
