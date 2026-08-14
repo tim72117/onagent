@@ -34,7 +34,7 @@ func writeEmptyScenario(t *testing.T, path string) {
 func TestGetOrCreate_DifferentSessionsGetDistinctOrchestrators(t *testing.T) {
 	scenario := t.TempDir() + "/scenario.json"
 	writeEmptyScenario(t, scenario)
-	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil)
+	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil)
 
 	orchA, err := s.getOrCreate("session-a", "")
 	if err != nil {
@@ -67,7 +67,7 @@ func TestGetOrCreate_DifferentSessionsGetDistinctOrchestrators(t *testing.T) {
 func TestGetOrCreate_SameSessionReturnsSameOrchestrator(t *testing.T) {
 	scenario := t.TempDir() + "/scenario.json"
 	writeEmptyScenario(t, scenario)
-	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil)
+	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil)
 
 	first, err := s.getOrCreate("session-a", "")
 	if err != nil {
@@ -93,7 +93,7 @@ func TestGetOrCreate_SameSessionReturnsSameOrchestrator(t *testing.T) {
 func TestCloseSession_ReleasesAndReclaimsGoroutine(t *testing.T) {
 	scenario := t.TempDir() + "/scenario.json"
 	writeEmptyScenario(t, scenario)
-	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil)
+	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil)
 
 	before := runtime.NumGoroutine()
 
@@ -146,7 +146,7 @@ func TestCloseSession_ReleasesAndReclaimsGoroutine(t *testing.T) {
 func TestGetOrCreate_ConcurrentSessionsAreRaceFree(t *testing.T) {
 	scenario := t.TempDir() + "/scenario.json"
 	writeEmptyScenario(t, scenario)
-	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil)
+	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil)
 
 	const n = 50
 	var wg sync.WaitGroup

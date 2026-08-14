@@ -24,10 +24,12 @@ import (
 	"github.com/tim72117/onagent/internal/inference"
 	"github.com/tim72117/onagent/internal/quota"
 	"github.com/tim72117/onagent/internal/session"
+	"github.com/tim72117/onagent/internal/sessionstore"
 	"github.com/tim72117/onagent/internal/toolschema"
 	"github.com/tim72117/onagent/internal/usertoken"
 	"github.com/tim72117/onagent/internal/ws"
 	"github.com/tim72117/want/config"
+	"gorm.io/gorm"
 )
 
 const usage = `Usage: server [-h|--help]
@@ -236,7 +238,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	inferSvc := newInferenceService(log, apps)
+	inferSvc := newInferenceService(log, apps, database)
 	wsHandler := ws.NewHandler(apps, inferSvc, log, originChecker, wsAuth, quotaSvc)
 	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore, inferSvc, quotaSvc, siteOrigins)
 
@@ -435,8 +437,10 @@ func parseOrigins(csv string) []string {
 // tools declared by apps (see inference.RegisterPlatformTools). apps is
 // also threaded through to NewWant itself — WantService.Complete reads it
 // live on every call to build a per-app tool provider, not just once at
-// startup (see inference.RegisterAppRole's doc comment).
-func newInferenceService(log *slog.Logger, apps *toolschema.Registry) inference.Service {
+// startup (see inference.RegisterAppRole's doc comment). database backs a
+// sessionstore.Store so each session's conversation history survives a
+// process restart — see NewWant's sessionStore parameter doc comment.
+func newInferenceService(log *slog.Logger, apps *toolschema.Registry, database *gorm.DB) inference.Service {
 	// settings covers exactly the fields want's own config.FromEnv() reads
 	// from the environment (Provider/Model/GoogleAPIKey/AnthropicAPIKey/
 	// MockScenario), so want's env var names stay in one place instead of
@@ -458,7 +462,7 @@ func newInferenceService(log *slog.Logger, apps *toolschema.Registry) inference.
 
 	log.Info("using want orchestrator for inference", "provider", settings.Provider)
 	inference.RegisterPlatformTools(apps.All())
-	return inference.NewWant(settings, apps)
+	return inference.NewWant(settings, apps, sessionstore.New(database))
 }
 
 func allowlistChecker(allowed []string) ws.OriginChecker {

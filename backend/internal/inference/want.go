@@ -61,6 +61,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tim72117/onagent/internal/sessionstore"
 	"github.com/tim72117/onagent/internal/toolschema"
 	"github.com/tim72117/want/config"
 	"github.com/tim72117/want/orchestrator"
@@ -81,8 +82,9 @@ const completeTimeout = 90 * time.Second
 // orchestrator per session. RegisterPlatformTools must be called once
 // before the first Complete call (see agent_roles.go).
 type WantService struct {
-	settings *config.Settings
-	apps     *toolschema.Registry
+	settings     *config.Settings
+	apps         *toolschema.Registry
+	sessionStore *sessionstore.Store // optional; nil means no cross-request history persistence — see NewWant
 
 	initOnce sync.Once // guards the one process-wide orchestrator.InitializeWithConfig call — see package doc comment
 	initErr  error
@@ -98,11 +100,21 @@ type WantService struct {
 // agent_roles.go) — the same *toolschema.Registry internal/console writes
 // through, so a saved tool edit is visible on the very next prompt with no
 // extra step.
-func NewWant(settings *config.Settings, apps *toolschema.Registry) *WantService {
+//
+// sessionStore, if non-nil, is scoped per-app (via sessionstore.Store.ForApp
+// — see buildOrchestrator) and injected into every session's orchestrator
+// so its conversation history survives a process restart instead of living
+// only in the orchestrator's memory for its lifetime. nil is a supported
+// value — want treats an unset SessionStore as "no persistence, every
+// Submit is a fresh conversation" rather than an error (see
+// types.SessionStore's doc comment), which is what callers that don't need
+// durable history (e.g. tests) get by passing nil here.
+func NewWant(settings *config.Settings, apps *toolschema.Registry, sessionStore *sessionstore.Store) *WantService {
 	return &WantService{
-		settings: settings,
-		apps:     apps,
-		sessions: make(map[string]*orchestrator.Orchestrator),
+		settings:     settings,
+		apps:         apps,
+		sessionStore: sessionStore,
+		sessions:     make(map[string]*orchestrator.Orchestrator),
 	}
 }
 
@@ -113,15 +125,16 @@ func NewWant(settings *config.Settings, apps *toolschema.Registry) *WantService 
 // the whole process (see package doc comment for why this must not run
 // again per session).
 //
-// role and toolbox are fixed for the orchestrator's entire lifetime, not
-// re-checked on every later Complete call the way the old shared-orchestrator
-// design had to: a session's AppID cannot change mid-connection.
-// ws.Session.s.app is set once from the connection's hello message and read
-// unchanged by every later handlePrompt (backend/internal/ws/session.go),
-// and the SDK (packages/bridge/src/client.ts) sends hello exactly once, on
-// connect — so this orchestrator's Role/Toolbox stay correct without ever
-// being written to again after creation.
-func (s *WantService) buildOrchestrator(role string, toolbox types.ToolProvider) *orchestrator.Orchestrator {
+// appID, role, and toolbox are fixed for the orchestrator's entire
+// lifetime, not re-checked on every later Complete call the way the old
+// shared-orchestrator design had to: a session's AppID cannot change
+// mid-connection. ws.Session.s.app is set once from the connection's hello
+// message and read unchanged by every later handlePrompt
+// (backend/internal/ws/session.go), and the SDK
+// (packages/bridge/src/client.ts) sends hello exactly once, on connect —
+// so this orchestrator's Role/Toolbox/session-store scope stay correct
+// without ever being written to again after creation.
+func (s *WantService) buildOrchestrator(appID, role string, toolbox types.ToolProvider) *orchestrator.Orchestrator {
 	orch := orchestrator.NewOrchestrator(role)
 	if toolbox != nil {
 		orch.Toolbox = toolbox
@@ -139,6 +152,10 @@ func (s *WantService) buildOrchestrator(role string, toolbox types.ToolProvider)
 		} else if wd, err := os.Getwd(); err == nil {
 			orch.Workspace = filepath.Join(wd, s.settings.Workspace)
 		}
+	}
+
+	if s.sessionStore != nil {
+		orch.SetSessionStore(s.sessionStore.ForApp(appID))
 	}
 
 	orch.Start()
@@ -169,7 +186,7 @@ func (s *WantService) getOrCreate(key string, appID string) (*orchestrator.Orche
 	}
 	toolbox := toolProviderFor(appID, s.apps)
 
-	orch := s.buildOrchestrator(role, toolbox)
+	orch := s.buildOrchestrator(appID, role, toolbox)
 	if key != "" {
 		orch.AgentID = "WS-" + key
 	}

@@ -242,3 +242,52 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
 );
 
 CREATE INDEX IF NOT EXISTS admin_sessions_admin_user_id_idx ON admin_sessions (admin_user_id);
+
+-- Backs internal/sessionstore.Store, a want types.SessionStore
+-- implementation (see want doc/guide-custom-session-store-2026-08.md) that
+-- persists each WebSocket session's conversation history across process
+-- restarts/redeploys, replacing want's own default (in-memory-until-Stop,
+-- or its opt-in local .jsonl adapter — neither of which onagent used
+-- before this table). session_id is want's own key (WantService's
+-- sessionKeyFor, prefixed "WS-" as Orchestrator.AgentID) — no FK to
+-- anything else here, since a session can outlive the app/user it was
+-- opened under and its history should still be loadable.
+--
+-- app_id scopes every read/write to the app the session belongs to (see
+-- docs/sessionstore-architecture-review-2026-08-14.md's #1/#3): without it,
+-- Load(sessionID) has no access control at all beyond session_id staying
+-- unguessable, and a caller with no valid SessionID (sessionKeyFor's ""
+-- fallback — see want.go) would share one persisted history across every
+-- such caller, not just one in-memory orchestrator. No FK for the same
+-- reason session_id has none — an app can be deleted while its past
+-- session history should still exist for audit/debugging.
+CREATE TABLE IF NOT EXISTS agent_experiences (
+    id         BIGSERIAL PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    app_id     TEXT NOT NULL,
+    exp_id     TEXT NOT NULL, -- want's per-Experience uuid, deduplicated below so a redelivered Append is a no-op
+    data       JSONB NOT NULL, -- types.Experience, serialized
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Idempotent for a database that already created this table before app_id
+-- existed (this feature has never shipped to a real deployment, but a local
+-- dev database may have run schema.sql before this column was added).
+ALTER TABLE agent_experiences ADD COLUMN IF NOT EXISTS app_id TEXT NOT NULL DEFAULT '';
+
+-- Load orders by id (insertion order) and always filters by app_id too, so
+-- this index covers Load's WHERE + ORDER BY in one pass; also the natural
+-- place to dedupe Append (app_id is redundant in the unique key itself,
+-- since one session_id only ever belongs to one app_id, but including it
+-- keeps this index self-sufficient for the dedupe check without a second
+-- lookup against session_id alone).
+CREATE UNIQUE INDEX IF NOT EXISTS agent_experiences_session_id_exp_id_idx
+    ON agent_experiences (session_id, exp_id);
+CREATE INDEX IF NOT EXISTS agent_experiences_app_id_session_id_id_idx
+    ON agent_experiences (app_id, session_id, id);
+
+-- Superseded by the (app_id, session_id, id) index above — Load now always
+-- filters on app_id too, so this session_id-only index is dead weight on a
+-- database that ran schema.sql before app_id existed. Safe to drop
+-- unconditionally: nothing else queries by session_id alone.
+DROP INDEX IF EXISTS agent_experiences_session_id_id_idx;
