@@ -32,6 +32,12 @@ import (
 	"github.com/tim72117/onagent/internal/toolschema"
 )
 
+// version is set at build time via -ldflags "-X main.version=vX.Y.Z" (see
+// .github/workflows/release-onagent.yml, which passes the pushed tag
+// name). Left as "dev" for a plain local `go build`/`go run`, which never
+// sets it — there's no tag to derive it from at that point.
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -43,6 +49,9 @@ func main() {
 
 	var err error
 	switch cmd {
+	case "version", "--version", "-v":
+		fmt.Println("onagent", version)
+		return
 	case "login":
 		err = runLogin(args)
 	case "list-apps":
@@ -72,6 +81,7 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage:
+  onagent version | --version | -v   print the CLI version
   onagent login [-api <url>]          sign in with email/password, typed into this terminal
   onagent login --web [-api <url>] [-console <url>]
                                        sign in via a browser tab instead (see below)
