@@ -1,90 +1,79 @@
-# Cross-site transport & security notes
+# 跨站傳輸與安全性筆記
 
-This platform embeds a JS SDK into arbitrary third-party developer sites,
-much like Google Analytics's `gtag.js` — but unlike GA's one-way telemetry,
-this SDK is bidirectional: the backend can push `tool_call` messages that
-execute actions in the page. That difference changes which parts of GA's
-design apply and which don't. Findings below come from researching how
-gtag.js/GA4 handles cross-site data transport, and how they map onto this
-project's WebSocket-based design.
+這個平台把一個 JS SDK 嵌入任意第三方開發者的網站，很像 Google Analytics 的
+`gtag.js`——但跟 GA 單向的遙測資料不同，這個 SDK 是雙向的：後端可以推送
+`tool_call` 訊息，在頁面上執行實際動作。這個差異決定了 GA 的設計哪些部分
+適用、哪些不適用。以下發現來自研究 gtag.js/GA4 如何處理跨站資料傳輸，並
+對照這個專案以 WebSocket 為基礎的設計。
 
-## What GA does that we borrow
+## 我們借用 GA 的做法
 
-- **Stub-function + queue buffering.** `gtag()` is a stub that pushes
-  arguments onto `window.dataLayer` before the real library has loaded;
-  the library drains the queue once ready. `AgentBridge` does the same
-  thing internally — `prompt()` calls made before the
-  WebSocket reaches `ack` are buffered and flushed on connect (see
-  `packages/bridge/src/client.ts`). Callers never need to check
-  a "ready" flag.
-- **`sendBeacon` fallback on unload.** GA uses `sendBeacon`/keepalive
-  `fetch` so the last hit survives page teardown. Since a WebSocket
-  connection just drops on unload (no delivery guarantee for in-flight
-  frames), `AgentBridge` optionally fires a `sendBeacon` with the last
-  queued messages on `visibilitychange -> hidden`, if `beaconUrl` is
-  configured.
-- **CSP documentation for embedders.** GA publishes a minimal CSP snippet
-  developers add to their site. We should do the same (see below).
+- **Stub function + 佇列緩衝。** `gtag()` 是一個 stub，在真正的函式庫載入
+  之前，先把參數推進 `window.dataLayer`；函式庫準備好之後再清空佇列。
+  `AgentBridge` 內部做的是同一件事——在 WebSocket 連上 `ack` 之前呼叫的
+  `prompt()`，會先被緩衝、等連線建立後才清空送出（見
+  `packages/bridge/src/client.ts`）。呼叫端完全不需要檢查「是否已就緒」
+  的旗標。
+- **卸載時的 `sendBeacon` 備援。** GA 用 `sendBeacon`/keepalive `fetch`
+  確保頁面關閉前最後一筆事件能送出。因為 WebSocket 連線在頁面卸載時會
+  直接斷掉（無法保證傳送中的 frame 有送達），`AgentBridge` 在設定了
+  `beaconUrl` 的情況下，會在 `visibilitychange -> hidden` 時選擇性地用
+  `sendBeacon` 送出最後佇列裡的訊息。
+- **給嵌入方的 CSP 文件。** GA 發布一段極簡的 CSP 片段給開發者加進自己
+  的網站。我們也該做一樣的事（見下方）。
 
-## What GA does that does NOT apply here
+## GA 的做法裡不適用於這裡的部分
 
-- **`no-cors` beacon requests.** GA's `/g/collect` endpoint is typically hit
-  with a `no-cors` GET/POST or `sendBeacon` — the browser allows this
-  without any CORS header on the receiving end because the caller never
-  reads the response body. This works for one-way telemetry. It does
-  **not** work for us: we need to read `tool_call` responses back, so a
-  transport that yields opaque/unreadable responses is a non-starter. This
-  is why the primary channel is WebSocket, not a beacon.
-- **Relying on browser-enforced cross-origin protection.** CORS protects
-  *reading* cross-origin responses; it says nothing about WebSocket
-  handshakes. A WebSocket `Upgrade` request is **not** gated by CORS at
-  all — any page, on any origin, can open a connection to any WebSocket
-  endpoint, and the browser will happily complete the handshake as long as
-  the server replies `101`. The `Origin` header is sent, but nothing forces
-  the server to check it.
+- **`no-cors` beacon 請求。** GA 的 `/g/collect` 端點通常是用 `no-cors`
+  的 GET/POST 或 `sendBeacon` 打過去——瀏覽器允許這樣做、接收端完全不需要
+  任何 CORS header，因為呼叫方根本不會讀取回應內容。這對單向遙測資料有效。
+  但**對我們不適用**：我們需要讀回 `tool_call` 的回應，所以一個只能拿到
+  不透明、讀不到內容的回應的傳輸方式，從一開始就不是選項。這正是為什麼
+  主要通道是 WebSocket，不是 beacon。
+- **依賴瀏覽器強制執行的跨來源保護。** CORS 保護的是**讀取**跨來源的回應
+  內容；它對 WebSocket 的握手完全沒有規範。WebSocket 的 `Upgrade` 請求
+  **不受** CORS 管控——任何網頁、任何來源，都能對任何 WebSocket 端點開啟
+  連線，只要伺服器回應 `101`，瀏覽器就會欣然完成握手。`Origin` header
+  雖然會被送出，但沒有任何機制強制伺服器去檢查它。
 
-## What this means for our implementation
+## 這對我們的實作意味著什麼
 
-Because WebSocket has no browser-side cross-origin gate, **the server is
-the only enforcement point**:
+因為 WebSocket 沒有瀏覽器端的跨來源關卡，**伺服器是唯一的把關點**：
 
-- `backend/internal/ws/handler.go` validates the `Origin` header against a
-  developer-configured allowlist (`ALLOWED_ORIGINS`) during the upgrade
-  `CheckOrigin` callback, and rejects the handshake outright if it doesn't
-  match. Running with no allowlist is logged as a dev-only warning, never
-  silently permitted in a way that looks production-safe.
-- Session identity should move to a short-lived token issued per site
-  (e.g. an app key exchanged for a session token), not a bare cookie —
-  cookies are attached automatically by the browser to any WebSocket
-  handshake, which is the same ambient-authority problem CSRF exploits.
-  This isn't implemented yet (no auth layer exists yet) but should land
-  before this is used with anything beyond local/mock data.
-- Tool dispatch never falls back to `eval` or dynamic property lookup by
-  arbitrary name beyond an explicit allowlist: `AgentBridge` only invokes
-  handlers the developer registered in `tools`, and refuses (with an
-  explicit `tool_result.ok = false`) anything else. See
-  `handleToolCall` in `client.ts`.
+- `backend/internal/ws/handler.go` 在升級連線的 `CheckOrigin` callback
+  裡，會拿 `Origin` header 去比對開發者設定的白名單（`APP_ORIGINS`），
+  比對不到就直接拒絕握手。沒設定白名單時只會記錄成一則僅供開發環境
+  參考的警告，絕不會用一種「看起來像正式環境安全」的方式靜默放行。
+- Session 身份識別應該改成每個網站各自簽發的短效權杖（例如：用 app key
+  換發一個 session token），而不是單純的 cookie——因為 cookie 會被瀏覽器
+  自動附加到任何 WebSocket 握手上，這正是 CSRF 攻擊利用的同一種「環境
+  隱含授權」問題。這部分**目前還沒實作**（目前還沒有這層認證機制），
+  但在這個系統被用在任何超出本機/mock 資料的場景之前，應該要先做好。
+- 工具派發永遠不會退回用 `eval` 或依任意名稱做動態屬性查找，一律走明確
+  的白名單：`AgentBridge` 只會呼叫開發者在 `tools` 裡註冊過的 handler，
+  其餘一律拒絕（明確回傳 `tool_result.ok = false`）。見 `client.ts` 裡
+  的 `handleToolCall`。
 
-## Recommended CSP for embedding sites
+## 建議給嵌入方網站的 CSP 設定
 
-Once this is deployed behind real domains, publish something like:
+等這個系統部署到真實網域之後，發布類似這樣的設定：
 
 ```
 connect-src https://api.<platform-domain> wss://ws.<platform-domain>;
 script-src https://sdk.<platform-domain>;
 ```
 
-Two details that are easy to miss (found during GA CSP research):
+兩個容易漏掉的細節（研究 GA 的 CSP 設定時發現的）：
 
-- `connect-src` must include the `wss://` scheme explicitly — a
-  `https://` entry alone does not cover a WebSocket upgrade.
-- Prefer wildcarding a subdomain (`https://*.<platform-domain>`) over
-  listing exact hosts, so introducing new edge/region endpoints doesn't
-  require every embedding site to update their CSP.
+- `connect-src` 必須明確包含 `wss://` scheme——只寫 `https://` 不會涵蓋
+  WebSocket 的升級請求。
+- 比起列出精確的主機名稱，優先用萬用字元涵蓋子網域
+  （`https://*.<platform-domain>`），這樣之後新增 edge/region 端點時，
+  不需要要求每個嵌入方網站都跟著更新自己的 CSP。
 
-## Open items (not yet implemented)
+## 尚待處理的項目（尚未實作）
 
-- Per-session auth token issuance/verification.
-- Rate limiting / abuse protection on `/ws` and the codegen endpoints.
-- A real `beaconUrl` HTTP endpoint on the backend (SDK already supports
-  calling one; server-side handler doesn't exist yet).
+- 每個 session 各自的認證權杖簽發/驗證機制。
+- `/ws` 跟 codegen 端點的速率限制/濫用防護。
+- 後端一個真正的 `beaconUrl` HTTP 端點（SDK 端已經支援呼叫，但伺服器端
+  的接收 handler 還不存在）。

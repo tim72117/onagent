@@ -8,13 +8,6 @@
 
 ## 一、安全問題（最優先）
 
-### 🔴 S1. 跨租戶工具宣告洩漏 — want 全域 registry 的 first-match 查詢
-- **位置**：`want/internal/toolbox.go:77-82`（`GetTools`）+ `want/types/registry.go:29-32`（`RegisterTool` append-only）+ `backend/internal/inference/agent_roles.go:107-112`（註解宣稱「不可能跨 app 洩漏」——**這個宣稱是錯的**）
-- **親自複核確認**：`GetTools` 對每個白名單名稱，掃描**全域**（跨所有 app 共用）的 `Declarations` slice，取**第一個**名稱相符的就 `break`。`RegisterTool` 只 append、從不去重，registry 是 process 全域單例。
-- **攻擊情境**：A 開發者註冊名叫 `search` 的工具，description 含業務邏輯（例如「以身分證末四碼查詢客戶記錄」）。B 開發者（任何其他租戶）之後也建一個叫 `search` 的工具。`GetTools` 會把 **A 的 `search` 宣告**（description + parameter schema）回傳進 **B 的 LLM context**，因為 A 先註冊、是第一個相符。惡意租戶可藉「工具名稱搶註」蓄意遮蔽/竊取其他租戶的工具定義。
-- **這不只是 UX bug**：`docs/known-issues-want-dependency.md` 與 `docs/TODO-want-registry-append-only.md` 目前只把它記為「編輯 schema 不生效」的功能缺陷，但它同時是**租戶隔離破口**。
-- **修法**：在全域 registry 對工具名稱加 appId 命名空間（例如註冊成 `"{appID}::{toolName}"`，白名單/呼叫時翻譯），或修 `want` 讓 `Declarations` 以名稱為 key、last-write-wins，且 `GetTools` 只查該 app 自己註冊的集合。**必須改 `want` 本身**。
-
 ### 🟠 S2. 無任何 rate limit ＋ 單一序列化 orchestrator = 一把 key 就能癱瘓全平台
 - **位置**：全 `backend/` 無 rate-limit middleware；`backend/internal/inference/want.go:91-93`（全域 mutex 握滿整個 `Complete()`）；`backend/internal/ws/session.go:289`（query tool 的 20s `interactionTimeout` 嵌在同一個 mutex 內）
 - **攻擊情境**：一個免費帳號建一個 app、定義一個 `ToolKindQuery` 工具、開 WebSocket、送出觸發該工具的 prompt，然後**永遠不回答** `tool_query`。每一次這樣的呼叫佔用**唯一**的 orchestrator 長達 20 秒才逾時；攻擊者可開**無上限**的並發 WS 連線（`ws/handler.go`/`session.go` 無連線數上限）各自迴圈這樣做，把全平台每個租戶的推論吞吐量壓到零、無限期。
@@ -30,19 +23,14 @@
 - **影響**：這是刻意的取捨（瀏覽器無法對 WS upgrade 設 header），但「只用 wss://」只保護傳輸線路，**不保護** Cloud Run/LB 的 access log（多數預設會記完整 URL）、瀏覽器歷史、Referer 外洩。任何記錄完整 request URL 的存取日誌都會**持久儲存明文 API key**。SDK 也未在 runtime 強制 `wss://`。
 - **修法**：在 Cloud Run/LB 存取日誌層 redact `token` query 參數；SDK constructor 加 runtime 檢查，`apiKey` 有值但 `url` 非 `wss://`（localhost 例外）時大聲警告；長期考慮改用短效、單次 WS ticket（HTTPS 認證後換發、WS 一次兌換）取代長效 key。
 
-### 🟡 S5. `deleteApp` 不清除 want 全域 registry，且 appId 可被不同擁有者重用
-- **位置**：`backend/internal/console/console.go:384-395`（只 `Apps.Delete` + `Auth.Revoke`，不 unregister want role/工具宣告）；`registry.go:110-123`（`Create` 只檢查當前 registry，不擋已刪除的 appId 重建）
-- **影響**：搭配 S1，被刪除 app 的工具宣告永遠留在全域 `Declarations`，可被同名工具「搶贏」或被之後重建同一 appId 的**不同擁有者**復用。
-- **修法**：記錄已刪除 appId 並擋重建；或做命名空間（併入 S1 修法）讓 stale entry 無法在新擁有者下復活。
-
 ### 🟡 S6. `createApp` 無每使用者數量上限
 - **位置**：`backend/internal/console/console.go:283-296`
-- **影響**：任何登入使用者可迴圈 `POST /console/apps` 無限建 app，每個都消耗一個全域 want role 註冊，放大 S1 的 registry 污染與 S2 的 orchestrator 競爭。
+- **影響**：任何登入使用者可迴圈 `POST /console/apps` 無限建 app，放大 S2 的 orchestrator 競爭。
 - **修法**：server 端限制每使用者 app 數量。
 
 ### 已複核為「安全」的項目（無需處理）
 - **SQL injection：無**。`session`/`auth`/`usertoken`/`cliauth`/`toolschema/registry` 全部用 `$N` 參數化，無字串拼接。
-- **CSRF：足夠**。靠 `SameSite` + 嚴格 CORS（`main.go` 只對 `ALLOWED_ORIGINS` 內的 origin 回 credentialed CORS），state-changing 端點都是 JSON POST/PUT/DELETE，需 preflight，非白名單 origin 過不了。前提是 production 的 `ALLOWED_ORIGINS` 維持收緊（已有 fail-fast）。
+- **CSRF：足夠**。靠 `SameSite` + 嚴格 CORS（`main.go` 只對 `ALLOWED_ORIGIN` 內的 origin 回 credentialed CORS），state-changing 端點都是 JSON POST/PUT/DELETE，需 preflight，非白名單 origin 過不了。前提是 production 的 `ALLOWED_ORIGIN` 維持收緊（已有 fail-fast）。
 - **Bearer token 不能自我增生**：`issueToken`/`approveCliAuth` 正確限定 `withCookieAuth`（`console.go:91-103`），有註解說明就是防這個。
 - **CLI device flow（`internal/cliauth`）**：單次使用、redirect_uri 僅 loopback 且 server 端解析、10 分鐘 TTL、32-byte 隨機 id。無問題。
 - **`sanitizeSessionID`（`want.go:210-220`）**：`^[a-zA-Z0-9_-]{1,128}$`，無 path traversal。
@@ -54,7 +42,7 @@
 ## 二、優先優化項目（依 CP 值排序）
 
 1. **🔴 S3 安全 header** — 一個 middleware 搞定，成本最低、直接消除 clickjacking/HSTS 缺口。
-2. **🔴 A2 Playground 死結（見下）** — 剛在 `ws/session.go` 修好的死結，`playground.go` 有一份未修的複製。範圍小、性質已知。
+2. **🟠 A2 Playground 同步阻塞（見下）** — `ws/session.go` 已改用 goroutine 分派，`playground.go` 尚未跟進，架構不一致。範圍小、性質已知。
 3. **🟠 S2 / A1 orchestrator 序列化＋無 rate limit** — 平台級瓶頸與 DoS 面，最重要但工程量最大，過渡期先加 rate limit。
 4. **🟠 F5 ADDR/PORT** — 部署正確性，改動小。
 5. **🟠 F1/F2 SDK 重連斷路器** — 第三方直接依賴，影響外部開發者體驗。
@@ -63,15 +51,14 @@
 
 ## 三、程式架構優化
 
-### 🟠 A1. 單一共用 orchestrator 序列化全平台吞吐（最大架構限制）
-- **位置**：`backend/internal/inference/want.go:68-93`——一個 `*orchestrator.Orchestrator`、一把 mutex 握滿整個 `Complete()`（含 LLM 呼叫，最長 90s）。`orch.AgentID`/`orch.Role` 是無同步保護的 struct 欄位，`WantService` 那把 mutex 是唯一讓「換欄位→Submit」安全的機制。
-- **本質**：對話**內容**有隔離（每 session 各自 AgentID/transcript），但**吞吐量**完全序列化——全平台任何時刻只有一個使用者的一輪推論在跑。
-- **修法方向**：改成每 app（或 pool）獨立 orchestrator 實例。關鍵前提（本 session 已查證）：`InitializeWithConfig` 建立的 `GlobalEngine`/`RequestQueue` 是 process 全域單例，且 `want` 的 provider `RequestQueue` 寫死 `maxConcurrent=1`——所以就算拆多個 orchestrator，實際打 LLM 的 HTTP 請求還是會卡在這個全域限流的 1。要真正並行，`NewRequestQueue(1, ...)` 的 `1` 也得一起調（取決於後端 LLM 服務能承受的並發）。**這是改 `want` 才能根治的。**
+### 🟠 A1. 單一共用 orchestrator 序列化全平台吞吐（最大架構限制）——**物件隔離已修復，吞吐量瓶頸仍未解決**
+- **現況（want v0.2.0 起）**：`WantService` 現在每個 SessionID 各自有獨立的 `*orchestrator.Orchestrator`（見 `want.go` 的 `sessions` map），取代了原本「一個共用 orchestrator、欄位互換偽裝隔離」的舊設計。**對話內容層級的隔離已經是真正的物件隔離**，不再是本文件原本描述的「一把 mutex 握滿整個 Complete()」。
+- **仍未解決的部分**：每個 session 的 orchestrator 仍然共用同一個 process-wide 的 `GlobalEngine`/`RequestQueue`（`want` 的 provider `RequestQueue` 寫死 `maxConcurrent=1`）——**吞吐量仍然完全序列化**，全平台任何時刻只有一個使用者的一輪推論真正在跑，只是不再需要靠應用層的全域 mutex 來保證安全，是 want 底層 provider 佇列本身的限制。要真正並行，需要 want 開放「每個 orchestrator 各自的 provider/佇列」機制。**這是改 `want` 才能根治的**，詳見 `docs/known-issues-want-dependency.md`。
 
-### 🔴 A2. Playground 有一份未修的死結複製，且從不註冊 asker
-- **位置**：`backend/internal/console/playground.go:169-210`——prompt 迴圈**同步**呼叫 `h.Inference.Complete`，在同一個呼叫 `conn.ReadMessage()` 的迴圈裡，**沒有** goroutine 分派（對照剛修好的 `session.go:153` 的 `go s.handlePrompt(...)`）。且 Playground 從不呼叫 `inference.RegisterAsker`，其 wire protocol 也無 `tool_result` 訊息類型。
-- **影響**：現在從 Playground 測 `ToolKindQuery` 工具，`askPage` 會 fast-fail「no connected page」，但這個失敗仍得經過同一把全域 orchestrator mutex 傳回；更糟的是，任何之後想在 Playground 接上真正 `AskInteraction` 路徑的人，會**重新引入**原本已修掉的單 goroutine 死結。
-- **修法**：Playground 的 prompt 也比照 `session.go:153` 分派到獨立 goroutine，避免它變成一個已修 bug 的第二份複製。
+### 🟠 A2. Playground 仍是同步阻塞呼叫——**確認仍未修**
+- **現況複核**：`backend/internal/console/playground.go` 的 prompt 迴圈確認**仍然**在同一個 `conn.ReadMessage()` 迴圈裡直接同步呼叫 `h.Inference.Complete`，沒有 `go` 關鍵字分派到獨立 goroutine（`ws/session.go` 已有 `go s.handlePrompt(...)`，playground 沒有跟進）。
+- **嚴重度調整**：因為 A1 已經修好物件層級隔離（每個 session 各自 orchestrator），這裡的同步阻塞不再是「鎖住全平台」的死結，影響範圍縮小為「這一個 Playground 連線自己卡住」，嚴重度從 🔴 調降為 🟠。問題本身（架構不一致、與 `session.go` 的既有模式不同步）仍然存在。
+- **修法**：Playground 的 prompt 也比照 `session.go` 分派到獨立 goroutine，維持兩處架構一致。
 
 ### 🟠 A3. `ws.Session.run()` 的 `ctx.Done()` 無法中斷進行中的阻塞讀取
 - **位置**：`session.go:84-91`——`select { case <-ctx.Done(): return; default: }` 只在兩次 `ReadMessage()` 之間檢查；`ReadMessage()` 本身不綁 `ctx`，只有獨立的 `pongTimeout`(60s，每收到 pong 就重置)。
@@ -93,7 +80,7 @@
 
 ### 🟡 A7. `codegen.ToLLMTools`/`Request.Tools` 在真實推論路徑是死碼
 - **位置**：`WantService.Complete`（`want.go`）從不讀 `req.Tools`（工具來源全靠預註冊的 want role）；唯一讀者是 `mock.go:22`。但兩個真實呼叫點（`session.go:235`、`playground.go:193`）每次 prompt 仍計算 `codegen.ToLLMTools(app)` 傳進去——熱路徑上的浪費，也誤導讀者以為 `Tools` 對 want 有作用。
-- **修法**：要嘛讓 `Complete` 真的用 `req.Tools` 對已註冊 role 做一致性檢查（能在**程式碼**層抓到 S1 這類 bug，而非只靠文件），要嘛從兩個真實呼叫點移除、保留 mock-only。
+- **修法**：要嘛讓 `Complete` 真的用 `req.Tools` 對已註冊 role 做一致性檢查，要嘛從兩個真實呼叫點移除、保留 mock-only。
 
 ---
 
@@ -142,9 +129,3 @@
 5. **`onagent get-tools <appId>` CLI 指令**：目前 CLI 只能推、不能拉，確認「實際存了什麼」只能查 DB 或開 console。後端已有 `GET /console/apps/{appId}` API，CLI 加一個指令即可。
 6. **串流回覆**：目前 `Complete()` 是一次性回傳，前端等整輪推論結束。串流可大幅改善體感延遲（但要注意跟 A1 序列化的互動）。
 7. **部署設定 fail-fast 擴充**：`AI_PROVIDER=googleapis` 但 `GOOGLE_API_KEY` 未設時、production 缺關鍵 secret 時，啟動即拒絕（延續現有 `APP_ENV=production` 機制）。
-
----
-
-## 附註：本次分析修正的兩個先前認知
-- want append-only bug 的實際影響**比原記載窄**：工具**白名單 + Thought** 的編輯**會**立即生效（走 `agentreg.Register` 的 map 寫入），只有工具**parameter schema** 的編輯不生效（走 append-only 的 `Declarations`）。
-- 記錄此 bug 的文件是 `docs/known-issues-want-dependency.md`；本 session 另建了 `docs/TODO-want-registry-append-only.md`，兩份並存。

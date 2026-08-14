@@ -27,20 +27,25 @@
 
 | 問題 | 位置 | 影響 |
 |---|---|---|
-| **刪 app 會清空計費紀錄，可無限免費重置額度** | `schema.sql:150` + `console.go:449` | 整個額度系統形同虛設 |
-| **空 SessionID 會繼承上一位使用者的對話** | `inference/want.go:105-107` | 跨使用者資料外洩 |
+| **空 SessionID 會繼承上一位使用者的對話** | `inference/want.go:sessionKeyFor` | 跨使用者資料外洩（**仍未修復**：`sessionKeyFor` 對無效 SessionID 仍回傳共用的 `""` key） |
 | **推論逾時未中斷 orchestrator，訊息會串到下一位使用者** | `inference/want.go:159` | 跨使用者訊息外洩 |
-| **console 併發寫入 want 全域 registry** | `console.go:70` → `agent_roles.go:120` | `fatal error`，`recover()` 攔不住 |
-| **codegen 端點無認證 + CORS `*`** | `main.go:259-260, 376` | 猜到 appId 就能拿走整份工具定義 |
+| **codegen 端點無認證 + CORS `*`** | `main.go:259-260, 376` | 猜到 appId 就能拿走整份工具定義（有註解說明是刻意設計，見該節） |
 | **`save-tools` 拒絕文件說可省略的 `appId`** | `main.go:441` → `loader.go:84` | 照文件做會失敗 |
 | **console 編輯器存檔會靜默刪掉 `kind: query`** | `console/src/schema.ts:17-22` | query 工具默默失效、無錯誤訊息 |
-| **定價頁寫 per app，程式碼是 per owner 加總** | `pricing/index.html:185` vs `quota.go:255` | 開三個 app 等於各只有 1/3 額度 |
-| **`@onagent/bridge` 從未發布到 npm** | `.github/workflows/` | 文件第 3 步對所有人都是死路 |
+| **定價頁寫 per app，程式碼是 per owner 加總** | `pricing/index.html` vs `quota.go` | 開三個 app 等於各只有 1/3 額度 |
 | **範例自帶的 `returns: type: array` 會讓 codegen 回 500** | `analysis/tools.yaml:134` vs `typescript.go:69` | 專案自己的範例是壞的 |
 
 另外有一項**在有人付費之後無法存活**的營運問題：免費用戶的推論全部計入你自己的 provider key 且無成本上限。
 
-> ⚠️ 也請注意：`backend/go.mod` 釘的是 `want v0.0.2`，**本機 `/Users/caitingyu/Documents/want` 那份已改過的程式碼不是實際建置用的版本**。
+## 🔴 `want` 依賴套件裡的已知問題（併入自 `known-issues-want-dependency.md`）
+
+### 🔴 單一共用 orchestrator 讓所有使用者的對話輪次序列化——吞吐量問題
+
+**背景**：want v0.2.0 讓 `WantService`（`backend/internal/inference/want.go`）改成每個 SessionID 各自擁有一個 `*orchestrator.Orchestrator`（延遲建立，透過 `inference.Service.CloseSession` 釋放），取代原本一個共用 orchestrator 實例、每次呼叫時互換 `AgentID`/`Role`/`Toolbox` 來偽裝隔離的舊設計。這讓每個 session 在物件層級有正確的隔離，session 關閉時資源也能真正被回收。
+
+**沒有改變的部分**：want 仍然透過它自己的 process-wide `internal.GlobalEngine` 來解析每一次 `RunAgent` 呼叫要用的 LLM provider（`orchestrator.InitializeWithConfig` 會覆寫這個變數，這個 repo 現在整個 process 生命週期只呼叫一次）。因此每個 session 的 orchestrator 底層仍然共用同一個 provider，以及它的 `provider.NewRequestQueue(1, ...)`——並發數是 1，整個後端共用。多個使用者的對話輪次仍然會互相排隊、一個接一個處理。
+
+**狀態**：未解決，且**問題出在 `want` 本身，不是這個 repo 的程式碼**——要修就得改 `want`，不是改 `backend/`。要修好需要 want 開放一個機制，讓每個 orchestrator（不只是每個 process）能各自建立獨立的 provider/佇列，或者這個 repo 改成跑多個 want process。
 
 ---
 
@@ -246,7 +251,7 @@
 
 ### 實用（低風險、一兩天可完成）
 
-1. **🔴 刪除 app 會清空計費帳本 = 免費重置額度** — `usage_events.app_id` 是 `REFERENCES apps(app_id) ON DELETE CASCADE`（`schema.sql:150`），而 `deleteApp` 是使用者自助功能（`console.go:449` → `registry.go:94`）。`usageSince` 又是靠 join `usage_events → apps` 計算（`quota.go:257-263`），所以**「刪掉 app 再重建」就能把當月用量歸零，無限次、免費**。這是本份清單裡唯一真正嚴重的 bug——它讓整個額度子系統形同虛設。修法：把 `owner_id` 反正規化到 `usage_events` 並拿掉 cascade（或改成軟刪除）。半天。
+1. ~~**🔴 刪除 app 會清空計費帳本 = 免費重置額度**~~ — **已修復**：`usage_events.owner_id` 已反正規化、`app_id` FK 已改為 `ON DELETE SET NULL`（見 `internal/db/schema.sql`），刪 app 不再影響計費歷史。
 
 2. **Cloud SQL 完全沒有設定任何備份** — 在 `deploy/`、`docs/deployment.md`、`.github/` 全域搜尋 `backup`/`pg_dump`/PITR 命中數為 0。一張被 drop 的表、或一個 `DELETE FROM apps` 手滑，**都沒有任何復原路徑**，而所有使用者、app、API key 雜湊與用量紀錄都在裡面。1 小時設定 + 半天演練一次還原。
 
@@ -260,7 +265,7 @@
 
 7. **資料庫連線池無上限** — `db.Open` 從沒呼叫 `SetMaxOpenConns`/`SetConnMaxLifetime`（`db.go:22-36`），Go 預設是無限開。Cloud Run 水平擴展、預設並發 80，N 個執行個體 × 無上限連線池會直接衝破 Cloud SQL 的 `max_connections`，而**失效模式是全面性的、不是漸進的**。另外沒設 `SetConnMaxLifetime` 也代表池中連線會在每晚重啟後變成死 socket。15 分鐘。
 
-8. **`.dockerignore` 漏掉了兩個真正放機密的目錄** — 它排除了 `backend/logs/` 與 `backend/sessions/`（`.dockerignore:20-22`），但**沒有排除 `backend/tmp/` 與 `backend/configs/`**。實際的對話記錄路徑是 `backend/tmp/logs/`（這台機器上此刻就有 70 個明文對話檔），而 `backend/configs/settings.json` 依 `.gitignore:26-28` 記載是放 provider API key 的地方。`COPY backend/ /src/backend/`（`Dockerfile:61`、`Dockerfile.release:44`）會把兩者都拉進中介 build layer——layer 快取、`--target build`、或 registry 快取匯出都會外洩。最終 distroless 階段是乾淨的，**builder 階段不是**。5 分鐘。
+8. ~~**`.dockerignore` 漏掉了兩個真正放機密的目錄**~~ — **已修復**：`.dockerignore` 已排除 `backend/tmp/` 與 `backend/configs/`。
 
 9. **日誌是純文字，Cloud Logging 看不到嚴重性** — `slog.NewTextHandler(os.Stdout, nil)`（`main.go:86`）。Cloud Run 會把 JSON stdout 解析成結構化條目與 severity，純文字則一律變成 `INFO` 等級的字串團。於是每一個 `log.Error`——包括 `recoverMiddleware` 帶堆疊的 panic（`main.go:301`）與額度 fail-open 警告（`ws/handler.go:149`、`ws/session.go:247`）——對任何你日後建立的 log-based 指標或告警都是**隱形的**。30 分鐘，解鎖後續所有告警能力。
 

@@ -8,19 +8,13 @@
 
 ## 🔴 高優先（安全/穩定性相關）
 
-### 1. 跨租戶 tool 洩漏（S1，已知但仍存在）
-`want` 依賴的 `GlobalRegistry.Declarations` 是 append-only、`GetTools` 是 first-match-wins（`want/types/registry.go:29-32`、`want/internal/toolbox.go:34`）——與既有 memory 記錄一致，目前仍未修。更嚴重的是 `backend/internal/inference/agent_roles.go:71-73` 的註解仍宣稱「cross-app tool leakage isn't possible」，這句話已被證實是錯的，屬於誤導性註解，需與底層 bug 一併修正，避免誤導後續開發者。詳細攻擊情境與修法見 `project-audit.md` 的 S1 章節。
+### 1. Orchestrator 序列化（A1）——**物件隔離已修復，吞吐量瓶頸仍未解決**
+want v0.2.0 起，`WantService` 已改成每個 SessionID 各自獨立的 `*orchestrator.Orchestrator`，取代原本一個共用 orchestrator + mutex 鎖住整個 `Complete()` 的設計，對話內容層級已是真正的物件隔離。但每個 session 的 orchestrator 仍然共用同一個 process-wide 的 `GlobalEngine`/`RequestQueue`（仍硬編碼 `maxConcurrent=1`）——**吞吐量仍然完全序列化**，只是不再需要應用層 mutex 保護欄位互換。詳見 `docs/known-issues-want-dependency.md`。
 
-### 2. Orchestrator 序列化（A1，已知但仍存在）
-`want/orchestrator/init.go:28` 仍硬編碼 `NewRequestQueue(1, 100*time.Millisecond)`，`backend/internal/inference/want.go:69,92-93` 一個 mutex 鎖住整個 `Complete()` 呼叫（最長可達 90 秒）——與既有 memory 記錄的「一個共用 orchestrator 序列化全部使用者對話輪次」問題一致，尚未解決。
-
-### 3. 完全沒有 panic-recovery
-`backend/` 整個 repo 沒有任何 `recover()`（grep 零命中），HTTP mux 與 WS handler 都沒有 panic-recovery middleware。任一 request handler 或 `session.go:112`、`playground.go:148` 裡的 goroutine 一旦 panic，會讓整個 process 直接崩潰、影響所有連線中的使用者——疊加第 2 點的單一 orchestrator，代表一次邊界情況就能造成全服務中斷。
-
-### 4. CI/CD 部署前沒有跑測試
+### 2. CI/CD 部署前沒有跑測試
 `deploy-cloudrun.yml`、`release-onagent.yml` 兩個 workflow 皆無 `go test`/`go vet` 步驟（grep 零命中）。目前流程是「build 完直接上生產環境」，沒有自動化安全網；也沒有 rollback 腳本或文件化的 rollback SOP（Cloud Run 本身保留舊 revision 可手動切流量，但無腳本化流程）。
 
-### 5. 沒有安全 headers、沒有 rate limiting
+### 3. 沒有安全 headers、沒有 rate limiting
 `backend/cmd/server/main.go` 未設定任何 CSP/HSTS/X-Frame-Options/X-Content-Type-Options（grep 零命中）。除了 `quota.Service`（僅於 WS handshake 與逐 prompt 檢查，DB 錯誤時 fail-open）外，沒有任何 per-IP 或連線數的 rate limiting。
 
 ---
@@ -31,8 +25,6 @@
 - **`playground.go` 同步阻塞模式（A2，已知但仍存在）**：不同於 `ws/session.go:112` 用 `go func()` dispatch，playground 的 prompt 迴圈直接在讀 `conn.ReadMessage()` 的同一 goroutine 內同步呼叫 `Inference.Complete`。
 - **日誌內含完整明文對話紀錄**：`backend/tmp/logs/*.json` 有 gitignore 保護（不會進 repo），但硬碟上是無限保留、無 redaction、無 rotation 的完整對話與 system prompt 明文。此記錄行為來自 `want` 依賴本身（`want/internal/provider/vllm.go`），非 onagent 自有程式碼，但任何跑這個 backend 的機器都會累積使用者資料，屬營運面資料保存風險。
 - **前後端程式碼重複**：`apps/console/src/api.ts` 與 `apps/admin/src/api.ts` 幾乎是複製貼上的同一份 fetch wrapper（相同的 `ApiError`、`credentials: 'include'` 模式、`BASE` 環境變數 fallback）。已有 `packages/bridge` 先例，值得抽出共用 package。
-- **`subscription-usage-quota-design.md` 文件過時**：文件開頭寫「onagent 目前完全沒有計費/訂閱/配額機制」，但 `backend/internal/quota/` 已完整實作該設計（`Check`/`Record`/`StandingFor`），且 console/admin 前端都已在消費 `Quota`/`UserSummary` API。文件狀態需更新。
-- ~~**Cloud SQL 夜間自動關機沒有自動重啟**：`setup-nightly-sql-shutdown.sh` 每晚 23:00（Asia/Taipei）自動關閉 DB 省錢，但沒有對應的自動重啟排程——需人工每天早上手動執行 `gcloud sql instances patch ... --activation-policy=ALWAYS`，忘記則服務直接中斷、無自動復原。~~ **（2026-07-24 已解決：排程已取消，腳本已從 repo 移除。）**
 - **`PROJECT_ID="onagent-prod"` 散落多處各自硬編碼**（deploy 腳本 + `deploy-cloudrun.yml`），無單一真相來源，變更專案 ID 需同步改多處。
 - **`want`（package-level `askers` map）無 TTL/eviction**：stale entries 在 process 重啟前持續累積（A4 相關，低嚴重度但與觀察項相關，故列於此）。
 
@@ -62,6 +54,6 @@
 
 ## 建議優先順序
 
-1. **跨租戶 tool 洩漏（🔴1）** 與 **orchestrator 單點故障 + 無 panic recovery（🔴2、🔴3）**——後兩者疊加意味著一次意外就能讓全服務中斷，風險最高且影響範圍最集中，建議優先處理。
-2. **CI 部署前加測試關卡（🔴4）** 與 **安全 headers/rate limiting（🔴5）**——修正成本相對低，能立即降低意外部署與濫用風險。
+1. **orchestrator 吞吐量瓶頸（🔴1）**——影響範圍最集中，但根治需要改 `want` 本身，屬長期項目。
+2. **CI 部署前加測試關卡（🔴2）** 與 **安全 headers/rate limiting（🔴3）**——修正成本相對低，能立即降低意外部署與濫用風險。
 3. 其餘 🟡 中優先項目可依團隊頻寬排入 backlog，🟢 觀察項可留待相關功能擴充時一併處理。

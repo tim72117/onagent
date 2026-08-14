@@ -1,7 +1,7 @@
 # onagent Cloud Run 部署指南
 
-本文件說明如何把 onagent（Go 後端 + `apps/landing`、`apps/console` 兩個
-內嵌前端）部署到 Google Cloud Run，並掛上自訂網域
+本文件說明如何把 onagent（Go 後端 + `apps/landing`、`apps/console`、
+`apps/admin` 三個內嵌前端）部署到 Google Cloud Run，並掛上自訂網域
 `onagent.shuttle.tools`。
 
 > ⚠️ 以下步驟會建立真實付費雲端資源
@@ -15,24 +15,29 @@
 - **Dockerfile**（專案根目錄）：多階段 build
   1. build `apps/landing`（`npm ci && npm run build`）
   2. build `apps/console`（`npm ci && npm run build`）
-  3. 把兩者的 `dist/` 複製進
-     `backend/cmd/server/web/landing/`、`backend/cmd/server/web/console/`
-     —— 這兩個路徑是 `backend/cmd/server/web.go` 用
-     `//go:embed all:web/landing`、`//go:embed all:web/console`
+  3. build `apps/admin`（系統管理員後台，`npm ci && npm run build`）
+  4. 把三者的 `dist/` 分別複製進 `backend/cmd/server/web/landing/`、
+     `backend/cmd/server/web/console/`、`backend/cmd/server/web/admin/`
+     —— 這三個路徑是 `backend/cmd/server/web.go` 用
+     `//go:embed all:web/landing`、`//go:embed all:web/console`、
+     `//go:embed all:web/admin`
      寫死的路徑，複製目的地名稱必須完全一致，否則編出來的執行檔裡嵌的
      只會是 checked-in 的 placeholder `index.html`。
-  4. 編譯 Go（`CGO_ENABLED=0`，`GOPRIVATE=github.com/tim72117/want` +
+  5. 編譯 Go（`CGO_ENABLED=0`，`GOPRIVATE=github.com/tim72117/want` +
      `GH_PAT` 抓私有模組)
-  5. Runtime image 用 `gcr.io/distroless/static-debian12:nonroot`
+  6. Runtime image 用 `gcr.io/distroless/static-debian12:nonroot`
 - **.github/workflows/deploy-cloudrun.yml**：push 版號 tag（`v*`）時觸發，
   或用 `workflow_dispatch` 手動觸發（可選擇跳過重新 build，直接部署現有
   `:latest` image）。用 Workload Identity Federation（WIF）認證，不需要
   在 GitHub 存放長期 service account JSON key
 - **deploy/setup.sh**：一次性的 GCP 專案 / API / secrets / domain
   mapping 建置腳本
-- Console 前端現在跟後端同源（`/app` 路徑），所以**不需要**
-  `CONSOLE_ORIGIN` 環境變數；`ALLOWED_ORIGINS` 是給第三方開發者自己的
-  網站連 `/ws` WebSocket 用的白名單，跟 console 無關。
+- Console 前端現在跟後端同源（`/app` 路徑），admin 前端同源在
+  `/admin` 路徑，所以**不需要** `CONSOLE_ORIGIN` 環境變數；
+  `ALLOWED_ORIGIN`（單數）才是給 onagent 自己的前端（console/admin 的
+  Playground WebSocket、`/console/*`、`/auth/*`、`/admin/*` 的
+  credentialed CORS）用的白名單。給**第三方開發者自己的網站**連 `/ws`
+  用的白名單是另一個變數 `APP_ORIGINS`，兩者不要混淆。
 
 ## 前置需求
 
@@ -65,7 +70,11 @@ bash deploy/setup.sh
 2. 啟用 `run`、`artifactregistry`、`secretmanager` API
 3. 建立 Artifact Registry docker repo
 4. 建立**空的** Secret Manager secrets 容器（`DATABASE_URL`、
-   `ALLOWED_ORIGINS`、`GH_PAT`）—— 不含真實值
+   `GOOGLE_API_KEY`、`ADMIN_BOOTSTRAP_EMAIL`、
+   `ADMIN_BOOTSTRAP_PASSWORD`）—— 不含真實值。`ALLOWED_ORIGIN`/
+   `APP_ORIGINS`（易變動的環境設定，非機密）跟 `GH_PAT`（GitHub
+   Actions secret，不是 GCP Secret Manager）都不在這個容器裡，見下方
+   步驟 2、3。
 5. 呼叫 `gcloud beta run domain-mappings create`（前提是 Cloud Run
    service 已經至少成功部署過一次，見步驟 3）
 
@@ -83,12 +92,23 @@ bash deploy/setup.sh
 echo -n "postgres://user:pass@host/db?sslmode=require" | \
   gcloud secrets versions add DATABASE_URL --data-file=- --project=<你的 PROJECT_ID>
 
-echo -n "https://example-developer-site.com,https://another-site.com" | \
-  gcloud secrets versions add ALLOWED_ORIGINS --data-file=- --project=<你的 PROJECT_ID>
+echo -n "<your-google-api-key>" | \
+  gcloud secrets versions add GOOGLE_API_KEY --data-file=- --project=<你的 PROJECT_ID>
 
-echo -n "ghp_xxxxxxxxxxxxxxxxxxxx" | \
-  gcloud secrets versions add GH_PAT --data-file=- --project=<你的 PROJECT_ID>
+echo -n "admin@example.com" | \
+  gcloud secrets versions add ADMIN_BOOTSTRAP_EMAIL --data-file=- --project=<你的 PROJECT_ID>
+
+echo -n "<a-strong-password>" | \
+  gcloud secrets versions add ADMIN_BOOTSTRAP_PASSWORD --data-file=- --project=<你的 PROJECT_ID>
 ```
+
+`ALLOWED_ORIGIN`、`APP_ORIGINS` 不是 secret，不需要（也不該）走
+Secret Manager——它們是每次部署透過 GitHub Actions 的
+`--update-env-vars` 直接設定的一般環境變數，值寫在
+`.github/workflows/deploy-cloudrun.yml` 裡（見步驟 3）。`GH_PAT` 是
+GitHub Actions 自己的 repo secret（Settings → Secrets and variables →
+Actions），不是 GCP Secret Manager 的密鑰，只在 Docker build 階段用
+來抓 `github.com/tim72117/want` 私有模組。
 
 ### 3. 設定 GitHub Actions 部署
 
@@ -186,22 +206,33 @@ gcloud beta run domain-mappings describe \
 
 ## 環境變數 / secrets 一覽
 
+以下是 `deploy-cloudrun.yml` 實際部署時設定的完整清單（`--update-env-vars`
+的值直接寫在 workflow 裡，`--update-secrets` 對應到 Secret Manager）：
+
 | 名稱 | 來源 | 說明 |
 |---|---|---|
 | `APP_ENV` | `--update-env-vars` | 設為 `production`，讓 main.go 對缺漏設定改成直接拒絕啟動，而不是印警告後繼續跑 |
 | `COOKIE_SECURE` | `--update-env-vars` | 設為 `true`，session cookie 只透過 HTTPS 傳送 |
+| `AI_PROVIDER` | `--update-env-vars` | 目前設為 `googleapis` |
+| `AI_MODEL` | `--update-env-vars` | 目前設為 `gemini-2.5-flash-lite` |
+| `ALLOWED_ORIGIN`（單數） | `--update-env-vars` | 逗號分隔的來源網址白名單，給 **onagent 自己的前端**（console/admin 的 Playground WebSocket、`/console/*`、`/auth/*`、`/admin/*` 的 credentialed CORS）用；目前設為 `https://onagent.shuttle.tools`。不是 secret，不走 Secret Manager |
+| `APP_ORIGINS` | `--update-env-vars` | 逗號分隔的來源網址白名單，給**第三方開發者自己的網站**連 `/ws` WebSocket 用；跟 `ALLOWED_ORIGIN` 是兩個不同的名單，不要混淆。目前設為 `https://agent.shuttle.tools`。不是 secret，不走 Secret Manager |
 | `DATABASE_URL` | Secret Manager | Postgres 連線字串（例如 Neon，`sslmode=require`） |
-| `ALLOWED_ORIGINS` | Secret Manager | 逗號分隔的來源網址白名單，給**第三方開發者自己的網站**連 `/ws` WebSocket、以及呼叫 `/console/*`、`/auth/*` 用；與 console 本身無關（console 現在走同源 `/app`，不需要 `CONSOLE_ORIGIN`） |
+| `GOOGLE_API_KEY` | Secret Manager | `AI_PROVIDER=googleapis` 對應的 API 金鑰 |
+| `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` | Secret Manager | 啟動時建立的第一個營運後台（admin）帳號，只在資料庫裡沒有任何 admin 帳號時生效 |
 | `ADDR` | 不需設定 | main.go 預設 `:8080`，符合 Cloud Run 的 `PORT=8080` 慣例，通常不需要覆寫 |
-| `GH_PAT` | Secret Manager（Cloud Build）／ GitHub Actions secret | 只在 build 階段使用，抓 `github.com/tim72117/want` 私有模組，不會進最終 runtime image |
+| `QUOTA_ENABLED` | 不需設定 | main.go 預設 `true`（啟用每月額度限制）；目前部署未覆寫，維持預設 |
+| `GH_PAT` | GitHub Actions repo secret（**不是** GCP Secret Manager） | 只在 Docker build 階段使用（`--secret id=gh_pat`），抓 `github.com/tim72117/want` 私有模組，不會進最終 runtime image |
 
 ## 常見問題
 
-- **`/app` 或 `/` 顯示的還是 placeholder 頁面**：代表 Docker build 時
-  `apps/landing/dist`、`apps/console/dist` 沒有正確複製到
-  `backend/cmd/server/web/landing/`、`backend/cmd/server/web/console/`。
-  檢查 Dockerfile 的 `COPY --from=landing-build` / `COPY --from=console-build`
-  那兩行路徑是否跟 `backend/cmd/server/web.go` 檔頭註解一致。
+- **`/app`、`/admin` 或 `/` 顯示的還是 placeholder 頁面**：代表 Docker
+  build 時 `apps/landing/dist`、`apps/console/dist`、`apps/admin/dist`
+  沒有正確複製到 `backend/cmd/server/web/landing/`、
+  `backend/cmd/server/web/console/`、`backend/cmd/server/web/admin/`。
+  檢查 Dockerfile 的 `COPY --from=landing-build` /
+  `COPY --from=console-build` / `COPY --from=admin-build` 這三行路徑
+  是否跟 `backend/cmd/server/web.go` 檔頭註解一致。
 - **`domain-mappings create` 一直失敗**：確認 Cloud Run service
   （`onagent-server`）已經部署成功且能正常回應，`domain-mappings`
   必須綁定一個已存在的 service。
