@@ -1,7 +1,7 @@
 # BackendDispatch 串接指南（給第三方開發者）
 
 > 這是操作型指南，教你怎麼把自己的後端工具接上 onagent。設計決策與討論過程請見
-> [backend-tool-dispatch-design-2026-08-08.md](backend-tool-dispatch-design-2026-08-08.md)；
+> [refactor-backend-tool-dispatch-design-2026-08-08.md](refactor-backend-tool-dispatch-design-2026-08-08.md)；
 > 目前的實作是該文件的**最小可行版本**，本文件只涵蓋已經真的實作出來的部分——完整方案裡的簽章認證、
 > 重試、非同步模式目前都還沒做，見下方「目前的限制」。
 

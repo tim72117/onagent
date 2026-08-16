@@ -2,7 +2,7 @@
 
 > **目前實作狀態（最小可行版本）**：已實作 `Tool.BackendDispatch`（`Endpoint`、`TimeoutMS` 兩個欄位），工具呼叫可派發到第三方後端、同步等待回應並餵回 LLM 上下文，觸發路徑僅限既有 WS `hello`/`prompt`。以下皆**尚未實作**：`POST /v1/apps/{appId}/complete` 後端直觸端點、HMAC 簽章與雙密鑰輪替（目前是明文、無驗證的請求，僅適合已透過其他管道信任的端點）、`conversationId`/閒置逾時的多輪 session 機制。其餘章節為完整設計方案，尚待後續版本補齊。
 
-> 本文件是 [third-party-backend-tool-integration-discussion-2026-08-07.md](third-party-backend-tool-integration-discussion-2026-08-07.md) 第二輪討論拍板後的方案結論，完整討論逐字稿與決策過程請見該文件。這裡只保留最終方案本身，方便日後查閱時不用重新讀完整場會議記錄。
+> 本文件是 [research-third-party-backend-tool-integration-discussion-2026-08-07.md](research-third-party-backend-tool-integration-discussion-2026-08-07.md) 第二輪討論拍板後的方案結論，完整討論逐字稿與決策過程請見該文件。這裡只保留最終方案本身，方便日後查閱時不用重新讀完整場會議記錄。
 
 第一輪基於前端架構的結論已隨第一輪內容一併移除，不再適用。以下是第二輪、第三輪拍板的完整方案。
 
@@ -139,7 +139,7 @@ Staging/production 環境隔離：onagent 目前完全沒有 app 層級的環境
 
 部分工具（例如需等待風控流程的退款）處理時間可能遠超同步 timeout。方向：`ActionDispatch.Mode: "async"`（本輪不開放此值）搭配第三方立即回 `202 Accepted`、稍後主動呼叫 onagent 開放的 callback endpoint 回傳結果；callback 認證方向反轉（第三方簽章、onagent 驗證）；等待期間需要獨立於 `tool_unavailable` 的「已受理、處理中」中間態語意。
 
-> **這個機制曾在第三輪被短暫改為「onagent 主動輪詢第三方 `GET {endpoint}/tasks/{taskId}`」**（參考 Anthropic MCP 2026-07-28 規格的 poll-based Tasks 框架），因為輪詢能同時避開 callback 認證反轉與多副本部署下 in-memory 關聯失效這兩個問題。但進一步評估後發現：callback 是被動輕量（等待任務僅需一個 channel/goroutine，形狀同 `ws/session.go` 的 `pendingCalls`），輪詢則需要 onagent 對每個進行中任務持續發送真實 HTTP 請求——若同時服務 N 個第三方、每個 M 個並行長任務，輪詢排程量隨 N×M 線性增長，是持續性、隨規模惡化的成本，而非一次性架構成本，與 onagent 作為服務大量租戶的 SaaS 平台定位有摩擦。最終**恢復 callback 為正式方案**，多副本部署風險維持記入技術債。詳細反覆過程見 [third-party-backend-tool-integration-discussion-2026-08-07.md](third-party-backend-tool-integration-discussion-2026-08-07.md) 第三輪結論。
+> **這個機制曾在第三輪被短暫改為「onagent 主動輪詢第三方 `GET {endpoint}/tasks/{taskId}`」**（參考 Anthropic MCP 2026-07-28 規格的 poll-based Tasks 框架），因為輪詢能同時避開 callback 認證反轉與多副本部署下 in-memory 關聯失效這兩個問題。但進一步評估後發現：callback 是被動輕量（等待任務僅需一個 channel/goroutine，形狀同 `ws/session.go` 的 `pendingCalls`），輪詢則需要 onagent 對每個進行中任務持續發送真實 HTTP 請求——若同時服務 N 個第三方、每個 M 個並行長任務，輪詢排程量隨 N×M 線性增長，是持續性、隨規模惡化的成本，而非一次性架構成本，與 onagent 作為服務大量租戶的 SaaS 平台定位有摩擦。最終**恢復 callback 為正式方案**，多副本部署風險維持記入技術債。詳細反覆過程見 [research-third-party-backend-tool-integration-discussion-2026-08-07.md](research-third-party-backend-tool-integration-discussion-2026-08-07.md) 第三輪結論。
 
 技術可行性已初步查證：路由掛載可套用現有 `http.NewServeMux()`／中介層模式；「等待關聯」可沿用 `ws/session.go` 的 `pendingCalls` map+channel 模式（非 Session 專屬版本）。**已知風險（記入技術債，非本輪解決）**：若 onagent 為多副本部署，callback 請求可能打到與原 dispatch 呼叫不同的 process，in-memory 關聯會失效，需之後視實際部署拓樸決定是否改用共用儲存（如 Postgres LISTEN/NOTIFY）。因非同步模式本輪不啟用，此風險暫不處理。
 

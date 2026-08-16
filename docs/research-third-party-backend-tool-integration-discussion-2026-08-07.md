@@ -1,6 +1,6 @@
 # 第三方後端工具串接 onagent 推論架構：概念摘要
 
-> 本文件原為一場由第三方開發者、系統架構師、資深工程師三個角色參與的完整討論逐字稿（第二、三輪），已精簡為概念摘要，去除對話過程。**以下所有概念在程式碼裡完全沒有實作**——即使是已經整理進 [backend-tool-dispatch-design-2026-08-08.md](backend-tool-dispatch-design-2026-08-08.md) 的部分，那份文件也只落地了最小 PoC（`Tool.BackendDispatch` 的 `Endpoint`/`TimeoutMS` 兩個欄位、WS 觸發），不含本文件討論的任何內容（HMAC 簽章、密鑰輪替、去程 API、`X-Onagent-User-Ref`、async/callback 機制）。
+> 本文件原為一場由第三方開發者、系統架構師、資深工程師三個角色參與的完整討論逐字稿（第二、三輪），已精簡為概念摘要，去除對話過程。**以下所有概念在程式碼裡完全沒有實作**——即使是已經整理進 [refactor-backend-tool-dispatch-design-2026-08-08.md](refactor-backend-tool-dispatch-design-2026-08-08.md) 的部分，那份文件也只落地了最小 PoC（`Tool.BackendDispatch` 的 `Endpoint`/`TimeoutMS` 兩個欄位、WS 觸發），不含本文件討論的任何內容（HMAC 簽章、密鑰輪替、去程 API、`X-Onagent-User-Ref`、async/callback 機制）。
 
 ## 背景
 
@@ -57,7 +57,7 @@ onagent 對每個 app 簽發 HMAC 密鑰，密鑰管理採**可隨時到 console
 
 - **`recommend_nearby` PoC 落地時的已知參數陷阱**：現有查詢是純 in-process 呼叫，改走 `BackendDispatch` 後需另抓一個遠比既有 20 秒基準小、但仍需容納 Google Places API 尾端延遲的 `timeoutMs` 數值，避免誤判為 `tool_unavailable`。
 - **批次查詢語意**（供未來 `compute-route` 等多點距離查詢使用）：`QueryDispatch`/`ActionDispatch` 現在是單筆查詢的重試語意，沒有「陣列輸入、部分失敗如何回報」的欄位設計空間。是否能相容擴充（加一個平行的 `Batch *BatchDispatch` 欄位，不影響現有欄位語意）尚待查證；若會動到 `Query`/`Action` 本身的重試/退避邏輯則是破壞性改動，需重新考慮 schema 形狀。
-- 本文件討論的內容尚未回寫進 [backend-tool-dispatch-design-2026-08-08.md](backend-tool-dispatch-design-2026-08-08.md)（去程 API、`X-Onagent-User-Ref` 消歧義、async/callback 機制的最終定案、參數陷阱備註）。
+- 本文件討論的內容尚未回寫進 [refactor-backend-tool-dispatch-design-2026-08-08.md](refactor-backend-tool-dispatch-design-2026-08-08.md)（去程 API、`X-Onagent-User-Ref` 消歧義、async/callback 機制的最終定案、參數陷阱備註）。
 
 ## 相關案例
 

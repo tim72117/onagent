@@ -77,3 +77,7 @@ script-src https://sdk.<platform-domain>;
 - `/ws` 跟 codegen 端點的速率限制/濫用防護。
 - 後端一個真正的 `beaconUrl` HTTP 端點（SDK 端已經支援呼叫，但伺服器端
   的接收 handler 還不存在）。
+
+上面這些項目的最新複核狀態（含新發現、修復進度）統一維護在
+`docs/audit-security.md`，不在本檔案重複記錄——本檔案只保留原始的
+設計脈絡說明。

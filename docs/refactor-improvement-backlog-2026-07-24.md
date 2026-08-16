@@ -23,29 +23,22 @@
 
 ## 跨面向重點：這次挖出來的「不是建議、是現在就壞了」
 
-這 100 項裡有幾項本質上不是「改良提案」，而是**已經存在的缺陷**，獨立於這份清單被發現，值得先列出來：
-
-| 問題 | 位置 | 影響 |
-|---|---|---|
-| **空 SessionID 會繼承上一位使用者的對話** | `inference/want.go:sessionKeyFor` | 跨使用者資料外洩（**仍未修復**：`sessionKeyFor` 對無效 SessionID 仍回傳共用的 `""` key） |
-| **推論逾時未中斷 orchestrator，訊息會串到下一位使用者** | `inference/want.go:159` | 跨使用者訊息外洩 |
-| **codegen 端點無認證 + CORS `*`** | `main.go:259-260, 376` | 猜到 appId 就能拿走整份工具定義（有註解說明是刻意設計，見該節） |
-| **`save-tools` 拒絕文件說可省略的 `appId`** | `main.go:441` → `loader.go:84` | 照文件做會失敗 |
-| **console 編輯器存檔會靜默刪掉 `kind: query`** | `console/src/schema.ts:17-22` | query 工具默默失效、無錯誤訊息 |
-| **定價頁寫 per app，程式碼是 per owner 加總** | `pricing/index.html` vs `quota.go` | 開三個 app 等於各只有 1/3 額度 |
-| **範例自帶的 `returns: type: array` 會讓 codegen 回 500** | `analysis/tools.yaml:134` vs `typescript.go:69` | 專案自己的範例是壞的 |
+> 2026-08-16 更新：這份原始清單裡的具體缺陷，已依現況複核並移到對應的持續更新稽核檔——安全性移到 `docs/audit-security.md`、功能性移到 `docs/audit-functional.md`（含最新的 file:line、現況、修法）。以下只保留仍屬於「改良提案」性質、或複核後判定並非缺陷的項目；已移出的項目原始描述見 git 歷史。
+>
+> 複核結果：
+> - **空 SessionID 會繼承上一位使用者的對話** — 複核後判定非現行缺陷：兩個正式呼叫路徑（`ws/session.go` 用 `randomID()`、`console/playground.go` 用 `"PG-%d-%s"`）都保證產生非空、格式正確的 SessionID，`sessionKeyFor` 的空字串共用分支在正式流程中不可達。予以移除，不列入稽核檔。
+> - **推論逾時未中斷 orchestrator，訊息會串到下一位使用者** → 已併入 `docs/audit-functional.md`「completeTimeout 分支未呼叫 `orch.Interrupt()`」項目（同一個 bug，2026-08-16 掃描已用現行行號重新確認）。
+> - **codegen 端點無認證 + CORS `*`** — 複核程式碼確認是刻意設計（`main.go` 的 `publicCORS` 註解明確說明：這是不帶 cookie/token 的公開 artifact，`*` 不洩漏任何東西），非缺陷，不移入稽核檔。
+> - **`save-tools` 拒絕文件說可省略的 `appId`** → 複核發現 console API 路徑已修復，但 **CLI 的 `runSaveTools` 仍未修**，已併入 `docs/audit-functional.md`。
+> - **console 編輯器存檔會靜默刪掉 `kind: query`** → 已併入 `docs/audit-functional.md`。
+> - **定價頁寫 per app，程式碼是 per owner 加總** → 已併入 `docs/audit-functional.md`。
+> - **範例自帶的 `returns: type: array` 會讓 codegen 回 500** → 已併入 `docs/audit-functional.md`（與同一個 `Validate()` 缺口的既有項目是同一個 bug）。
 
 另外有一項**在有人付費之後無法存活**的營運問題：免費用戶的推論全部計入你自己的 provider key 且無成本上限。
 
-## 🔴 `want` 依賴套件裡的已知問題（併入自 `known-issues-want-dependency.md`）
+## `want` 依賴套件裡的已知問題
 
-### 🔴 單一共用 orchestrator 讓所有使用者的對話輪次序列化——吞吐量問題
-
-**背景**：want v0.2.0 讓 `WantService`（`backend/internal/inference/want.go`）改成每個 SessionID 各自擁有一個 `*orchestrator.Orchestrator`（延遲建立，透過 `inference.Service.CloseSession` 釋放），取代原本一個共用 orchestrator 實例、每次呼叫時互換 `AgentID`/`Role`/`Toolbox` 來偽裝隔離的舊設計。這讓每個 session 在物件層級有正確的隔離，session 關閉時資源也能真正被回收。
-
-**沒有改變的部分**：want 仍然透過它自己的 process-wide `internal.GlobalEngine` 來解析每一次 `RunAgent` 呼叫要用的 LLM provider（`orchestrator.InitializeWithConfig` 會覆寫這個變數，這個 repo 現在整個 process 生命週期只呼叫一次）。因此每個 session 的 orchestrator 底層仍然共用同一個 provider，以及它的 `provider.NewRequestQueue(1, ...)`——並發數是 1，整個後端共用。多個使用者的對話輪次仍然會互相排隊、一個接一個處理。
-
-**狀態**：未解決，且**問題出在 `want` 本身，不是這個 repo 的程式碼**——要修就得改 `want`，不是改 `backend/`。要修好需要 want 開放一個機制，讓每個 orchestrator（不只是每個 process）能各自建立獨立的 provider/佇列，或者這個 repo 改成跑多個 want process。
+~~單一共用 orchestrator 讓所有使用者的對話輪次序列化~~ — 已併入 `docs/audit-functional.md`（A1）與 `docs/audit-security.md`（S2 的 DoS 面影響），根因細節見 `docs/known-issues-want-dependency.md`。
 
 ---
 
@@ -63,13 +56,13 @@
 
 3. **設定資料庫連線池** — 在 `db/db.go:22-36` 加 `SetMaxOpenConns`/`SetMaxIdleConns`/`SetConnMaxLifetime`。單一 `*sql.DB` 被所有 store 共用，而 Go 預設無上限；一次 handshake 尖峰每條連線就要 3 次以上查詢（`auth.Verify`、`quota.ownerStanding`、`quota.usageSince`），足以耗盡 Postgres `max_connections`，把一次流量尖峰變成一次全面停機。15 分鐘。
 
-4. **🔴 修掉空 SessionID 的 fallthrough — 會繼承別人的對話** — `inference/want.go:105-107` 只在 `sanitizeSessionID` 回傳非空時才覆寫 `orch.AgentID`。`want.go:188` 的註解宣稱這個 fallback 意思是「沿用 orchestrator 自己的 AgentID」，但**第一次呼叫之後，那個欄位存的是上一位呼叫者的 session id**——所以一個 SessionID 為空或格式錯誤的請求，會靜默繼承另一個使用者的對話記錄。應直接拒絕該請求。20 分鐘。
+4. ~~**空 SessionID 的 fallthrough**~~ — 2026-08-16 複核：非現行缺陷，兩個正式呼叫路徑都保證非空 SessionID，見上方跨面向重點的複核說明。
 
-5. **🔴 `completeTimeout` 時要中斷 orchestrator — 否則訊息會串台** — `inference/want.go:159` 直接返回，沒有像 `:157` 那個分支一樣呼叫 `s.orch.Interrupt()`。被放棄的那次執行仍在跑，而事件主題是全域的（`"agent.inference"`）、`ui.HandleInferenceMessage` 也不依 AgentID 過濾，於是它後續產生的文字事件會落進**下一位呼叫者**的 `text` builder（`want.go:134-138`）。這是跨使用者的助理訊息外洩。30 分鐘 + 一個測試。
+5. ~~**`completeTimeout` 時要中斷 orchestrator**~~ — 已併入 `docs/audit-functional.md`「completeTimeout 分支未呼叫 `orch.Interrupt()`」項目。
 
-6. **`cliauth.Exchange` 要做成原子操作** — `cliauth/cliauth.go:103-111` 是在交易之外做 SELECT-then-UPDATE。兩個並發的 callback 可以在任一方清除 token 之前都讀到它，**破壞了 package 文件與 `schema.sql` 註解都承諾的「單次使用」保證**。應收斂成單一句 `UPDATE ... RETURNING token`。30 分鐘。
+6. **`cliauth.Exchange` 要做成原子操作** — `cliauth/cliauth.go:103-111` 是在交易之外做 SELECT-then-UPDATE。兩個並發的 callback 可以在任一方清除 token 之前都讀到它，**破壞了 package 文件與 `schema.sql` 註解都承諾的「單次使用」保證」**。應收斂成單一句 `UPDATE ... RETURNING token`。30 分鐘。
 
-7. **清理過期的 session 資料列** — 開機起一個 goroutine 定期刪除 `sessions`、`admin_sessions`、`cli_auth_sessions`，並補 `expires_at` 索引。目前只有明確登出（`session.go:216`）或 exchange 才會刪除，`session.go:31` 的 30 天、`adminauth.go:36` 的 12 小時、`cliauth.go:22` 的 10 分鐘 TTL **全都只是讓資料列永遠變成死列**，而 `Verify` 的 `expires_at > now()` 過濾（`session.go:201`）連索引都沒有。半天。
+7. **清理過期的 session 資料列** — 開機起一個 goroutine 定期刪除 `sessions`、`admin_sessions`、`cli_auth_sessions`，並補 `expires_at` 索引。目前只有明確登出（`session.go:216`）或 exchange 才會刪除，`session.go:31` 的 30 天、`adminauth.go:36` 的 12 小時、`cliauth.go:22` 的 10 分鐘 TTL **全都只是讓資料列永遠變成死列**，而 `Verify` 的 `expires_at > now()` 過濾（`session.go:201`）連索引都沒有。半天。（`cli_auth_sessions` 明文 bearer token 未清理的安全影響，已併入 `docs/audit-security.md` 獨立追蹤；這裡保留的是三張表通用的清理機制建議。）
 
 8. **收斂重複的 crypto/HTTP helper** — 一個 `internal/secret`（`RandomToken`、`Hash`）加一個 `internal/httpx.WriteJSON`。目前有**五份幾乎相同的 32-byte token 產生器**（`auth.go:194`、`usertoken.go:176`、`cliauth.go:114`、`adminauth.go:221`、`session.go:248`）、兩份相同的 sha256 hasher（`auth.go:189`、`usertoken.go:156`），以及被逐字複製到 `console.go:636` 與 `adminconsole.go:168` 的 `writeJSON`。2 小時。
 
@@ -97,7 +90,7 @@
 
 19. **把 `toolschema.Registry` 做成 repository 並支援單一 app 失效** — 把 `registry.go:183-310` 的 SQL 移到 `Store` 介面後面，只重載被改動的那個 app。目前每次 console 寫入都會呼叫完整的 `Reload()`（`registry.go:83, 97, 122, 159`），為了改一個工具而**重讀所有租戶的所有 app 與所有工具**；而這個介面也正是讓這個 package 終於可測試的關鍵——整個 backend 只有 4 個測試檔，全是 integration。1 週。
 
-20. **🔴 真正的 middleware 鏈，並把 codegen 端點納入授權** — 今天只有 `recoverMiddleware` + `withCORS`（`main.go:283`）。更嚴重的是 `main.go:259-260` **未經任何認證**就把每個工具的名稱、描述、參數 schema 提供出去，還配上 `Access-Control-Allow-Origin: *`（`main.go:376`）——任何人只要猜到一個 appId，就能拿到那個開發者的**整個產品介面，以及一份現成的 prompt injection 目標清單**。1 週。
+20. **真正的 middleware 鏈** — 今天只有 `recoverMiddleware` + `withCORS`（`main.go:283`）。（原本這裡一併質疑 codegen 端點無認證+CORS `*`，2026-08-16 複核程式碼確認那是刻意設計——`publicCORS` 的註解明確說明這是不帶 cookie/token 的公開 artifact，`*` 不洩漏機密；若要重新評估「猜到 appId 就能看到完整工具定義」這個產品面決策是否需要收緊，屬於另一個獨立的產品討論，非程式缺陷。）1 週。
 
 ---
 
@@ -111,7 +104,7 @@
 
 3. **`returns.type === "object"` 應該在存檔時驗證，而不是拖到 codegen 才爆** — `codegen/typescript.go:69` 對非 object 的頂層 `returns` 直接報錯，而 `examples/analysis/tools.yaml:134` 宣告的正是 `type: array`。結果是**專案自帶的範例會讓 `GET /apps/analysis-app/tools.ts` 回 HTTP 500**，且完全沒有線索指向 YAML 才是問題所在。應把檢查加進 `App.Validate`，放在 `loader.go:108` 的 query/returns 規則旁邊。
 
-4. **Console 編輯器會靜默把 `kind: query` 工具降級成 action** — `apps/console/src/schema.ts:17-22` 的 `Tool` 型別根本沒有 `kind` 欄位，而 `api.ts:121` 又把整個 `Tool[]` 原封 PUT 回去。於是在 UI 開啟任何含 query 工具的 app 再存檔，`kind` 就消失了，頁面的 query handler 從此不再餵資料給 LLM——**全程沒有任何錯誤訊息**。`validate.ts:15` 也缺少 `loader.go:108` 那條「query 必須有 returns」的規則。
+4. ~~**Console 編輯器會靜默把 `kind: query` 工具降級成 action**~~ — 已併入 `docs/audit-functional.md`（含 `validate.ts` 缺少對應規則的細節）。
 
 5. **新增 `onagent types` 與 `onagent validate` 指令** — `types <appId> -o tools.d.ts` 抓 `/apps/{appId}/tools.ts`；`validate <file>` 純本機跑 `App.Validate`。目前 codegen 端點在 `docs/index.html` 完全沒被提到，**沒有人知道它存在**；而 `main.go:74-91` 的 usage 也沒有離線 lint，每個 typo 都要付一次網路往返。約 60 行，可重用現有 `apiClient`。
 
@@ -153,17 +146,17 @@
 
 ### 實用（低風險、一兩天可完成）
 
-1. **定價頁寫的額度跟程式碼實際執行的不一致** — `pricing/index.html:185` 與 meta description 都寫「100 prompts **per app**, per month」，但 `quota.go:255-268` 的 `usageSince` 是 `JOIN apps ON owner_id` 跨所有 app 加總，實際是**每個帳號** 100 次。開發者若有 staging+prod+demo 三個 app，等於各只有 33 次，而頁面標題還寫著「Simple, honest pricing」。**這是全 repo 裡「每分鐘信任修復率」最高的一項，10 分鐘可改。**
+1. ~~**定價頁寫的額度跟程式碼實際執行的不一致**~~ — 已併入 `docs/audit-functional.md`。這仍是全 repo 裡「每分鐘信任修復率」最高的一項，10 分鐘可改，故保留於此提醒優先處理。
 
 2. **非production origin 應豁免或折扣計算額度** — 當 app 的 `allowed_origin` 是 localhost / 127.0.0.1 / 預覽網域時跳過 `Record`。文件的設定流程本身就鼓勵「每個環境開一個 app」，導致測試跟真實使用者吃同一份 100 次額度。成本：一個 `WHERE` 條件加一個 plan flag。
 
 3. **`@onagent/bridge` 根本還沒發布到 npm** — `.github/workflows/` 只有 `deploy-cloudrun`、`release-image`、`release-onagent`，沒有 npm publish；兩個範例都用 `file:../../packages/bridge`。但 landing hero 與文件都寫 `npm install @onagent/bridge`——**整個 onboarding 的第 3 步對所有訪客都是死路**。成本：約一小時，但打通整條漏斗。
 
-4. **已經在建置的 CLI 預編譯檔沒有被連結出來** — `release-onagent.yml` 已產出 darwin/amd64、darwin/arm64、windows/amd64 到 GitHub Releases，但 `docs/index.html` 提到 Releases 的次數是 0，只提供 `go install`。等於把第 1 步卡在「要有 Go 工具鏈」這個前提上，而 `marketing-strategy.md` §2 自己定義的 ICP 是前端開發者，多數沒有 Go。順帶補回 linux/amd64。
+4. **已經在建置的 CLI 預編譯檔沒有被連結出來** — `release-onagent.yml` 已產出 darwin/amd64、darwin/arm64、windows/amd64 到 GitHub Releases，但 `docs/index.html` 提到 Releases 的次數是 0，只提供 `go install`。等於把第 1 步卡在「要有 Go 工具鏈」這個前提上，而 `docs/research-marketing-strategy-2026-07-15.md` §2 自己定義的 ICP 是前端開發者，多數沒有 Go。順帶補回 linux/amd64。
 
 5. **文件應該以 Playground 開場，而不是 CLI** — `apps/console/src/Playground.tsx` 就是設計成「不用裝任何東西、不用有網站就能感受產品」，但 Playground 在 landing 與 docs 出現次數都是 **0 次**。現在的流程要求 Go → login → 建 app → 發 key → 設 origin → npm，全部做完才看得到價值。
 
-6. **完全沒有任何埋點** — 全 `apps/` grep 不到 posthog/plausible/gtag/umami。而 `marketing-strategy.md` §8 明確承諾要追蹤「多少人完成 create-app → define-tool → embed-SDK」，目前這個數字無法被測量。
+6. **完全沒有任何埋點** — 全 `apps/` grep 不到 posthog/plausible/gtag/umami。而 `docs/research-marketing-strategy-2026-07-15.md` §8 明確承諾要追蹤「多少人完成 create-app → define-tool → embed-SDK」，目前這個數字無法被測量。
 
 7. **定義並記錄啟用事件：`first_prompt_from_a_real_origin`** — 指某個 app 第一筆來自其設定 origin（而非 Playground）的 `usage_events`。這張表已經記了每次計費 prompt 與 `app_id`（`quota.go:106`），只差一個 join 就能知道「這個開發者是否真的上線了」——這是唯一能預測付費意願的數字。
 
@@ -171,7 +164,7 @@
 
 9. **讓 `onQuotaExceeded` 有地方可去** — `client.ts:115` 已經把這個 hook 做完，`Sidebar.tsx:150` 也已顯示「used / limit」但只是靜態文字。兩處都加上升級/聯絡連結。額度用盡是開發者唯一保證會在意價格的時刻，目前整條訊號做完了卻沒有變現。
 
-10. **修掉 H1 造成的「聊天機器人」誤讀** — hero 寫「give your website an AI assistant」（`index.html:438`），但 `marketing-strategy.md` §2 自己已經寫好更好的說法：「AI 呼叫**你自己的** JS 函式、點**你的**按鈕，不是外掛一個聊天機器人」。策略文件把這點列為最大認知障礙，然後線上頁面用了它警告的措辭。順帶改善對 Intercom/Fin 的 SEO 競爭位置。
+10. **修掉 H1 造成的「聊天機器人」誤讀** — hero 寫「give your website an AI assistant」（`index.html:438`），但 `docs/research-marketing-strategy-2026-07-15.md` §2 自己已經寫好更好的說法：「AI 呼叫**你自己的** JS 函式、點**你的**按鈕，不是外掛一個聊天機器人」。策略文件把這點列為最大認知障礙，然後線上頁面用了它警告的措辭。順帶改善對 Intercom/Fin 的 SEO 競爭位置。
 
 ### 有趣（需要產品決策）
 
@@ -179,7 +172,7 @@
 
 12. **在 orchestrator 修好之前無法銷售並發能力** — `NewRequestQueue(1, ...)` 加上跨 90 秒 `Complete()` 的單一 mutex，使全平台所有租戶被序列化。任何付費 SLA 今天都無法兌現，且一個卡住的 query tool 就能 DoS 所有客戶。修好之後，「保證並發 session 數」應該是**第一個**付費維度——因為那才是真正花你錢的東西。
 
-13. **賣可觀測性，而不是賣 prompt 次數** — 做出 Tool-Call Observatory / Trace Inspector（`feature-ideas.md` #2、#9），把 transcript 保存期限當作付費軸：Free 24 小時、Starter 30 天、Team 1 年 + 匯出。沒有人會在沒有稽核紀錄的情況下，把一個自主呼叫工具的東西放進 production DOM。保存期限是你真實產生的成本，比 `plan.go:49` 那個註解直接寫著 `// placeholder` 的 100 次上限更有防禦性。
+13. **賣可觀測性，而不是賣 prompt 次數** — 做出 Tool-Call Observatory / Trace Inspector（`docs/research-feature-ideas-2026-07-15.md` #2、#9），把 transcript 保存期限當作付費軸：Free 24 小時、Starter 30 天、Team 1 年 + 匯出。沒有人會在沒有稽核紀錄的情況下，把一個自主呼叫工具的東西放進 production DOM。保存期限是你真實產生的成本，比 `plan.go:49` 那個註解直接寫著 `// placeholder` 的 100 次上限更有防禦性。
 
 14. **改成按 app/站點收費，而非按帳號** — Free = 1 個 production origin、額度寬鬆；付費 = 每增加一個 production origin。目前 `quota.go` 的 per-owner 加總懲罰的正是你想鼓勵的行為（多開 app），而在 per-origin 定價下，把 onagent 嵌到多個客戶網站的**代理商/顧問公司會是最合適的早期買家**。
 
@@ -189,11 +182,11 @@
 
 17. **提供 script-tag/UMD 版本，打開非 bundler 的網頁市場** — `packages/bridge` 目前是純 ESM（`"type": "module"`），沒有 IIFE/CDN 產物。WordPress、Shopify、Rails/Django、Webflow——這些「有值得被驅動的表單」的網站佔多數，現在完全裝不了。一個 `<script src>` 加 `data-` 屬性設定，是 Intercom/GA 的經典散布策略。
 
-18. **開源 SDK + CLI，平台維持託管** — `packages/bridge` 與 `backend/cmd/onagent` 公開並採 MIT，推論/orchestration/quota/console 維持託管。`marketing-strategy.md` §4.3 已經把 repo 當成主要通路，但一個「要你貼 API key 進去的閉源 SDK」對重視安全的團隊是硬性拒絕——而且那把 key 本來就在瀏覽器 bundle 裡，沒什麼好藏的。
+18. **開源 SDK + CLI，平台維持託管** — `packages/bridge` 與 `backend/cmd/onagent` 公開並採 MIT，推論/orchestration/quota/console 維持託管。`docs/research-marketing-strategy-2026-07-15.md` §4.3 已經把 repo 當成主要通路，但一個「要你貼 API key 進去的閉源 SDK」對重視安全的團隊是硬性拒絕——而且那把 key 本來就在瀏覽器 bundle 裡，沒什麼好藏的。
 
-19. **在向任何人收費之前修好多租戶隔離** — `want` 的 `GlobalRegistry` 是 append-only、`GetTools` 是 first-match-wins，導致工具跨 app 洩漏、console 編輯 schema 靜默不生效。**你無法向一個「工具可能被其他租戶看見」的客戶開發票。** 可以把它轉化成 `feature-ideas.md` #1 的版本控管功能，順勢賣分階段推出。
+19. **在向任何人收費之前修好多租戶隔離** — `want` 的 `GlobalRegistry` 是 append-only、`GetTools` 是 first-match-wins，導致工具跨 app 洩漏、console 編輯 schema 靜默不生效。**你無法向一個「工具可能被其他租戶看見」的客戶開發票。** 可以把它轉化成 `docs/research-feature-ideas-2026-07-15.md` #1 的版本控管功能，順勢賣分階段推出。
 
-20. **重新定位為「瀏覽器 DOM 的 MCP」，並提供 MCP bridge** — 把每個 app 的工具暴露成 MCP server，讓 Claude/Cursor 能驅動一個活著的使用者 session。`marketing-strategy.md` §3 已正確指出 MCP 是後端/無狀態的，而瀏覽器端的即時 DOM 狀態是無人認領的缺口——但現行策略是**迴避**這個比較。明確認領這個缺口是更強的位置，而且能透過每一個 MCP client 取得散布，而不只靠自己的 SDK。
+20. **重新定位為「瀏覽器 DOM 的 MCP」，並提供 MCP bridge** — 把每個 app 的工具暴露成 MCP server，讓 Claude/Cursor 能驅動一個活著的使用者 session。`docs/research-marketing-strategy-2026-07-15.md` §3 已正確指出 MCP 是後端/無狀態的，而瀏覽器端的即時 DOM 狀態是無人認領的缺口——但現行策略是**迴避**這個比較。明確認領這個缺口是更強的位置，而且能透過每一個 MCP client 取得散布，而不只靠自己的 SDK。
 
 > **一個凌駕以上所有項目的阻斷性問題**：Free 方案的推論全部計入你自己的 provider key 且無成本上限。**這件事在有人開始付錢之後是無法存活的。**
 
@@ -255,9 +248,9 @@
 
 2. **Cloud SQL 完全沒有設定任何備份** — 在 `deploy/`、`docs/deployment.md`、`.github/` 全域搜尋 `backup`/`pg_dump`/PITR 命中數為 0。一張被 drop 的表、或一個 `DELETE FROM apps` 手滑，**都沒有任何復原路徑**，而所有使用者、app、API key 雜湊與用量紀錄都在裡面。1 小時設定 + 半天演練一次還原。
 
-3. **明文 bearer token 無限期停留在 Postgres** — `cliauth.Approve` 把明文 user token 寫進 `cli_auth_sessions.token`（`cliauth.go:82-84`），只有成功 `Exchange` 才會清空（`:110`），而**沒有任何程式碼會刪除 `cli_auth_sessions` 的資料列**。CLI 崩潰或使用者關掉分頁，就會留下一個仍然有效的長期憑證躺在欄位裡，超過 `expires_at` 也不會消失——任何 DB dump、replica 或備份都會一起把活的憑證帶走。`sessions`/`admin_sessions` 同樣只被過濾（`session.go:201`、`adminauth.go:178`）從不清理。2 小時。
+3. ~~**明文 bearer token 無限期停留在 Postgres**~~ — 已併入 `docs/audit-security.md`。
 
-4. **`/healthz` 會說謊** — 它無條件回 200，完全不碰資料庫（`main.go:261-264`）。搭配每晚的 Cloud SQL 關機，health endpoint 會在**每一個登入、handshake、額度檢查都 500 的時候**保持綠燈——你唯一的訊號在最可能發生的故障情境下保證無用。改成帶 2 秒逾時的 `conn.PingContext`。30 分鐘。
+4. ~~**`/healthz` 會說謊**~~ — 已併入 `docs/audit-functional.md`。
 
 5. **沒有處理 SIGTERM — Cloud Run 會直接砍掉進行中的工作** — 全檔案沒有任何 `signal.Notify`/`Server.Shutdown`（`main.go:283` 用的是 `http.ListenAndServe`），`main.go:109` 的 `defer conn.Close()` 永遠不會執行。每次部署或縮容都會硬中斷推論中的 WebSocket session，而進行中的 `quota.Record`（`ws/session.go:274`）會直接遺失——**計費工作做了卻沒被記錄**。半天。
 
@@ -295,6 +288,7 @@
 
 ---
 
-*建立於 2026-07-24。與 `docs/project-audit.md`（2026-07-15 稽核）、
-`docs/project-health-review-2026-07-22.md`（跨面向健檢）互補：那兩份是「找出現存問題」，
-這份是「該往哪些方向改良」，包含尚不存在的功能與方向性提案。*
+*建立於 2026-07-24。與 `docs/audit-security.md`、`docs/audit-functional.md`
+（原 2026-07-15 稽核 + 2026-07-22 跨面向健檢，現已拆分並合併為安全/功能兩份
+持續更新的稽核報告）互補：那些是「找出現存問題」，這份是「該往哪些方向改良」，
+包含尚不存在的功能與方向性提案。*

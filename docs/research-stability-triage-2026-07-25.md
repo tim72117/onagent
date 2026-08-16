@@ -1,4 +1,4 @@
-# 穩定性優先處理清單（2026-07-25）
+# 穩定性優先處理清單（研究筆記，2026-07-25）
 
 > 產出方式：三個 Opus subagent 分別扮演**工程師**、**架構師**、**測試專家**，各自從自己的專業角度
 > 對同一批已驗證事實做穩定性 triage，並被要求彼此交叉檢視。本文件整合三方清單，以「三方共識強度」
@@ -6,6 +6,11 @@
 >
 > **當前優先目標（使用者指定）**：① 觀測使用者狀態　② 確保核心功能（連線 → prompt → 推論 →
 > 派發工具到頁面 → 回傳答案）穩定運作。其他改良（含併發重構）暫緩。
+>
+> **2026-08-16 附註**：本文件原始版本裡兩項描述「現行程式碼中真實存在的並發/穩定性缺陷」的項目
+> （`/healthz` 無條件回 200、斷線時未取消進行中的推論）已依 `docs/audit-*` 格式規則移到
+> `docs/audit-stability.md` 持續追蹤現況；本文件保留其餘屬於**建議/研究**性質的內容（指標、CI、
+> 整合測試、可觀測性建設），維持一次性研究筆記定位，不再更新。
 
 ---
 
@@ -37,21 +42,11 @@
 - **做法**：換成 `slog.NewJSONHandler`，把帶 `session`/`app` 屬性的 logger 貫穿 `NewSession`。
 - **成本**：約 0.5 天。**這是本清單投報率最高的一項——是後面所有觀測項的地基。**
 
-### 2. `/healthz` 必須真的檢查 DB
-- **三方點名**：工程師 #5、架構師 #4、測試 #6
-- **問題**：`main.go:261` 無條件回 200。DB 掛掉時，quota 檢查全部 fail-open（見 #4）、auth 壞掉，但
-  load balancer 仍把流量導向這個壞掉的 instance。**一個永不失敗的 liveness probe 比沒有還糟。**
-- **做法**：帶短逾時的 `conn.PingContext`；另可加 `/readyz` 區分 liveness 與 readiness。
-- **成本**：約 2 小時。**今天就能做。**
+### 2. ~~`/healthz` 必須真的檢查 DB~~
+已移至 `docs/audit-stability.md` 持續追蹤（原始描述見該檔案）。
 
-### 3. 斷線時取消進行中的推論
-- **三方點名**：工程師 #2、測試 #4（disconnect-mid-dispatch）、架構師（#10 相關）
-- **問題**：`handler.go:162` 把 HTTP request context 交給 `NewSession`，但 `session.go:87` 的讀取迴圈在
-  客戶端斷線時從不取消它；`handlePrompt` 又把它直接傳給 `Complete`（`session.go:255`）。因為 `Complete`
-  持有全平台唯一的 `s.mu`（`want.go:100`），**一個關掉的分頁會鎖住整個平台唯一的推論槽長達 90 秒**
-  （`completeTimeout`，`want.go:63`）。這是核心路徑最脆弱的一點。
-- **做法**：在 `run` 裡衍生一個可取消的 ctx，`ReadMessage` 出錯時取消它。
-- **成本**：約 0.5 天。
+### 3. ~~斷線時取消進行中的推論~~
+已移至 `docs/audit-stability.md` 持續追蹤（原始描述見該檔案）。
 
 ### 4. quota fail-open 要可觀測、可告警
 - **三方點名**：工程師 #7、架構師 #9、測試 #5
@@ -59,6 +54,8 @@
   純文字日誌（#1），這些完全隱形——**一次 DB 分區會靜默變成無上限的免費 LLM 開銷**。
 - **做法**：每次 fail-open 發一個獨立、可告警的 counter/事件；可考慮 circuit breaker。
 - **成本**：約 0.5 天（做完 #1 後大多是順手）。
+- **備註**：fail-open 本身是刻意的可用性取捨（見 `backend/internal/ws/handler.go`/`session.go` 的
+  註解），這裡談的是「讓這個已知取捨變得可觀測」，不是缺陷本身，因此保留在研究筆記而非稽核檔。
 
 ---
 
@@ -98,6 +95,9 @@
 - **架構師補充**：這個 map 是 process-local 的事實，讓後端**在架構上就無法水平擴展**——跑兩個 pod 時，
   推論落在 pod B 的 query tool 無法觸達連在 pod A 的瀏覽器。長期要移到共享匯流排（如 Redis）。
 - **成本**：TTL 約 0.5 天；水平擴展的完整解是大工程。
+- **備註**：這個 map 的 happy-path 清理（`defer inference.UnregisterAsker(s.id)`）目前存在且正常運作，
+  只有 process 中途重啟才會留下 stale entry，已記錄於 `docs/audit-functional.md` 的 A4（架構債，非執行期
+  穩定性缺陷）。
 
 ### 9. 在 admin console 呈現即時 session/錯誤狀態
 - **點名**：工程師 #8
@@ -120,10 +120,10 @@
 ## 建議執行順序
 
 **今天就做（便宜、onagent 單獨可完成、讓一切變得可見）**：
-→ #2（healthz 檢查 DB）→ #1（結構化日誌）→ #4（fail-open 可觀測）
+→ #2（healthz 檢查 DB，見 `docs/audit-stability.md`）→ #1（結構化日誌）→ #4（fail-open 可觀測）
 
 **接著（把觀測骨幹建起來，並用測試把核心釘住）**：
-→ #6（指標）→ #7（CI 關卡）→ #5（端到端測試）→ #3（斷線取消）→ #8（asker TTL）
+→ #6（指標）→ #7（CI 關卡）→ #5（端到端測試）→ #3（斷線取消，見 `docs/audit-stability.md`）→ #8（asker TTL）
 
 **依賴前面的觀測基礎**：
 → #9（admin 即時狀態）→ #10（integrity 補洞）
@@ -135,4 +135,4 @@
 ---
 
 *三方共識最強、且應最先動手的兩件事：**#1 結構化日誌**（所有觀測的地基）與 **#2 healthz 檢查 DB**
-（最便宜的真實健康訊號）。兩者都是 onagent 單獨可完成、當天可上線，且是後續所有項目的前提。*
+（最便宜的真實健康訊號，現持續追蹤於 `docs/audit-stability.md`）。*
