@@ -6,6 +6,23 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.7
+
+No breaking changes — patch release. Landing page copy only; no code,
+API, schema, or CLI behavior changed.
+
+- Rewrite the landing page's hero copy, meta/OG/Twitter descriptions, and
+  "Why onagent" feature cards (English and Traditional Chinese) to lead
+  with outcomes — "give your product AI in minutes, no LLM agent system to
+  build" — instead of implementation details (tool schema generation,
+  TypeScript codegen, per-app allowlisting). The three feature cards now
+  read as the three real pain points of self-building an agent: no LLM
+  infrastructure to build, AI that actually drives the UI, and being ready
+  to serve real customers (accounts/keys/quotas) instead of staying a
+  single-user demo.
+- Update `sitemap.xml`'s `lastmod` for `/` and `/zh-tw/` to reflect the
+  content change above.
+
 ## v0.2.6
 
 No breaking changes — patch release. Per this project's breaking-change
