@@ -4,6 +4,7 @@
 // visually via indentation.
 
 import type { ParamType, ParameterSchema } from './schema'
+import styles from './SchemaEditor.module.css'
 
 const PARAM_TYPES: ParamType[] = ['string', 'number', 'integer', 'boolean', 'array', 'object']
 
@@ -78,8 +79,8 @@ export function SchemaEditor({
   }
 
   return (
-    <div className={depth > 0 ? 'schema-nested' : undefined}>
-      <div className="schema-row">
+    <div className={depth > 0 ? styles.nested : undefined}>
+      <div className={styles.row}>
         <select value={schema.type} onChange={(e) => setType(e.target.value as ParamType)}>
           {PARAM_TYPES.map((t) => (
             <option key={t} value={t}>
@@ -98,7 +99,7 @@ export function SchemaEditor({
       </div>
 
       {schema.type === 'string' && (
-        <div className="schema-row schema-sub">
+        <div className={`${styles.row} ${styles.sub}`}>
           <label className="inline-label">
             Enum (comma-separated, optional)
             <input
@@ -116,8 +117,8 @@ export function SchemaEditor({
       )}
 
       {schema.type === 'array' && (
-        <div className="schema-sub">
-          <div className="schema-label">Items</div>
+        <div className={styles.sub}>
+          <div className={styles.label}>Items</div>
           <SchemaEditor
             schema={schema.items ?? { type: 'string' }}
             onChange={(next) => onChange({ ...schema, items: next })}
@@ -127,17 +128,17 @@ export function SchemaEditor({
       )}
 
       {schema.type === 'object' && (
-        <div className="schema-sub">
-          {propNames.length === 0 && <div className="schema-empty">No properties</div>}
+        <div className={styles.sub}>
+          {propNames.length === 0 && <div className={styles.empty}>No properties</div>}
           {propNames.map((name) => (
-            <div key={name} className="schema-property">
-              <div className="schema-row">
+            <div key={name} className={styles.property}>
+              <div className={styles.row}>
                 <input
-                  className="schema-prop-name"
+                  className={styles.propName}
                   value={name}
                   onChange={(e) => renameProperty(name, e.target.value)}
                 />
-                <label className="schema-required">
+                <label className={styles.required}>
                   <input
                     type="checkbox"
                     checked={required.has(name)}

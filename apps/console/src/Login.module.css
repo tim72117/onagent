@@ -1,0 +1,39 @@
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0;
+  color: var(--ink-dim);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--ink);
+  font-size: 13px;
+  padding: 8px;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+.google:hover {
+  background: var(--bg-hover, var(--bg-raised));
+  border-color: var(--ink-dim);
+}

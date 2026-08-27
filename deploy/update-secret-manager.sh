@@ -67,6 +67,11 @@ upsert_secret "DATABASE_URL" "Postgres DSN"
 upsert_secret "GOOGLE_API_KEY" "Google API 金鑰"
 upsert_secret "ADMIN_BOOTSTRAP_EMAIL" "admin 後台第一個帳號的 email"
 upsert_secret "ADMIN_BOOTSTRAP_PASSWORD" "admin 後台第一個帳號的密碼"
+# Google OAuth Client ID/Secret 見 Google Cloud Console > APIs & Services >
+# Credentials；GOOGLE_OAUTH_REDIRECT_URL 本身不是機密，走一般環境變數
+# （deploy-cloudrun.yml 的 --update-env-vars），不進 Secret Manager。
+upsert_secret "GOOGLE_OAUTH_CLIENT_ID" "Google OAuth Client ID"
+upsert_secret "GOOGLE_OAUTH_CLIENT_SECRET" "Google OAuth Client Secret"
 
 echo "=============================================="
 echo " 完成。"

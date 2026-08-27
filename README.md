@@ -38,7 +38,11 @@ npm run dev   # http://localhost:5174
 
 ## Configuration
 
-後端透過環境變數設定（可放在 `backend/.env`）：
+後端透過環境變數設定。複製 `backend/.env.example` 為 `backend/.env` 並填入實際值：
+
+```bash
+cp backend/.env.example backend/.env
+```
 
 | 變數 | 說明 |
 |---|---|
@@ -50,6 +54,7 @@ npm run dev   # http://localhost:5174
 | `QUOTA_ENABLED` | 設為 `false` 停用每月額度限制（自建部署適用） |
 | `AI_PROVIDER` / `AI_MODEL` | LLM 供應商與模型，未設定時使用 mock 推論 |
 | `VLLM_BASE_URL` / `GOOGLE_API_KEY` / `ANTHROPIC_API_KEY` | 對應供應商所需的連線資訊 |
+| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` / `GOOGLE_OAUTH_REDIRECT_URL` | 選用的「用 Google 登入」設定；`CLIENT_ID` 未設定時整個功能停用 |
 
 完整清單與說明：`go run ./cmd/server -h`。
 

@@ -6,6 +6,51 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## Unreleased
+
+No breaking changes — patch release. Per this project's breaking-change
+judgment (`.claude/skills/version-tagging/override.md`), Google Sign-In is
+a purely additive, opt-in capability (disabled unless
+`GOOGLE_OAUTH_CLIENT_ID` is set) and the schema change only widens an
+existing constraint; nothing an existing deployment or caller depends on
+changes shape or behavior.
+
+- Add "Sign in with Google" to the developer console, alongside the
+  existing email/password login — a standard server-side OAuth 2.0
+  authorization-code flow (`backend/internal/googleauth`), not the
+  JS-SDK/One-Tap popup flow, so it fits the console's existing
+  cookie-session model with zero new frontend dependencies. Signing in
+  with a Google account whose email matches an existing email/password
+  account links the two (same user, both login methods work afterward)
+  rather than creating a duplicate account; a brand-new Google sign-in
+  creates a passwordless account. Requires `GOOGLE_OAUTH_CLIENT_ID` /
+  `GOOGLE_OAUTH_CLIENT_SECRET` / `GOOGLE_OAUTH_REDIRECT_URL` — unset by
+  default, so existing deployments are unaffected until an operator
+  opts in (see the new `backend/.env.example` and the updated
+  `deploy/update-secret-manager.sh` / `deploy-cloudrun.yml`).
+- Widen `users.password_hash` to nullable and add a new `identities`
+  table (`(provider, provider_user_id)`, unique-indexed) to back the
+  account-linking above — both additive, idempotent schema changes
+  (`ALTER COLUMN ... DROP NOT NULL`, `CREATE TABLE IF NOT EXISTS`); no
+  existing row or query is affected.
+- Add `backend/.env.example` documenting every environment variable
+  `cmd/server -h` accepts, so a new contributor's `.env` doesn't
+  silently miss one (README now points to it instead of a bare env-var
+  table).
+- Split `apps/console/src/{Login,SchemaEditor}.module.css` out of the
+  single global `style.css` into per-component CSS Modules — the first
+  steps of an incremental migration off one shared stylesheet; no visual
+  change.
+- Reorganize `docs/` into `audit-*` (security/functional/stability,
+  undated, continuously updated), `research-*`, and `refactor-*` (dated,
+  one-shot snapshots), codified in a new `.claude/skills/doc-file-format`.
+  Splits the old mixed `project-audit.md` into `audit-security.md` and
+  `audit-functional.md`, pulls the real stability/concurrency findings out
+  of the old stability-triage doc into a new `audit-stability.md`, folds
+  `project-health-review-2026-07-22.md`'s still-relevant findings into the
+  audit files and removes it, and renames the remaining research/refactor
+  docs with their original dates.
+
 ## v0.2.7
 
 No breaking changes — patch release. Landing page copy only; no code,

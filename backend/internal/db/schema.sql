@@ -12,14 +12,44 @@
 CREATE TABLE IF NOT EXISTS users (
     id            BIGSERIAL PRIMARY KEY,
     email         TEXT NOT NULL,
-    password_hash TEXT NOT NULL, -- bcrypt
+    password_hash TEXT, -- bcrypt; NULL for an account that has never set a password (OAuth-only, e.g. Google)
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- password_hash was NOT NULL in the table's first version (every account
+-- was email/password). Google sign-in can create an account with no
+-- password at all, so this relaxes the constraint for databases created
+-- under the old definition. Idempotent: DROP NOT NULL is a no-op if the
+-- column is already nullable.
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 
 -- Case-insensitive uniqueness: "Dev@Example.com" and "dev@example.com" must
 -- collide at signup, not create two accounts that can never both log in
 -- with the "same" address a human would type.
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_idx ON users (lower(email));
+
+-- One row per (provider, external account) a user has linked — kept
+-- separate from `users` rather than a users.google_id column so adding a
+-- second provider (GitHub, Apple, ...) later needs no users schema change,
+-- and one user can link more than one provider. provider_email is stored
+-- for display/debugging only; the actual identity match is always
+-- (provider, provider_user_id), never email — an OAuth provider's email can
+-- change, but its subject id doesn't.
+CREATE TABLE IF NOT EXISTS identities (
+    id                BIGSERIAL PRIMARY KEY,
+    user_id           BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    provider          TEXT NOT NULL,   -- 'google' today; room for more without a schema change
+    provider_user_id  TEXT NOT NULL,   -- the provider's stable subject id (Google's `sub` claim)
+    provider_email    TEXT,            -- provider's email at link time, display-only
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS identities_user_id_idx ON identities (user_id);
+
+-- The lookup Verify does on every OAuth callback, and what stops one
+-- provider account from ever linking to two different users.
+CREATE UNIQUE INDEX IF NOT EXISTS identities_provider_provider_user_id_idx
+    ON identities (provider, provider_user_id);
 
 CREATE TABLE IF NOT EXISTS sessions (
     id         TEXT PRIMARY KEY, -- opaque random token; also the cookie value

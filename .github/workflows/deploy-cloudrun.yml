@@ -92,8 +92,8 @@ jobs:
           gcloud run deploy ${{ env.CLOUD_RUN_SERVICE }} \
             --image=${{ env.IMAGE }}:${{ env.DEPLOY_TAG }} \
             --region=${{ env.CLOUD_RUN_REGION }} \
-            --update-env-vars=APP_ENV=production,COOKIE_SECURE=true,AI_PROVIDER=googleapis,AI_MODEL=gemini-2.5-flash-lite,ALLOWED_ORIGIN=https://onagent.shuttle.tools,APP_ORIGINS=https://agent.shuttle.tools \
-            --update-secrets=DATABASE_URL=DATABASE_URL:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest,ADMIN_BOOTSTRAP_EMAIL=ADMIN_BOOTSTRAP_EMAIL:latest,ADMIN_BOOTSTRAP_PASSWORD=ADMIN_BOOTSTRAP_PASSWORD:latest \
+            --update-env-vars=APP_ENV=production,COOKIE_SECURE=true,AI_PROVIDER=googleapis,AI_MODEL=gemini-2.5-flash-lite,ALLOWED_ORIGIN=https://onagent.shuttle.tools,APP_ORIGINS=https://agent.shuttle.tools,GOOGLE_OAUTH_REDIRECT_URL=https://onagent.shuttle.tools/auth/google/callback \
+            --update-secrets=DATABASE_URL=DATABASE_URL:latest,GOOGLE_API_KEY=GOOGLE_API_KEY:latest,ADMIN_BOOTSTRAP_EMAIL=ADMIN_BOOTSTRAP_EMAIL:latest,ADMIN_BOOTSTRAP_PASSWORD=ADMIN_BOOTSTRAP_PASSWORD:latest,GOOGLE_OAUTH_CLIENT_ID=GOOGLE_OAUTH_CLIENT_ID:latest,GOOGLE_OAUTH_CLIENT_SECRET=GOOGLE_OAUTH_CLIENT_SECRET:latest \
             --quiet
 
       - name: Show Cloud Run URL

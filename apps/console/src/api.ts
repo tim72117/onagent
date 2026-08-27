@@ -99,6 +99,18 @@ async function request(method: string, path: string, body?: unknown): Promise<Re
 const id = encodeURIComponent
 
 export const api = {
+  // Unauthenticated by design (see backend/internal/googleauth's Register
+  // doc comment) — this is how the Login page, running before anyone is
+  // signed in, learns whether to render a "Sign in with Google" button. A
+  // deployment that never set GOOGLE_OAUTH_CLIENT_ID has no /auth/config
+  // route at all, so this 404s; getAuthConfig treats that the same as
+  // { googleSignIn: false } rather than surfacing it as an error the user
+  // would see on the login screen.
+  getAuthConfig: (): Promise<{ googleSignIn: boolean }> =>
+    request('GET', '/auth/config')
+      .then((r) => r.json())
+      .catch(() => ({ googleSignIn: false })),
+
   register: (email: string, password: string): Promise<CurrentUser> =>
     request('POST', '/auth/register', { email, password }).then((r) => r.json()),
 

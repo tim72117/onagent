@@ -41,6 +41,16 @@ var ErrInvalidCredentials = errors.New("invalid email or password")
 // (case-insensitively — see the schema's users_email_lower_idx).
 var ErrEmailTaken = errors.New("an account with this email already exists")
 
+// ErrInvalidEmail is returned by Register and LoginOrCreateWithGoogle when
+// the email fails emailRE's format check — a sentinel (not a bare
+// fmt.Errorf) so callers can distinguish "malformed input" from other
+// failure modes with errors.Is, the same reason ErrEmailTaken/
+// ErrInvalidCredentials are sentinels above. LoginOrCreateWithGoogle's
+// callers in particular need this: an ID token whose email claim somehow
+// fails this check is a different failure (log and treat as a Google-side
+// anomaly) than a database error.
+var ErrInvalidEmail = errors.New("invalid email address")
+
 // User is the caller-facing shape of an authenticated account. Never
 // includes the password hash.
 type User struct {
@@ -51,13 +61,28 @@ type User struct {
 // userRow/sessionRow/subscriptionRow are the GORM-mapped shapes of their
 // respective tables (see internal/db/schema.sql for the authoritative
 // column definitions — schema management stays there, not AutoMigrate).
+//
+// PasswordHash is a pointer because it's nullable: an account created via
+// Google sign-in has no password until (if ever) the user sets one.
 type userRow struct {
-	ID           int64  `gorm:"column:id;primaryKey"`
-	Email        string `gorm:"column:email"`
-	PasswordHash string `gorm:"column:password_hash"`
+	ID           int64   `gorm:"column:id;primaryKey"`
+	Email        string  `gorm:"column:email"`
+	PasswordHash *string `gorm:"column:password_hash"`
 }
 
 func (userRow) TableName() string { return "users" }
+
+// identityRow is the GORM-mapped shape of one linked OAuth account (see
+// internal/db/schema.sql's `identities` table).
+type identityRow struct {
+	ID             int64  `gorm:"column:id;primaryKey"`
+	UserID         int64  `gorm:"column:user_id"`
+	Provider       string `gorm:"column:provider"`
+	ProviderUserID string `gorm:"column:provider_user_id"`
+	ProviderEmail  string `gorm:"column:provider_email"`
+}
+
+func (identityRow) TableName() string { return "identities" }
 
 type sessionRow struct {
 	ID        string    `gorm:"column:id;primaryKey"`
@@ -73,7 +98,6 @@ type subscriptionRow struct {
 }
 
 func (subscriptionRow) TableName() string { return "subscriptions" }
-
 
 // Store implements registration, login, and session verification against
 // the users/sessions tables (internal/db/schema.sql).
@@ -95,7 +119,7 @@ func New(db *gorm.DB, secure bool) *Store {
 func (s *Store) Register(email, password string) (*User, error) {
 	email = strings.TrimSpace(email)
 	if !emailRE.MatchString(email) {
-		return nil, fmt.Errorf("invalid email address")
+		return nil, ErrInvalidEmail
 	}
 	if len(password) < 8 {
 		return nil, fmt.Errorf("password must be at least 8 characters")
@@ -112,9 +136,10 @@ func (s *Store) Register(email, password string) (*User, error) {
 	// tier), but writing it here keeps subscriptions 1:1 with users on the
 	// happy path and gives billing a row to later UPDATE in place. All-or-
 	// nothing avoids a half-created account if the second insert fails.
+	hashStr := string(hash)
 	var id int64
 	err = s.db.Transaction(func(tx *gorm.DB) error {
-		u := userRow{Email: email, PasswordHash: string(hash)}
+		u := userRow{Email: email, PasswordHash: &hashStr}
 		if err := tx.Create(&u).Error; err != nil {
 			// internal/db.Open configures GORM's postgres driver to reuse
 			// the *sql.DB opened via lib/pq (see that file's comment), so
@@ -154,7 +179,8 @@ func (s *Store) Register(email, password string) (*User, error) {
 
 // Login verifies email/password and returns the matching user.
 // ErrInvalidCredentials covers both a nonexistent email and a wrong
-// password — see that error's doc comment for why.
+// password (and an OAuth-only account with no password at all) — see that
+// error's doc comment for why these aren't distinguished in the response.
 func (s *Store) Login(email, password string) (*User, error) {
 	var row userRow
 	err := s.db.Where("lower(email) = lower(?)", email).First(&row).Error
@@ -165,11 +191,98 @@ func (s *Store) Login(email, password string) (*User, error) {
 		return nil, fmt.Errorf("session: query user: %w", err)
 	}
 
-	if bcrypt.CompareHashAndPassword([]byte(row.PasswordHash), []byte(password)) != nil {
+	if row.PasswordHash == nil {
+		return nil, ErrInvalidCredentials
+	}
+	if bcrypt.CompareHashAndPassword([]byte(*row.PasswordHash), []byte(password)) != nil {
 		return nil, ErrInvalidCredentials
 	}
 
 	return &User{ID: row.ID, Email: email}, nil
+}
+
+// LoginOrCreateWithGoogle resolves a Google sign-in to a user account:
+//
+//  1. If this Google account (identified by its stable subject id, not its
+//     email — see identityRow's doc comment) has been linked before,
+//     return the user it's linked to.
+//  2. Otherwise, if an account already exists with this Google account's
+//     email (an email/password signup, or a different provider), link this
+//     Google identity to that existing account and return it. Google has
+//     already verified the email belongs to whoever is signing in, so this
+//     link is safe without an extra confirmation step.
+//  3. Otherwise, create a brand-new account with no password (PasswordHash
+//     stays NULL — this user can only sign in via Google until/unless they
+//     set one) and link the Google identity to it.
+//
+// googleID is Google's `sub` claim (see internal/googleauth) — the durable
+// identifier this whole lookup keys on. email is used only for step 2's
+// existing-account match and to populate a freshly created account's email
+// column.
+func (s *Store) LoginOrCreateWithGoogle(googleID, email string) (*User, error) {
+	email = strings.TrimSpace(email)
+	if googleID == "" {
+		return nil, fmt.Errorf("session: empty google subject id")
+	}
+	if !emailRE.MatchString(email) {
+		return nil, ErrInvalidEmail
+	}
+
+	var user User
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		// Step 1: already linked — the common case for a returning user.
+		var identity identityRow
+		err := tx.Where("provider = ? AND provider_user_id = ?", "google", googleID).First(&identity).Error
+		if err == nil {
+			var row userRow
+			if err := tx.Where("id = ?", identity.UserID).First(&row).Error; err != nil {
+				return fmt.Errorf("session: load linked user: %w", err)
+			}
+			user = User{ID: row.ID, Email: row.Email}
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("session: query identity: %w", err)
+		}
+
+		// Step 2: not linked yet — does an account with this email already
+		// exist (email/password signup, or linked via a different
+		// provider)? If so, attach this Google identity to it rather than
+		// creating a duplicate account for the same person.
+		var existing userRow
+		err = tx.Where("lower(email) = lower(?)", email).First(&existing).Error
+		if err == nil {
+			if err := tx.Create(&identityRow{UserID: existing.ID, Provider: "google", ProviderUserID: googleID, ProviderEmail: email}).Error; err != nil {
+				return fmt.Errorf("session: link google identity: %w", err)
+			}
+			user = User{ID: existing.ID, Email: existing.Email}
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("session: query user by email: %w", err)
+		}
+
+		// Step 3: brand-new account, no password.
+		u := userRow{Email: email, PasswordHash: nil}
+		if err := tx.Create(&u).Error; err != nil {
+			return fmt.Errorf("session: insert user: %w", err)
+		}
+		if err := tx.Create(&identityRow{UserID: u.ID, Provider: "google", ProviderUserID: googleID, ProviderEmail: email}).Error; err != nil {
+			return fmt.Errorf("session: link google identity: %w", err)
+		}
+		// Same reasoning as Register: start every new account on the
+		// default tier so quota has a row to read/UPDATE from day one.
+		if err := tx.Create(&subscriptionRow{UserID: u.ID, Tier: string(quota.DefaultTier)}).Error; err != nil {
+			return fmt.Errorf("session: insert subscription: %w", err)
+		}
+		user = User{ID: u.ID, Email: email}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
 }
 
 // CreateSession mints a new session for userID and sets its cookie on w.

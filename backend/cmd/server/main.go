@@ -21,6 +21,7 @@ import (
 	"github.com/tim72117/onagent/internal/codegen"
 	"github.com/tim72117/onagent/internal/console"
 	"github.com/tim72117/onagent/internal/db"
+	"github.com/tim72117/onagent/internal/googleauth"
 	"github.com/tim72117/onagent/internal/inference"
 	"github.com/tim72117/onagent/internal/quota"
 	"github.com/tim72117/onagent/internal/session"
@@ -75,6 +76,20 @@ Configured entirely via environment variables (optionally loaded from a
                           through to want (want's own provider=mock, not
                           this package's inference.MockService).
   WANT_WORKSPACE          Workspace path for the want registry (default "").
+  GOOGLE_OAUTH_CLIENT_ID  Google OAuth 2.0 Client ID (Web application type),
+                          from Google Cloud Console > APIs & Services >
+                          Credentials. Unset disables "Sign in with Google"
+                          entirely — /auth/google/start 404s, and the
+                          console simply doesn't show the button.
+  GOOGLE_OAUTH_CLIENT_SECRET
+                          Client secret paired with the above.
+  GOOGLE_OAUTH_REDIRECT_URL
+                          This backend's own callback URL, exactly as
+                          registered on the OAuth client's "Authorized
+                          redirect URIs" (e.g.
+                          "https://api.onagent.example/auth/google/callback").
+                          Defaults to "http://localhost:8080/auth/google/callback"
+                          outside production.
 `
 
 func main() {
@@ -238,6 +253,41 @@ func main() {
 		os.Exit(1)
 	}
 
+	// "Sign in with Google" is opt-in: unset GOOGLE_OAUTH_CLIENT_ID simply
+	// means the feature doesn't exist for this deployment (self-hosters
+	// have no reason to set up a Google OAuth client just to run the
+	// email/password flow that already works without it). A client secret
+	// or redirect URL without an ID is treated as a misconfiguration worth
+	// failing loudly on, rather than silently ignoring — the same
+	// principle as ALLOWED_ORIGIN's fail-fast above, applied to a smaller
+	// blast radius (this one feature, not the whole server).
+	googleClientID := os.Getenv("GOOGLE_OAUTH_CLIENT_ID")
+	var googleAuthHandler *googleauth.Handler
+	if googleClientID != "" {
+		googleClientSecret := os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET")
+		if googleClientSecret == "" {
+			log.Error("GOOGLE_OAUTH_CLIENT_ID is set but GOOGLE_OAUTH_CLIENT_SECRET is not")
+			os.Exit(1)
+		}
+		googleRedirectURL := envOr("GOOGLE_OAUTH_REDIRECT_URL", "http://localhost:8080/auth/google/callback")
+		if isProd && os.Getenv("GOOGLE_OAUTH_REDIRECT_URL") == "" {
+			log.Error("APP_ENV=production but GOOGLE_OAUTH_REDIRECT_URL is not set")
+			os.Exit(1)
+		}
+		// Success/failure both land back on the console's own origin — the
+		// first ALLOWED_ORIGIN entry, same origin the console SPA is served
+		// from. siteOrigins is guaranteed non-empty by the fail-fast above
+		// (prod) or the localhost:5173 fallback (dev). FailureRedirect is
+		// deliberately a bare URL with no query string — see its doc
+		// comment on Handler for why appending one here would break
+		// callback's own "?error=<reason>" append.
+		consoleOrigin := siteOrigins[0]
+		googleAuthHandler = googleauth.New(googleClientID, googleClientSecret, googleRedirectURL, sessionStore, cookieSecure, consoleOrigin+"/", consoleOrigin+"/")
+		log.Info("Google sign-in enabled")
+	} else {
+		log.Info("GOOGLE_OAUTH_CLIENT_ID not set: Google sign-in disabled")
+	}
+
 	inferSvc := newInferenceService(log, apps, database)
 	wsHandler := ws.NewHandler(apps, inferSvc, log, originChecker, wsAuth, quotaSvc)
 	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore, inferSvc, quotaSvc, siteOrigins)
@@ -251,8 +301,25 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 
-	adminHandler := adminconsole.NewHandler(adminAuthStore, quotaSvc, database)
-	mountCredentialedRoutes(mux, consoleHandler, adminHandler, allowlistChecker(siteOrigins))
+	// Mounted directly on mux, not behind corsMiddleware like /console,
+	// /auth/register|login|logout, and /auth/config (see
+	// mountCredentialedRoutes below): these two routes are plain top-level
+	// browser navigations (redirect to Google, redirect back), never
+	// called via fetch() from the console SPA, so there is no
+	// preflight/credentialed-CORS concern to satisfy — and CORS headers on
+	// a redirect response would be meaningless anyway (the browser is
+	// navigating, not reading a cross-origin response body).
+	if googleAuthHandler != nil {
+		googleAuthHandler.RegisterRedirects(mux)
+	}
+
+	// The admin back-office's account/plan listing is not quota
+	// *enforcement* — it must keep working even when QUOTA_ENABLED=false
+	// (self-hosters still want to see who has an account). So it gets its
+	// own always-constructed Service backed by the same database, instead
+	// of the possibly-nil quotaSvc used for /ws and /console enforcement.
+	adminHandler := adminconsole.NewHandler(adminAuthStore, quota.New(database), database)
+	mountCredentialedRoutes(mux, consoleHandler, adminHandler, allowlistChecker(siteOrigins), googleAuthHandler)
 
 	// Static frontend hosting (apps/landing at "/", apps/console at "/app"
 	// with SPA fallback) — registered last, after every API route above,
@@ -342,11 +409,21 @@ type routeRegistrar interface {
 // the same literal pattern is registered twice, so this must stay strictly
 // more specific than "/admin/" — mirroring adminconsole.Handler.Register's
 // own routes, which are all already under /admin/api/*.
-func mountCredentialedRoutes(mux *http.ServeMux, console, admin routeRegistrar, siteOrigins ws.OriginChecker) {
+//
+// googleAuth is nil when GOOGLE_OAUTH_CLIENT_ID was never set (Google
+// sign-in disabled for this deployment); when non-nil, only its
+// RegisterConfig (GET /auth/config) goes on this CORS-protected consoleMux
+// — its RegisterRedirects (the actual /auth/google/start|callback
+// navigations) are mounted separately, directly on mux, by main() itself,
+// since those must NOT sit behind credentialed CORS (see that call site).
+func mountCredentialedRoutes(mux *http.ServeMux, console, admin routeRegistrar, siteOrigins ws.OriginChecker, googleAuth *googleauth.Handler) {
 	siteCORS := corsMiddleware(siteOrigins)
 
 	consoleMux := http.NewServeMux()
 	console.Register(consoleMux)
+	if googleAuth != nil {
+		googleAuth.RegisterConfig(consoleMux)
+	}
 	mux.Handle("/console/", siteCORS(consoleMux))
 	mux.Handle("/auth/", siteCORS(consoleMux))
 

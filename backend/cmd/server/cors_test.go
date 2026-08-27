@@ -117,10 +117,13 @@ func TestMountCredentialedRoutes_WiresEachPrefixToTheSameAllowlist(t *testing.T)
 	// twice) — this app must register a mux we also mount at a distinct
 	// prefix, so an /admin/-mounted fake would silently hide that bug.
 	mux := http.NewServeMux()
+	// nil googleAuth exercises the (common, real) GOOGLE_OAUTH_CLIENT_ID-unset
+	// deployment state — see mountCredentialedRoutes's doc comment.
 	mountCredentialedRoutes(mux,
 		fakeRegistrar{patterns: []string{"/console/ping", "/auth/ping"}},
 		fakeRegistrar{patterns: []string{"/admin/api/ping"}},
 		allowlistChecker([]string{siteOrigin}),
+		nil,
 	)
 
 	cases := []struct {
@@ -175,6 +178,7 @@ func TestFullMuxAssembly_DoesNotPanic(t *testing.T) {
 		fakeRegistrar{patterns: []string{"/console/ping", "/auth/ping"}},
 		fakeRegistrar{patterns: []string{"/admin/api/ping"}},
 		allowlistChecker([]string{"https://onagent.shuttle.tools"}),
+		nil,
 	)
 
 	defer func() {
