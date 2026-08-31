@@ -50,6 +50,18 @@ changes shape or behavior.
   `project-health-review-2026-07-22.md`'s still-relevant findings into the
   audit files and removes it, and renames the remaining research/refactor
   docs with their original dates.
+- Add Google Ads conversion tracking for new console registrations —
+  fires a GA4 `sign_up` event and a Google Ads conversion event exactly
+  once per genuine new account (not on every login), from both signup
+  paths: email/password (`Login.tsx`) and Google sign-in, the latter
+  needing `LoginOrCreateWithGoogle` (`internal/session`, `internal/*`-only)
+  to additionally return whether it just created a new account, so
+  `internal/googleauth`'s callback can append `?new=1` to its success
+  redirect — the only signal available once the browser lands back on
+  the console with a session cookie already set.
+- Exclude `marketing/` (an independent git repo, pushed separately to
+  `github.com/tim72117/marketing`, nested in this checkout for
+  convenience) from this repo's own tracking.
 
 ## v0.2.7
 
