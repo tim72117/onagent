@@ -51,13 +51,8 @@ dist/
 # Personal/machine-specific, not meant to be shared or committed.
 /backend/configs/
 
-# Personal Facebook Page management scripts — unrelated to the onagent
-# product, happens to live in this checkout, never meant to enter this
-# repo's version control.
-/fb-page-tools/
-
-# marketing/ is its own independent git repo (pushed to
-# github.com/tim72117/marketing), nested inside this checkout — not part of
-# this repo's history, and its own .git/ must never get swept up by a
-# broad `git add`.
+# Standalone marketing-assets repo (its own remote:
+# github.com/tim72117/marketing), nested inside this checkout for
+# convenience. Has its own git history — never meant to be tracked as
+# part of the onagent repo itself.
 /marketing/

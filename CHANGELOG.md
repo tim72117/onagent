@@ -62,6 +62,11 @@ changes shape or behavior.
 - Exclude `marketing/` (an independent git repo, pushed separately to
   `github.com/tim72117/marketing`, nested in this checkout for
   convenience) from this repo's own tracking.
+- Add the same Google tag (`gtag.js`, `AW-18416841975` / `G-MP4CK0P8JF`)
+  used by `apps/console` to all four `apps/landing` entry points (`/`,
+  `/docs/`, `/pricing/`, `/zh-tw/`) — page views on the marketing site
+  itself were previously untracked; only the console (post-registration)
+  was recording anything.
 
 ## v0.2.7
 
