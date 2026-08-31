@@ -219,17 +219,23 @@ func (s *Store) Login(email, password string) (*User, error) {
 // identifier this whole lookup keys on. email is used only for step 2's
 // existing-account match and to populate a freshly created account's email
 // column.
-func (s *Store) LoginOrCreateWithGoogle(googleID, email string) (*User, error) {
+// LoginOrCreateWithGoogle returns the resolved user and whether this call
+// created a brand-new account (step 3 below) — the only signal by which a
+// caller (see internal/googleauth's callback) can tell a first-time signup
+// apart from a returning user's login, e.g. to fire an ads conversion event
+// only once per real registration.
+func (s *Store) LoginOrCreateWithGoogle(googleID, email string) (user *User, created bool, err error) {
 	email = strings.TrimSpace(email)
 	if googleID == "" {
-		return nil, fmt.Errorf("session: empty google subject id")
+		return nil, false, fmt.Errorf("session: empty google subject id")
 	}
 	if !emailRE.MatchString(email) {
-		return nil, ErrInvalidEmail
+		return nil, false, ErrInvalidEmail
 	}
 
-	var user User
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	var result User
+	var isNew bool
+	txErr := s.db.Transaction(func(tx *gorm.DB) error {
 		// Step 1: already linked — the common case for a returning user.
 		var identity identityRow
 		err := tx.Where("provider = ? AND provider_user_id = ?", "google", googleID).First(&identity).Error
@@ -238,7 +244,7 @@ func (s *Store) LoginOrCreateWithGoogle(googleID, email string) (*User, error) {
 			if err := tx.Where("id = ?", identity.UserID).First(&row).Error; err != nil {
 				return fmt.Errorf("session: load linked user: %w", err)
 			}
-			user = User{ID: row.ID, Email: row.Email}
+			result = User{ID: row.ID, Email: row.Email}
 			return nil
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -255,7 +261,7 @@ func (s *Store) LoginOrCreateWithGoogle(googleID, email string) (*User, error) {
 			if err := tx.Create(&identityRow{UserID: existing.ID, Provider: "google", ProviderUserID: googleID, ProviderEmail: email}).Error; err != nil {
 				return fmt.Errorf("session: link google identity: %w", err)
 			}
-			user = User{ID: existing.ID, Email: existing.Email}
+			result = User{ID: existing.ID, Email: existing.Email}
 			return nil
 		}
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -275,14 +281,15 @@ func (s *Store) LoginOrCreateWithGoogle(googleID, email string) (*User, error) {
 		if err := tx.Create(&subscriptionRow{UserID: u.ID, Tier: string(quota.DefaultTier)}).Error; err != nil {
 			return fmt.Errorf("session: insert subscription: %w", err)
 		}
-		user = User{ID: u.ID, Email: email}
+		result = User{ID: u.ID, Email: email}
+		isNew = true
 		return nil
 	})
-	if err != nil {
-		return nil, err
+	if txErr != nil {
+		return nil, false, txErr
 	}
 
-	return &user, nil
+	return &result, isNew, nil
 }
 
 // CreateSession mints a new session for userID and sets its cookie on w.

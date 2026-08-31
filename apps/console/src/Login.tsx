@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError, BASE } from './api'
 import type { CurrentUser } from './api'
 import { offerToSavePassword } from './credentials'
+import { fireRegistrationConversion } from './analytics'
 import styles from './Login.module.css'
 
 type Mode = 'login' | 'register'
@@ -84,6 +85,10 @@ export function Login({
       // Fire-and-forget: onSuccess should proceed immediately either way,
       // this is a best-effort nudge to the browser's password manager.
       void offerToSavePassword(email, password)
+      // api.register only ever resolves on a genuine new account — an
+      // email already in use is a thrown ApiError (409), caught below —
+      // so this is unambiguously "a new registration just happened."
+      if (mode === 'register') fireRegistrationConversion()
       onSuccess(user)
     } catch (err) {
       if (err instanceof ApiError) {

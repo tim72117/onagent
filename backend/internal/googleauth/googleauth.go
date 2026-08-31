@@ -226,7 +226,7 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.Session.LoginOrCreateWithGoogle(googleID, email)
+	user, created, err := h.Session.LoginOrCreateWithGoogle(googleID, email)
 	if err != nil {
 		// ErrInvalidEmail specifically means the ID token's own email claim
 		// failed our format check — a Google-side anomaly, not a database
@@ -246,7 +246,16 @@ func (h *Handler) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, h.SuccessRedirect, http.StatusFound)
+	// created mirrors the fail path's own "?error=" query param — the only
+	// way the console SPA (which never sees this handler directly, only its
+	// redirect outcome) can tell a first-time signup apart from a returning
+	// user's login, e.g. to fire an ads conversion event exactly once per
+	// real registration instead of on every Google sign-in.
+	redirect := h.SuccessRedirect
+	if created {
+		redirect += "?new=1"
+	}
+	http.Redirect(w, r, redirect, http.StatusFound)
 }
 
 func randomState() (string, error) {

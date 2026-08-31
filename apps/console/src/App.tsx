@@ -4,6 +4,7 @@ import { DEFAULT_THOUGHT, emptyTool } from './schema'
 import { api, ApiError } from './api'
 import type { AppSummary, CurrentUser, IssuedKey, Quota } from './api'
 import { Login } from './Login'
+import { fireRegistrationConversion } from './analytics'
 import { KeyModal } from './KeyModal'
 import { AddAppModal } from './AddAppModal'
 import { Sidebar } from './Sidebar'
@@ -123,6 +124,25 @@ export default function App() {
         setAuthState('authenticated')
       })
       .catch(() => setAuthState('anonymous'))
+  }, [])
+
+  // Google's success redirect carries ?new=1 only when
+  // backend/internal/googleauth's callback just created a brand-new
+  // account via LoginOrCreateWithGoogle — the only signal distinguishing a
+  // first-time Google signup from a returning user's login. Handled here,
+  // not in Login.tsx: that redirect always lands with a session cookie
+  // already set, so the api.me() check above resolves straight to
+  // 'authenticated' and Login.tsx never renders for this case at all. Same
+  // one-shot-then-strip pattern as Login.tsx's own ?error= handling, for
+  // the same reason — a page refresh must not re-fire this.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('new') === '1') {
+      fireRegistrationConversion()
+      params.delete('new')
+      const rest = params.toString()
+      window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''))
+    }
   }, [])
 
   useEffect(() => {
