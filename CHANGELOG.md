@@ -6,6 +6,21 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.10
+
+No breaking changes — patch release. Purely additive `<script>` tags on
+static HTML entry points; no existing behavior changes.
+
+- Add the same Google tag (`gtag.js`, `AW-18416841975` / `G-MP4CK0P8JF`)
+  used by `apps/console` to all four `apps/landing` entry points (`/`,
+  `/docs/`, `/pricing/`, `/zh-tw/`) — page views on the marketing site
+  itself were previously untracked; only the console (post-registration)
+  was recording anything.
+- Resolve a stash-pop conflict in `.gitignore` left over from a prior
+  session (both sides excluded `marketing/`; kept the version without
+  the now-stale `/fb-page-tools/` rule, since `fb-page-tools` moved
+  under `marketing/` already).
+
 ## v0.2.9
 
 No breaking changes — patch release. Per this project's breaking-change
@@ -62,11 +77,6 @@ changes shape or behavior.
 - Exclude `marketing/` (an independent git repo, pushed separately to
   `github.com/tim72117/marketing`, nested in this checkout for
   convenience) from this repo's own tracking.
-- Add the same Google tag (`gtag.js`, `AW-18416841975` / `G-MP4CK0P8JF`)
-  used by `apps/console` to all four `apps/landing` entry points (`/`,
-  `/docs/`, `/pricing/`, `/zh-tw/`) — page views on the marketing site
-  itself were previously untracked; only the console (post-registration)
-  was recording anything.
 
 ## v0.2.7
 
