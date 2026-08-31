@@ -6,7 +6,7 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
-## Unreleased
+## v0.2.8
 
 No breaking changes — patch release. Per this project's breaking-change
 judgment (`.claude/skills/version-tagging/override.md`), Google Sign-In is
