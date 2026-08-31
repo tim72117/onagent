@@ -55,3 +55,9 @@ dist/
 # product, happens to live in this checkout, never meant to enter this
 # repo's version control.
 /fb-page-tools/
+
+# marketing/ is its own independent git repo (pushed to
+# github.com/tim72117/marketing), nested inside this checkout — not part of
+# this repo's history, and its own .git/ must never get swept up by a
+# broad `git add`.
+/marketing/
