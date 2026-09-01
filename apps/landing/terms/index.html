@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Google tag (gtag.js) — same tag as apps/console/index.html, records
+       page views on the landing site itself. -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18416841975"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'AW-18416841975');
+    gtag('config', 'G-MP4CK0P8JF');
+  </script>
+
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="canonical" href="https://onagent.shuttle.tools/terms/" />
+  <title>Terms of Service — onagent</title>
+  <meta
+    name="description"
+    content="The terms that govern your use of the onagent platform, console, CLI, and SDK."
+  />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Terms of Service — onagent" />
+  <meta
+    property="og:description"
+    content="The terms that govern your use of the onagent platform, console, CLI, and SDK."
+  />
+  <meta property="og:url" content="https://onagent.shuttle.tools/terms/" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Terms of Service — onagent" />
+  <meta
+    name="twitter:description"
+    content="The terms that govern your use of the onagent platform, console, CLI, and SDK."
+  />
+  <style>
+    :root {
+      --bg: #0d0b07;
+      --bg-2: #100d08;
+      --panel: #1a160e;
+      --border: #342d1c;
+      --border-soft: #241f13;
+      --text: #f5f1e8;
+      --text-2: #a89b82;
+      --text-3: #71664f;
+      --accent: #c9a24b;
+      --accent-2: #e0c98a;
+      --accent-soft: rgba(201, 162, 75, 0.12);
+      --grad: linear-gradient(135deg, #c9a24b 0%, #e0c98a 100%);
+      --max: 820px;
+      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent-2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { width: 100%; max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+
+    header {
+      border-bottom: 1px solid var(--border-soft);
+      background: rgba(13, 11, 7, 0.72);
+    }
+    .nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; color: var(--text); }
+    .mark {
+      display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px;
+      background: var(--grad); color: #1a1408; font-size: 16px; font-weight: 700;
+    }
+    .nav a.back { color: var(--text-2); font-size: 14px; font-weight: 500; }
+    .nav a.back:hover { color: var(--text); }
+
+    main { padding: 64px 0 96px; }
+    h1 { font-size: clamp(1.8rem, 3.2vw, 2.4rem); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 8px; }
+    .updated { color: var(--text-3); font-size: 14px; margin-bottom: 40px; }
+    h2 { font-size: 19px; font-weight: 700; margin: 40px 0 12px; letter-spacing: -0.01em; }
+    p { margin: 0 0 14px; color: var(--text-2); }
+    ul { margin: 0 0 14px; padding-left: 22px; color: var(--text-2); }
+    li { margin-bottom: 6px; }
+    strong { color: var(--text); }
+    code { font-family: var(--mono); font-size: 13.5px; color: var(--accent-2); background: var(--accent-soft); padding: 2px 6px; border-radius: 5px; }
+
+    footer { border-top: 1px solid var(--border-soft); padding: 32px 0; background: var(--bg-2); }
+    .foot-bottom { display: flex; align-items: center; justify-content: space-between; color: var(--text-3); font-size: 13px; flex-wrap: wrap; gap: 12px; }
+    .foot-bottom a { color: var(--text-3); }
+    .foot-bottom a:hover { color: var(--text-2); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="/"><span class="mark">⌘</span>onagent</a>
+      <a class="back" href="/">← Back to home</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <h1>Terms of Service</h1>
+      <p class="updated">Last updated: 2026-08-15</p>
+
+      <p>
+        These Terms of Service ("Terms") govern your access to and use of onagent's
+        console, CLI, backend API, and <code>@onagent/bridge</code> SDK (collectively,
+        the "Service"). By creating an account or otherwise using the Service, you agree
+        to these Terms.
+      </p>
+
+      <h2>The Service</h2>
+      <p>
+        onagent lets developers define tools that describe actions available on their
+        own website or product, and lets an LLM invoke those tools on behalf of an end
+        user through natural-language prompts. onagent provides the inference
+        infrastructure, developer console, CLI, and client SDK used to build and operate
+        this feature.
+      </p>
+
+      <h2>Accounts</h2>
+      <ul>
+        <li>You must provide accurate information when creating an account.</li>
+        <li>You are responsible for safeguarding your account credentials and API keys, and for all activity that occurs under your account.</li>
+        <li>You must notify us promptly if you suspect unauthorized use of your account or API key.</li>
+      </ul>
+
+      <h2>Acceptable use</h2>
+      <p>You agree not to:</p>
+      <ul>
+        <li>Use the Service to build tools or prompts that facilitate illegal activity.</li>
+        <li>Attempt to circumvent usage quotas, rate limits, or access controls.</li>
+        <li>Probe, scan, or test the vulnerability of the Service, or attempt to gain unauthorized access to it or its underlying infrastructure.</li>
+        <li>Use the Service in a way that infringes the intellectual property or privacy rights of others.</li>
+        <li>Resell or offer the Service as a hosted/managed service to third parties, except as expressly permitted under onagent's license terms (see <code>LICENSE</code> in the source repository).</li>
+      </ul>
+
+      <h2>Plans and usage limits</h2>
+      <p>
+        onagent's Free plan and any paid plans are described on our
+        <a href="/pricing/">Pricing</a> page. We may enforce usage quotas (for example,
+        prompts per app per billing period) and may suspend or throttle access if those
+        limits are exceeded.
+      </p>
+
+      <h2>Your content</h2>
+      <p>
+        You retain ownership of the tools, prompts, and data you submit through the
+        Service. You are responsible for ensuring you have the necessary rights to any
+        content or data you process through onagent, and for complying with applicable
+        law with respect to your own end users, including providing them with your own
+        privacy policy where required.
+      </p>
+
+      <h2>Third-party LLM providers</h2>
+      <p>
+        The Service relies on third-party LLM providers (for example Anthropic, Google)
+        to generate responses to prompts. Their availability, output quality, and terms
+        of service are outside onagent's control, and onagent is not responsible for the
+        content of any AI-generated response.
+      </p>
+
+      <h2>Disclaimers and limitation of liability</h2>
+      <p>
+        The Service is provided "as is" and "as available," without warranties of any
+        kind, express or implied. To the maximum extent permitted by law, onagent will
+        not be liable for any indirect, incidental, special, consequential, or punitive
+        damages, or any loss of data, revenue, or profits, arising out of or related to
+        your use of the Service.
+      </p>
+
+      <h2>Termination</h2>
+      <p>
+        You may stop using the Service and delete your account at any time. We may
+        suspend or terminate your access to the Service if you violate these Terms or if
+        we discontinue the Service.
+      </p>
+
+      <h2>Changes to these Terms</h2>
+      <p>
+        We may update these Terms from time to time. Material changes will be reflected
+        by updating the "Last updated" date above. Continued use of the Service after a
+        change constitutes acceptance of the updated Terms.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions about these Terms can be sent to <strong>onagent 團隊</strong> at
+        <a href="mailto:tim72117@gmail.com">tim72117@gmail.com</a>.
+      </p>
+    </div>
+  </main>
+
+  <footer>
+    <div class="wrap foot-bottom">
+      <span>© 2026 onagent</span>
+      <span><a href="/privacy/">Privacy Policy</a> · <a href="/">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>

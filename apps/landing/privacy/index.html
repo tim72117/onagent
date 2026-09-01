@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Google tag (gtag.js) — same tag as apps/console/index.html, records
+       page views on the landing site itself. -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18416841975"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'AW-18416841975');
+    gtag('config', 'G-MP4CK0P8JF');
+  </script>
+
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="canonical" href="https://onagent.shuttle.tools/privacy/" />
+  <title>Privacy Policy — onagent</title>
+  <meta
+    name="description"
+    content="How onagent collects, uses, and stores account, conversation, and usage data."
+  />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Privacy Policy — onagent" />
+  <meta
+    property="og:description"
+    content="How onagent collects, uses, and stores account, conversation, and usage data."
+  />
+  <meta property="og:url" content="https://onagent.shuttle.tools/privacy/" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Privacy Policy — onagent" />
+  <meta
+    name="twitter:description"
+    content="How onagent collects, uses, and stores account, conversation, and usage data."
+  />
+  <style>
+    :root {
+      --bg: #0d0b07;
+      --bg-2: #100d08;
+      --panel: #1a160e;
+      --border: #342d1c;
+      --border-soft: #241f13;
+      --text: #f5f1e8;
+      --text-2: #a89b82;
+      --text-3: #71664f;
+      --accent: #c9a24b;
+      --accent-2: #e0c98a;
+      --accent-soft: rgba(201, 162, 75, 0.12);
+      --grad: linear-gradient(135deg, #c9a24b 0%, #e0c98a 100%);
+      --max: 820px;
+      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent-2); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .wrap { width: 100%; max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+
+    header {
+      border-bottom: 1px solid var(--border-soft);
+      background: rgba(13, 11, 7, 0.72);
+    }
+    .nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; color: var(--text); }
+    .mark {
+      display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px;
+      background: var(--grad); color: #1a1408; font-size: 16px; font-weight: 700;
+    }
+    .nav a.back { color: var(--text-2); font-size: 14px; font-weight: 500; }
+    .nav a.back:hover { color: var(--text); }
+
+    main { padding: 64px 0 96px; }
+    h1 { font-size: clamp(1.8rem, 3.2vw, 2.4rem); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 8px; }
+    .updated { color: var(--text-3); font-size: 14px; margin-bottom: 40px; }
+    h2 { font-size: 19px; font-weight: 700; margin: 40px 0 12px; letter-spacing: -0.01em; }
+    p { margin: 0 0 14px; color: var(--text-2); }
+    ul { margin: 0 0 14px; padding-left: 22px; color: var(--text-2); }
+    li { margin-bottom: 6px; }
+    strong { color: var(--text); }
+    code { font-family: var(--mono); font-size: 13.5px; color: var(--accent-2); background: var(--accent-soft); padding: 2px 6px; border-radius: 5px; }
+
+    footer { border-top: 1px solid var(--border-soft); padding: 32px 0; background: var(--bg-2); }
+    .foot-bottom { display: flex; align-items: center; justify-content: space-between; color: var(--text-3); font-size: 13px; flex-wrap: wrap; gap: 12px; }
+    .foot-bottom a { color: var(--text-3); }
+    .foot-bottom a:hover { color: var(--text-2); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap nav">
+      <a class="brand" href="/"><span class="mark">⌘</span>onagent</a>
+      <a class="back" href="/">← Back to home</a>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <h1>Privacy Policy</h1>
+      <p class="updated">Last updated: 2026-08-15</p>
+
+      <p>
+        This policy explains what data onagent collects when you use our platform —
+        the console, the CLI, the backend API, and the <code>@onagent/bridge</code> SDK
+        embedded on a developer's website — and how that data is used and stored.
+      </p>
+
+      <h2>What we collect</h2>
+      <p>onagent collects the following categories of data:</p>
+      <ul>
+        <li>
+          <strong>Account data.</strong> When you sign up, we store your email address
+          and a bcrypt hash of your password. We never store your password in plain text.
+        </li>
+        <li>
+          <strong>Conversation and prompt content.</strong> When an end user interacts
+          with an AI-powered feature built on onagent, the prompt text and the resulting
+          conversation are sent to the configured LLM provider (for example Anthropic or
+          Google) to generate a response, and may be retained by onagent for debugging,
+          session continuity (so a conversation can resume after a server restart), and
+          service operation.
+        </li>
+        <li>
+          <strong>Usage and billing data.</strong> We record usage events (for example,
+          the number of prompts processed per app per billing period) to enforce plan
+          quotas and, where applicable, calculate billing.
+        </li>
+        <li>
+          <strong>Website analytics.</strong> Our marketing site uses Google Analytics
+          (gtag.js) to understand aggregate traffic patterns, such as which pages are
+          visited and from where.
+        </li>
+      </ul>
+
+      <h2>How we use this data</h2>
+      <ul>
+        <li>To authenticate you and maintain your session.</li>
+        <li>To process AI requests and return a response to the app that sent them.</li>
+        <li>To enforce usage quotas and, where applicable, calculate billing.</li>
+        <li>To diagnose and fix bugs in the platform.</li>
+        <li>To understand aggregate usage of our marketing site.</li>
+      </ul>
+
+      <h2>Third-party sharing</h2>
+      <p>
+        We share data with the following categories of third parties, only as necessary
+        to operate the service:
+      </p>
+      <ul>
+        <li>
+          <strong>LLM providers</strong> (for example Anthropic, Google) — to generate a
+          response to a prompt, the prompt and relevant conversation context are sent to
+          the provider configured for your app. Each provider's own privacy policy governs
+          how they handle that data.
+        </li>
+        <li>
+          <strong>Cloud infrastructure providers</strong> (for example Google Cloud) — to
+          host the database and backend services that store the data described above.
+        </li>
+        <li>
+          <strong>Google Analytics</strong> — for aggregate website traffic analysis on
+          our marketing site only.
+        </li>
+      </ul>
+      <p>We do not sell your personal data to third parties.</p>
+
+      <h2>Data retention</h2>
+      <p>
+        Account data is retained for as long as your account exists. Conversation history
+        is retained to support session continuity and debugging; usage/billing records are
+        retained as needed for billing and quota enforcement. You may request deletion of
+        your account and associated data by contacting us at the address below.
+      </p>
+
+      <h2>Your choices</h2>
+      <p>
+        You can request access to, correction of, or deletion of your account data at any
+        time by contacting us. If you are a developer embedding onagent in your own
+        product, you are responsible for informing your end users about this processing
+        in your own privacy policy.
+      </p>
+
+      <h2>Changes to this policy</h2>
+      <p>
+        We may update this policy from time to time. Material changes will be reflected
+        by updating the "Last updated" date above.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions about this policy can be sent to <strong>onagent 團隊</strong> at
+        <a href="mailto:tim72117@gmail.com">tim72117@gmail.com</a>.
+      </p>
+    </div>
+  </main>
+
+  <footer>
+    <div class="wrap foot-bottom">
+      <span>© 2026 onagent</span>
+      <span><a href="/terms/">Terms of Service</a> · <a href="/">Home</a></span>
+    </div>
+  </footer>
+</body>
+</html>

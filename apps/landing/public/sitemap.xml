@@ -29,4 +29,12 @@
     <xhtml:link rel="alternate" hreflang="en" href="https://onagent.shuttle.tools/pricing/" />
     <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://onagent.shuttle.tools/zh-tw/pricing/" />
   </url>
+  <url>
+    <loc>https://onagent.shuttle.tools/privacy/</loc>
+    <lastmod>2026-09-01</lastmod>
+  </url>
+  <url>
+    <loc>https://onagent.shuttle.tools/terms/</loc>
+    <lastmod>2026-09-01</lastmod>
+  </url>
 </urlset>

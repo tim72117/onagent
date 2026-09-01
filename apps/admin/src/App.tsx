@@ -217,6 +217,7 @@ function UsersTab({ onLoggedOut }: { onLoggedOut: () => void }) {
               <tr>
                 <th>ID</th>
                 <th>Email</th>
+                <th>Created</th>
                 <th>Plan</th>
                 <th>Usage (this period)</th>
                 <th>Change plan</th>
@@ -227,6 +228,7 @@ function UsersTab({ onLoggedOut }: { onLoggedOut: () => void }) {
                 <tr key={u.id}>
                   <td className="muted">{u.id}</td>
                   <td>{u.email}</td>
+                  <td className="muted">{new Date(u.createdAt).toLocaleString()}</td>
                   <td>
                     {u.planName}
                     {u.quotaOverride != null && <span className="badge" title="Manual per-user override">override</span>}
@@ -247,7 +249,7 @@ function UsersTab({ onLoggedOut }: { onLoggedOut: () => void }) {
               ))}
               {users.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={5} className="muted center-cell">
+                  <td colSpan={6} className="muted center-cell">
                     No users yet.
                   </td>
                 </tr>

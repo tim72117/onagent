@@ -173,6 +173,9 @@
     .future p { color: var(--text-2); font-size: 14.5px; line-height: 1.65; }
 
     footer { border-top: 1px solid var(--border-soft); padding: 28px 0; text-align: center; color: var(--text-3); font-size: 13px; }
+    .foot-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+    .foot-bottom a { color: var(--text-3); }
+    .foot-bottom a:hover { color: var(--text-2); }
 
     @media (max-width: 640px) {
       .topbar-links a:not(.lang-switch) { display: none; }
@@ -242,7 +245,10 @@
   </main>
 
   <footer>
-    <div class="wrap">© 2026 onagent</div>
+    <div class="wrap foot-bottom">
+      <span>© 2026 onagent</span>
+      <span><a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a></span>
+    </div>
   </footer>
 
   <script>
