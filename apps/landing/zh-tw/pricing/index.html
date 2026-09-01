@@ -220,7 +220,7 @@
         </div>
       </div>
 
-      <p class="foot-note">額度用完會怎樣？Session 進行中用完的話連線不會斷，只是暫時不再回應 prompt，等下個計費週期開始就恢復；但額度用完之後才**新開**的連線，會在連線當下就被擋下來。詳細的執行邏輯見 repo 裡的 <code>docs/subscription-usage-quota-design.md</code>。</p>
+      <p class="foot-note">額度用完會怎樣？Session 進行中用完的話連線不會斷，只是暫時不再回應 prompt，等下個計費週期開始就恢復；但額度用完之後才**新開**的連線，會在連線當下就被擋下來。詳細的執行邏輯見 repo 裡的 <code>backend/internal/quota</code>。</p>
 
       <div class="future">
         <h2>為什麼 Starter 寫「即將推出」？</h2>

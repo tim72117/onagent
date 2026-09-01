@@ -6,6 +6,28 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.11
+
+No breaking changes — patch release. Purely additive pages and one
+display-only admin column; no existing route, API shape, or behavior
+changes.
+
+- Add `/privacy/` and `/terms/` as real `apps/landing` build entries
+  (registered in `vite.config.ts`'s `rollupOptions.input`, matching every
+  other page in that directory), linked from every landing page's footer
+  (`/`, `/zh-tw/`, `/pricing/`, `/zh-tw/pricing/`) and listed in
+  `sitemap.xml`. Needed to satisfy Google's OAuth consent screen publish
+  flow, which requires a privacy policy and terms of service link once any
+  listed link is present, and requires their domain to be on the
+  authorized-domains allowlist.
+- Add a "Created" column to the admin console's user table
+  (`apps/admin/src/App.tsx`) — `quota.UserSummary.CreatedAt` was already
+  returned by `GET /admin/api/users`, just never rendered.
+- Fix `pricing/index.html` and `zh-tw/pricing/index.html` pointing at
+  `docs/subscription-usage-quota-design.md`, a design doc deleted in v0.2.6
+  once its "already implemented" claims were verified against the code —
+  both now point at `backend/internal/quota`, the actual implementation.
+
 ## v0.2.10
 
 No breaking changes — patch release. Purely additive `<script>` tags on
