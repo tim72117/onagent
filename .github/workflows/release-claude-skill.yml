@@ -1,0 +1,87 @@
+name: Release @onagent/claude-skill
+
+# Manual-only on purpose, same reasoning as release-bridge-sdk.yml:
+# publishing to npm is a one-way action (a version can be unpublished but
+# not reused), so this never fires automatically off a tag push. Bump
+# packages/claude-skill/package.json's version in a normal commit first,
+# then run this by hand when you're ready to publish that version.
+on:
+  workflow_dispatch: {}
+
+env:
+  # backend/go.mod's github.com/tim72117/want is a private repo — same
+  # requirement as release-onagent.yml/deploy-cloudrun.yml.
+  GOPRIVATE: "github.com/tim72117/want"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+
+      - name: Configure git for private module access
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
+
+      - name: Download Go dependencies
+        working-directory: backend
+        run: go mod download
+
+      - name: Build bundled onagent binaries
+        working-directory: backend
+        run: |
+          # Same build flags as release-onagent.yml (-trimpath -ldflags="-s -w"):
+          # strips debug symbols/DWARF info and local file paths, ~30% smaller.
+          # All five platforms are bundled as of 0.0.2 — see
+          # packages/claude-skill/README.md's "Building the bundled binary".
+          mkdir -p ../packages/claude-skill/skill/bin
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
+            -o ../packages/claude-skill/skill/bin/onagent-windows-amd64.exe ./cmd/onagent
+          GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
+            -o ../packages/claude-skill/skill/bin/onagent-darwin-amd64 ./cmd/onagent
+          GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" \
+            -o ../packages/claude-skill/skill/bin/onagent-darwin-arm64 ./cmd/onagent
+          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
+            -o ../packages/claude-skill/skill/bin/onagent-linux-amd64 ./cmd/onagent
+          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" \
+            -o ../packages/claude-skill/skill/bin/onagent-linux-arm64 ./cmd/onagent
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Check version isn't already published
+        working-directory: packages/claude-skill
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_ENV"
+          if npm view "@onagent/claude-skill@$version" version >/dev/null 2>&1; then
+            echo "::error::@onagent/claude-skill@$version is already on npm — bump package.json's version first."
+            exit 1
+          fi
+
+      - name: Publish to npm
+        working-directory: packages/claude-skill
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Show published version
+        run: |
+          echo "### 已發布" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "npx -p @onagent/claude-skill@${{ env.version }} claude-skill-onagent" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

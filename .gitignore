@@ -10,10 +10,17 @@ dist/
 /backend/onagent
 /backend/*.exe
 
-# Compiled onagent CLI binaries bundled into the Skill for zero-setup use —
-# built locally per-platform (see SKILL.md), not meant to accumulate in git
-# history as opaque, non-delta-compressible blobs every time the CLI changes.
-/.claude/skills/onagent-cli-setup/bin/
+# This skill is no longer vendored into the repo at all — it's only
+# available via the npm package below (@onagent/claude-skill,
+# `npx claude-skill-onagent`). Ignored (not just its bin/) so a local
+# install (npx ... --user is fine; a plain `npx ...` without --user writes
+# here) never gets accidentally re-tracked.
+/.claude/skills/onagent-cli-setup/
+
+# Same reasoning as above, for the experimental npm-packaged copy of the
+# skill (packages/claude-skill, published as @onagent/claude-skill) — build
+# the binary locally before testing the installer, don't commit it.
+/packages/claude-skill/skill/bin/
 
 # Backend runtime artifacts — sessions/ holds end-user conversation
 # transcripts (want's per-connection history files) and must never be

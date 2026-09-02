@@ -11,43 +11,47 @@ description: 協助使用者透過 onagent CLI 登入 onagent 平台、在 conso
 
 ### 1. 檢查/取得 onagent CLI
 
-**這個 skill 內建預先編譯好的 `onagent` 執行檔**，位於 `${CLAUDE_SKILL_DIR}/bin/`。目前只實際內建了：
+**這個 skill 內建預先編譯好的 `onagent` 執行檔**，位於 `${CLAUDE_SKILL_DIR}/bin/`。目前實際內建了：
 
 - `onagent-windows-amd64.exe`
+- `onagent-darwin-amd64`（Intel macOS）
+- `onagent-darwin-arm64`（Apple Silicon macOS）
+- `onagent-linux-amd64`
+- `onagent-linux-arm64`
 
-（原本曾一次編過 linux/darwin 共 4 個平台，之後決定先只保留 Windows；下面的平台判斷邏輯仍保留完整寫法，未來若補回其他平台的執行檔，不需要再改這段邏輯，只要把對應檔案放進 `bin/` 目錄即可生效。）
+（下面的平台判斷邏輯涵蓋所有平台組合，未來若補上更少見的組合（如 linux/386、linux/arm）的執行檔，不需要再改這段邏輯，只要把對應檔案放進 `bin/` 目錄即可生效。）
 
 `go install github.com/tim72117/onagent/cmd/onagent@latest` 現在也能用了（go.mod 的 module path 先前跟實際 repo 位置對不上導致 `go install` 失敗，這個問題已修好；`backend/` 本身就是 module root，所以路徑不含 `backend/`）。但即使如此，**優先使用上面內建的執行檔**：不需要本機裝 Go 工具鏈、不需要等編譯、也不依賴網路抓取私有相依套件。全域 PATH 上通常也不會有 `onagent` 指令，所以**不要**直接執行裸指令 `onagent`，而是要先判斷目前所在平台，再直接呼叫 `${CLAUDE_SKILL_DIR}/bin/` 底下對應的執行檔。
 
 判斷平台的方式：
 
 - **Unix-like（Linux / macOS）**：執行 `uname -sm` 取得 OS 與 CPU 架構，再對應成 `<os>-<arch>`：
-  - `Linux x86_64` → `linux-amd64`
-  - `Linux aarch64` / `Linux arm64` → `linux-arm64`
-  - `Darwin x86_64` → `darwin-amd64`
-  - `Darwin arm64` → `darwin-arm64`
-- **Windows**：直接使用 `windows-amd64`（bundled 目前只涵蓋這個組合）。
+  - `Linux x86_64` → `linux-amd64`（bundled）
+  - `Linux aarch64` / `Linux arm64` → `linux-arm64`（bundled）
+  - `Darwin x86_64` → `darwin-amd64`（bundled）
+  - `Darwin arm64` → `darwin-arm64`（bundled）
+- **Windows**：直接使用 `windows-amd64`（bundled）。
 
 判斷完成後，直接用 Bash 呼叫對應的檔案（記得先確認/賦予執行權限），例如：
 
 ```bash
-# Linux/macOS，以偵測到 linux-amd64 為例
+# Linux/macOS，以偵測到 linux-amd64 為例（bundled，實際存在）
 chmod +x "${CLAUDE_SKILL_DIR}/bin/onagent-linux-amd64"
 "${CLAUDE_SKILL_DIR}/bin/onagent-linux-amd64" list-apps
 ```
 
 ```bash
-# Windows
+# Windows（bundled，實際存在）
 "${CLAUDE_SKILL_DIR}/bin/onagent-windows-amd64.exe" list-apps
 ```
 
 不要假設 `onagent` 已經加進 PATH，每次呼叫都應該用上述判斷邏輯組出完整路徑直接執行。如果之後在同一個 session 裡要重複呼叫，可以把判斷出來的完整路徑存進一個變數重複使用，但不要省略判斷平台這一步、也不要寫死成單一平台的路徑。
 
-**判斷出來的檔案在 `bin/` 目錄下實際不存在時**（目前只有 `onagent-windows-amd64.exe` 真的存在，判斷出 Linux/macOS 的情況一定會落到這裡），改用下面的「備援方案」，不要嘗試執行一個不存在的檔案。
+**判斷出來的檔案在 `bin/` 目錄下實際不存在時**（目前 windows-amd64、darwin-amd64、darwin-arm64、linux-amd64、linux-arm64 五種組合都真的存在，只有更少見的組合如 linux/386、linux/arm 才會落到這裡），改用下面的「備援方案」，不要嘗試執行一個不存在的檔案。
 
 #### 備援方案：自行 clone + 編譯
 
-目前只內建 Windows 的執行檔，判斷出其他平台（Linux、macOS，或更少見的 linux/386、linux/arm 等）時都會落到這裡。如果本機已有 Go 工具鏈，最簡單的方式是：
+目前內建的五種平台組合以外的情況（如 linux/386、linux/arm 等較少見的組合）都會落到這裡。如果本機已有 Go 工具鏈，最簡單的方式是：
 
 ```bash
 go install github.com/tim72117/onagent/cmd/onagent@latest
@@ -219,7 +223,7 @@ onagent save-tools <appId> tools.yaml
 
 ## 完整流程總覽
 
-1. 判斷目前平台（`uname -sm` 或 Windows），呼叫 skill 內建的 `${CLAUDE_SKILL_DIR}/bin/onagent-<os>-<arch>[.exe]`；目前只實際內建 Windows，偵測到其他平台就用 `go install`（現在可以用了）或 clone repo 後 `go build` 自行編譯。
+1. 判斷目前平台（`uname -sm` 或 Windows），呼叫 skill 內建的 `${CLAUDE_SKILL_DIR}/bin/onagent-<os>-<arch>[.exe]`；目前實際內建 Windows、Intel/Apple Silicon macOS、Linux（amd64/arm64）共五種組合，偵測到其他更少見的平台就用 `go install`（現在可以用了）或 clone repo 後 `go build` 自行編譯。
 2. 執行 `onagent login --web`（或無瀏覽器環境用 `onagent login`）登入。
 3. 用 `onagent list-apps` 確認不再出現「not logged in」，驗證登入成功。
 4. 執行 `onagent create-app <appId>` 建立 app（也可以到 console 網頁 https://onagent.shuttle.tools/app 點「+ New app」手動建立，效果相同）。
