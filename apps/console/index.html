@@ -5,17 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Console — onagent</title>
 
-    <!-- Google tag (gtag.js): loads once per page, site-wide. The actual
-         conversion event only fires from application code at the moment a
-         registration succeeds — see Login.tsx — this tag alone records
-         nothing on its own. -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18416841975"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'AW-18416841975');
-      gtag('config', 'G-MP4CK0P8JF');
+    <!-- Google tag (gtag.js): loads once per page, site-wide, recording a
+         page_view on every load — the registration conversion event fires
+         separately from application code (see src/analytics.ts). Skipped
+         entirely when VITE_DISABLE_ANALYTICS=true (see .env.example) so
+         local testing never sends page views either, not just conversions.
+         type="module" so Vite processes import.meta.env here like any
+         other module — a plain inline script wouldn't get it rewritten. -->
+    <script type="module">
+      if (import.meta.env.VITE_DISABLE_ANALYTICS !== 'true') {
+        const s = document.createElement('script')
+        s.async = true
+        s.src = 'https://www.googletagmanager.com/gtag/js?id=AW-18416841975'
+        document.head.appendChild(s)
+        window.dataLayer = window.dataLayer || []
+        window.gtag = function () { window.dataLayer.push(arguments) }
+        window.gtag('js', new Date())
+        window.gtag('config', 'AW-18416841975')
+        window.gtag('config', 'G-MP4CK0P8JF')
+      }
     </script>
   </head>
   <body>
