@@ -313,7 +313,7 @@
         <a href="#overview">Overview</a>
       </div>
       <div class="side-group">
-        <div class="side-title">1. CLI</div>
+        <div class="side-title">1. Setup</div>
         <a href="#cli-install">Install the onagent CLI</a>
         <a class="sub" href="#cli-login">Log in</a>
         <a class="sub" href="#cli-reference">Command reference</a>
@@ -475,10 +475,9 @@
             <h4>Default server</h4>
             <p>
               Every <code>onagent</code> command talks to <code>https://onagent.shuttle.tools</code> by default (both
-              <code>-api</code> and, for <code>login --web</code>, <code>-console</code>). Point at a local dev
-              server with e.g. <code>-api http://localhost:8080 -console http://localhost:8080</code>. There's no
-              environment-variable override — <code>-api</code>/<code>-console</code> flags are the only way to
-              redirect it, on purpose.
+              <code>-api</code> and, for <code>login --web</code>, <code>-console</code>). Both can be overridden with
+              the <code>-api</code>/<code>-console</code> flags. There's no environment-variable override — these
+              flags are the only way to redirect it, on purpose.
             </p>
           </div>
         </div>
@@ -927,15 +926,34 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
         <div class="sec-kicker">Alternative path</div>
         <h2>Using Claude Code? There's a zero-setup skill</h2>
         <p class="intro">
-          If you're integrating onagent from inside Claude Code, the <code>onagent-cli-setup</code> skill
-          (<code>.claude/skills/onagent-cli-setup/</code>) can walk through this entire flow for you — install
-          detection, login, app creation, key issuance, origin setup, and pushing a <code>tools.yaml</code>. It
-          bundles a prebuilt <code>onagent</code> binary for Windows; on macOS/Linux (the more common case for a
-          Claude Code user) it falls back to <code>go install</code> or building locally from a clone, same as the
-          manual install path above — so "no local install required" only holds on Windows. It's a complementary
-          path to everything above, not a replacement: the underlying CLI commands and <code>tools.yaml</code>
-          schema are identical either way, so it's worth reading this page regardless of whether Claude Code
-          drives the mechanics for you.
+          If you're integrating onagent from inside Claude Code, the <code>onagent-cli-setup</code> skill can walk
+          through this entire flow for you — install detection, login, app creation, key issuance, origin setup,
+          and pushing a <code>tools.yaml</code>. It's a complementary path to everything above, not a replacement:
+          the underlying CLI commands and <code>tools.yaml</code> schema are identical either way, so it's worth
+          reading this page regardless of whether Claude Code drives the mechanics for you.
+        </p>
+
+        <h3 class="sub-head">Install the skill</h3>
+        <p class="body-text">
+          Published as an npm package, bundling prebuilt <code>onagent</code> binaries for all five platforms
+          (Windows, macOS Intel/Apple Silicon, Linux x64/arm64) — no separate <code>go install</code> or local
+          build needed on any of them.
+        </p>
+        <div class="code-block">
+          <div class="cb-top">
+            <div class="cb-file"><span class="fdot"></span>terminal</div>
+            <button class="copy-btn" data-copy>Copy</button>
+          </div>
+          <pre><span class="t-com"># project-level: .claude/skills/onagent-cli-setup/</span>
+<span class="t-prompt">$</span> npx -p @onagent/claude-skill claude-skill-onagent
+
+<span class="t-com"># user-level instead: ~/.claude/skills/onagent-cli-setup/</span>
+<span class="t-prompt">$</span> npx -p @onagent/claude-skill claude-skill-onagent --user</pre>
+        </div>
+        <p class="body-text">
+          This is an explicit, user-invoked install (not a <code>postinstall</code> hook) — running it is the only
+          way it ever touches your <code>.claude/</code> directory. Re-running it later overwrites the installed
+          copy, which is how you pick up a newer version of the skill.
         </p>
       </section>
 
