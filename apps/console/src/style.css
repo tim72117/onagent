@@ -1072,9 +1072,56 @@ textarea {
 .login-screen {
   height: 100vh;
   display: flex;
+  /* .login-welcome and .login-card are now two independent direct
+     children (see LoginCard.tsx) — flex's default row would sit them
+     side by side instead of stacked. */
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 24px;
+}
+
+/* A small hero above the card, not the card's first row — see
+   LoginCard.tsx's comment for why the greeting and the operation
+   (fields/buttons) are kept visually separate. */
+.login-welcome {
+  width: 100%;
+  max-width: 380px;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.login-welcome-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.login-welcome-logo:hover {
+  opacity: 0.75;
+}
+
+.login-welcome-title {
+  margin: 0 0 6px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.login-welcome-subtitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-dim);
 }
 
 .login-card {
@@ -1085,10 +1132,6 @@ textarea {
   background: var(--bg-raised);
   box-shadow: var(--shadow-panel);
   padding: 28px;
-}
-
-.login-brand {
-  padding: 0 0 16px;
 }
 
 .login-copy {

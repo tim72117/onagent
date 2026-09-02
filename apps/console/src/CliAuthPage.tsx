@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from './api'
 import type { CurrentUser } from './api'
 import { Login } from './Login'
+import { LoginCard } from './LoginCard'
 
 type Status = 'checking' | 'anonymous' | 'ready' | 'approving' | 'approved' | 'error'
 
@@ -90,41 +91,29 @@ export function CliAuthPage() {
 
   if (status === 'error') {
     return (
-      <div className="login-screen">
-        <div className="login-card">
-          <p className="login-error">{error}</p>
-        </div>
-      </div>
+      <LoginCard title="Sign-in link problem">
+        <p className="login-error">{error}</p>
+      </LoginCard>
     )
   }
 
   if (status === 'approved') {
     return (
-      <div className="login-screen">
-        <div className="login-card">
-          <p className="login-copy">Signed in. You can close this tab and return to your terminal.</p>
-        </div>
-      </div>
+      <LoginCard title="Signed in">
+        <p className="login-copy">You can close this tab and return to your terminal.</p>
+      </LoginCard>
     )
   }
 
   return (
-    <div className="login-screen">
-      <div className="login-card">
-        <div className="sidebar-brand login-brand">
-          <span className="sidebar-mark" aria-hidden="true">
-            ⌘
-          </span>
-          <span className="sidebar-brand-name">Console</span>
-        </div>
-        <p className="login-copy">
-          The <strong>{cliName}</strong> CLI wants to sign in as <strong>{user?.email}</strong>.
-        </p>
-        {error && <p className="login-error">{error}</p>}
-        <button type="button" className="primary login-submit" disabled={status === 'approving'} onClick={approve}>
-          {status === 'approving' ? 'Approving…' : 'Approve'}
-        </button>
-      </div>
-    </div>
+    <LoginCard title="Approve CLI sign-in">
+      <p className="login-copy">
+        The <strong>{cliName}</strong> CLI wants to sign in as <strong>{user?.email}</strong>.
+      </p>
+      {error && <p className="login-error">{error}</p>}
+      <button type="button" className="primary login-submit" disabled={status === 'approving'} onClick={approve}>
+        {status === 'approving' ? 'Approving…' : 'Approve'}
+      </button>
+    </LoginCard>
   )
 }

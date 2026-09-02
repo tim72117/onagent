@@ -161,9 +161,6 @@ export function Sidebar({
             Sign out
           </button>
         </div>
-        <p className="sidebar-hint">
-          Each app's API key is the credential its site passes to <code>AgentBridge</code>.
-        </p>
       </div>
     </nav>
   )

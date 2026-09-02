@@ -3,6 +3,7 @@ import { api, ApiError, BASE } from './api'
 import type { CurrentUser } from './api'
 import { offerToSavePassword } from './credentials'
 import { fireRegistrationConversion } from './analytics'
+import { LoginCard } from './LoginCard'
 import styles from './Login.module.css'
 
 type Mode = 'login' | 'register'
@@ -102,19 +103,13 @@ export function Login({
   }
 
   return (
-    <div className="login-screen">
-      <form className="login-card" onSubmit={submit} id="login-form" name="login-form">
-        <div className="sidebar-brand login-brand">
-          <span className="sidebar-mark" aria-hidden="true">
-            ⌘
-          </span>
-          <span className="sidebar-brand-name">Console</span>
-        </div>
-        <p className="login-copy">
-          {mode === 'login'
-            ? 'Sign in to manage your apps, tools, and API keys.'
-            : 'Create an account to start defining apps and tools.'}
-        </p>
+    <LoginCard
+      title={mode === 'login' ? 'Sign in to onagent' : 'Create your onagent account'}
+      subtitle={
+        mode === 'login' ? 'Manage your apps, tools, and API keys.' : 'Start defining apps and tools.'
+      }
+    >
+      <form onSubmit={submit} id="login-form" name="login-form">
         <label className="field">
           <span className="micro-label">Email</span>
           <input
@@ -188,6 +183,6 @@ export function Login({
           {mode === 'login' ? "Don't have an account? Create one" : 'Already have an account? Sign in'}
         </button>
       </form>
-    </div>
+    </LoginCard>
   )
 }
