@@ -27,6 +27,38 @@ schema.
   (`workflow_dispatch`) publish workflow mirroring
   `release-bridge-sdk.yml`'s structure: builds all 5 binaries, checks the
   version isn't already published, then `npm publish`.
+- Switch `release-claude-skill.yml` and `release-bridge-sdk.yml` to npm
+  Trusted Publishing (OIDC) — `@onagent/claude-skill`'s first real publish
+  hit npm's 2FA-required error once "disallow bypass 2FA tokens" was
+  enabled on the package; OIDC needs no stored token at all. `NPM_TOKEN`
+  stays for now since `@onagent/bridge`'s Trusted Publisher isn't
+  configured yet.
+- Fix Google OAuth's post-login redirect landing on the marketing site
+  instead of the console SPA — it pointed at `consoleOrigin+"/"` instead
+  of `consoleOrigin+"/app"` (where the console is actually mounted).
+- Add `VITE_DISABLE_ANALYTICS` (`apps/console/.env.example`) to skip
+  loading gtag.js entirely during local console testing, so neither page
+  views nor the registration conversion event pollute real GA4/Ads
+  numbers. Defaults to sending, matching production.
+- Restructure the console's login page: a new `LoginCard` shell (modeled
+  on tripace/web's own) renders the brand mark and a greeting above the
+  form card as its own small hero, shared by `Login.tsx` and
+  `CliAuthPage.tsx`'s three inline states instead of each hand-rolling
+  the same markup. Also drops a stale sidebar hint about API keys.
+- Fix inaccurate claims on the pricing page: quota is 100 prompts per
+  *account* per month shared across all that account's apps, not per
+  app (`backend/internal/quota` sums usage by `owner_id`); removed
+  "local development needs no API key" (the WebSocket handshake rejects
+  any missing/invalid token unconditionally, no dev-mode bypass exists).
+- Redesign the landing page's hero demo around a merchant admin flow
+  (deleting sold-out stock, listing a new product with variants) with a
+  click-to-front window swap between the terminal and the mock admin
+  panel; fix several places the English and Traditional Chinese landing
+  pages had drifted out of sync (a feature card's copy, a placeholder
+  WebSocket URL, a case-study card's tool-call sequence).
+- Update the docs page's Claude Code skill section for the npm-packaged
+  skill above — it previously described a Windows-only bundled binary
+  that no longer reflects how the skill is actually installed.
 
 ## v0.2.11
 
