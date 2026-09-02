@@ -182,7 +182,9 @@
 
     /* terminal */
     .term {
-      position: relative; z-index: 1;
+      position: relative; z-index: 2; cursor: pointer; transform-origin: 50% 0%;
+      transform: translateY(44px) scale(1);
+      transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
       background: linear-gradient(180deg, #16130c 0%, #120f0a 100%);
       border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-glow);
       overflow: hidden; font-family: var(--mono);
@@ -200,26 +202,30 @@
     .cursor { display: inline-block; width: 8px; height: 16px; transform: translateY(3px); background: var(--accent); animation: blink 1.05s steps(1) infinite; }
     @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
 
-    /* card-stack: .mock-card rests at its final position (44px down from
-       .term's top, so .term's own top edge stays visible above it) the
-       whole time — it's hidden via scale+opacity, not position, and pops
-       into view like a macOS app window launching: slightly small and
-       transparent, growing to full size with a soft spring overshoot
-       (cubic-bezier below dips past 1 before settling) while fading in.
-       z-index still flips instantly under it so it's front-most once
-       visible. overflow:visible on the wrapper so the mock card's lower
-       edge (a bit past .term's own bottom edge) isn't clipped. */
+    /* card-stack: two windows that swap places on click, like a real
+       overlapping-window stack. The one in "back" role sits unshifted at
+       top:0, scaled down; the one in "front" role sits pushed down 44px at
+       full scale — so the back window's own title bar (its top ~44px) is
+       always the part exposed above the front one, since the front window
+       never reaches up into that region. mock-card is visible from page
+       load (its old-stock rows are real content, not a placeholder) so it
+       starts in back role, peeking above .term — not hidden until some
+       later "reveal" moment. .term stays in normal flow (transform doesn't
+       affect its flow contribution) so it's what gives .card-stack its
+       height regardless of which one is currently front. overflow:visible
+       on the wrapper so the peeking title bar isn't clipped. */
     .card-stack { position: relative; overflow: visible; }
     .mock-card {
-      position: absolute; left: 0; right: 0; top: 44px; z-index: 0;
+      position: absolute; left: 0; right: 0; top: 0; z-index: 0; cursor: pointer;
       background: #fbfaf7; border: 1px solid #e6e1d3; border-radius: 16px;
       box-shadow: 0 26px 50px -18px rgba(0, 0, 0, 0.55);
-      overflow: hidden; transform: scale(0.85); opacity: 0; transform-origin: 50% 15%;
-      transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
+      overflow: hidden; transform: translateY(0) scale(0.85); transform-origin: 50% 0%;
+      transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
-    .card-stack.showing-mock .mock-card { z-index: 2; transform: scale(1); opacity: 1; }
+    .card-stack.showing-mock .mock-card { z-index: 2; transform: translateY(44px) scale(1); }
+    .card-stack.showing-mock .term { z-index: 0; transform: translateY(0) scale(0.85); }
     @media (prefers-reduced-motion: reduce) {
-      .mock-card { transition: none; }
+      .mock-card, .term { transition: none; }
     }
 
     /* Deliberately a light/day palette, distinct from the rest of this
@@ -233,27 +239,45 @@
     }
     .mock-bar-title { margin-left: 8px; font-size: 12px; color: #8c8468; font-family: var(--sans); }
     .mock-page { display: flex; flex-direction: column; gap: 26px; padding: 20px; font-family: var(--sans); }
-    .mock-list { display: flex; flex-direction: column; gap: 8px; }
-    .mock-item {
-      display: flex; align-items: center; gap: 10px; font-size: 13.5px; color: #4a4536;
-      border: 1px solid #e6e1d3; border-radius: 9px; padding: 10px 12px; background: #ffffff;
-      transition: border-color 0.3s ease, background 0.3s ease, color 0.3s ease;
+    .mock-form { display: flex; flex-direction: column; gap: 8px; }
+    .mock-row { display: grid; grid-template-columns: 1.3fr 1fr 0.7fr; gap: 8px; }
+    .mock-row-head span { font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: #8c8468; }
+    /* Pre-existing sold-out stock, visible from the start (not part of the
+       typed-instruction reveal) — muted/struck-through to read as "already
+       there, no longer sellable." Rows 1-3 start with this class baked in;
+       the instruction replaces them in place (fades out via .old's removal
+       falling back to .mock-cell's own default opacity:0, then swaps text
+       and adds .filled) rather than deleting a row and adding a separate
+       new one — the row itself is reused, so the card's height only ever
+       reflects however many rows currently exist (no leftover empty gap
+       from a "deleted" row, no unrelated row added below it). */
+    .mock-cell.old {
+      opacity: 1; transform: translateY(0);
+      color: #a89b82; background: #f3efe4; border-color: #e6e1d3; text-decoration: line-through;
     }
-    .mock-check {
-      flex: none; width: 16px; height: 16px; border-radius: 5px; border: 1.5px solid #cfc8b3;
-      position: relative; transition: border-color 0.3s ease, background 0.3s ease;
+    /* Each cell fades/rises into place on its own — no separate row-level
+       reveal wrapper (that two-layer version was tried first: a row-level
+       opacity toggle around the still-blank cells, then a second pass to
+       fill them — it's what caused the first row's flash-of-blank-white-box
+       bug, and it doesn't read as "cell by cell" anyway). One class does
+       both jobs: arriving AND filled. */
+    .mock-cell {
+      min-height: 32px; display: flex; align-items: center; font-size: 13px; color: #4a4536;
+      border: 1px solid #e6e1d3; border-radius: 8px; padding: 0 10px; background: #ffffff;
+      opacity: 0; transform: translateY(6px);
+      transition: opacity 0.3s ease, transform 0.3s ease, border-color 0.3s ease, background 0.3s ease, color 0.3s ease;
     }
-    .mock-price { margin-left: auto; font-family: var(--mono); font-size: 12px; color: #8c8468; }
-    .mock-item.picked { border-color: rgba(160, 120, 30, 0.45); background: #fbf2dc; color: #2b2718; }
-    .mock-item.picked .mock-check { background: var(--grad); border-color: transparent; }
-    .mock-item.picked .mock-check::after {
-      content: ''; position: absolute; left: 4px; top: 1px; width: 4px; height: 8px;
-      border: solid #1a1408; border-width: 0 2px 2px 0; transform: rotate(45deg);
+    .mock-cell.filled { opacity: 1; transform: translateY(0); border-color: rgba(160, 120, 30, 0.45); background: #fbf2dc; color: #2b2718; }
+    .mock-publish {
+      margin-top: 6px; text-align: center; font-size: 13px; font-weight: 700; padding: 10px;
+      border-radius: 9px; background: #f3efe4; color: #8c8468; opacity: 0; transform: translateY(4px);
+      transition: opacity 0.35s ease, transform 0.35s ease, background 0.3s ease, color 0.3s ease;
     }
-    /* Deliberately styled unlike .mock-item (soft filled pill, no white
+    .mock-publish.done { opacity: 1; transform: translateY(0); background: #fbf2dc; color: #2b2718; }
+    /* Deliberately styled unlike .mock-cell (soft filled pill, no white
        card/border, trailing send button) so this reads as a chat prompt —
        what bridge.prompt(...) actually is — rather than a traditional
-       search box or a fourth item in the list above it. */
+       search box or another row in the form above it. */
     .mock-input {
       display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 13px;
       background: #f3efe4; border: 1px solid transparent; border-radius: 999px;
@@ -266,7 +290,7 @@
     .mock-send svg { width: 13px; height: 13px; stroke: #1a1408; }
     .mock-caret { display: inline-block; width: 7px; height: 15px; background: var(--accent); animation: blink 1.05s steps(1) infinite; }
     @media (prefers-reduced-motion: reduce) {
-      .mock-item, .mock-check { transition: none; }
+      .mock-cell, .mock-publish { transition: none; }
       .mock-caret { animation: none; }
     }
 
@@ -473,7 +497,6 @@
             <a class="btn btn-primary btn-lg" href="#" data-console>Open Console</a>
             <a class="btn btn-ghost btn-lg" href="#how">See a 3-step example ↓</a>
           </div>
-          <div class="hero-note">No key needed for local dev · <code>npm install</code> to wire up the SDK · type-safe front-end code</div>
         </div>
 
         <div class="reveal">
@@ -492,13 +515,34 @@
                 <span class="term-dot" style="background:#ff5f57"></span>
                 <span class="term-dot" style="background:#febc2e"></span>
                 <span class="term-dot" style="background:#28c840"></span>
-                <span class="mock-bar-title">myshop.com</span>
+                <span class="mock-bar-title">myshop.com/admin</span>
               </div>
               <div class="mock-page">
-                <div class="mock-list">
-                  <label class="mock-item"><span class="mock-check"></span>White Sneakers<span class="mock-price">NT$1,200</span></label>
-                  <label class="mock-item" id="mock-item-target"><span class="mock-check"></span>Red Sneakers<span class="mock-price">NT$1,350</span></label>
-                  <label class="mock-item"><span class="mock-check"></span>Blue Sneakers<span class="mock-price">NT$1,180</span></label>
+                <div class="mock-form">
+                  <div class="mock-row mock-row-head">
+                    <span>Name</span><span>Spec</span><span>Stock</span>
+                  </div>
+                  <div class="mock-row" id="mock-row-1">
+                    <span class="mock-cell old" id="mock-r1-name">Old shirt</span>
+                    <span class="mock-cell old" id="mock-r1-spec">M</span>
+                    <span class="mock-cell old" id="mock-r1-stock">0</span>
+                  </div>
+                  <div class="mock-row" id="mock-row-2">
+                    <span class="mock-cell old" id="mock-r2-name">Old jacket</span>
+                    <span class="mock-cell old" id="mock-r2-spec">L</span>
+                    <span class="mock-cell old" id="mock-r2-stock">0</span>
+                  </div>
+                  <div class="mock-row" id="mock-row-3">
+                    <span class="mock-cell old" id="mock-r3-name">Old pants</span>
+                    <span class="mock-cell old" id="mock-r3-spec">M</span>
+                    <span class="mock-cell old" id="mock-r3-stock">0</span>
+                  </div>
+                  <div class="mock-row" id="mock-row-4">
+                    <span class="mock-cell" id="mock-r4-name">&nbsp;</span>
+                    <span class="mock-cell" id="mock-r4-spec">&nbsp;</span>
+                    <span class="mock-cell" id="mock-r4-stock">&nbsp;</span>
+                  </div>
+                  <div class="mock-publish" id="mock-publish">Published 4 items ✓</div>
                 </div>
                 <div class="mock-input">
                   <span id="mock-input-text"></span><span class="mock-caret"></span>
@@ -531,8 +575,8 @@
           </div>
           <div class="feature reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></div>
-            <h3>Ready to serve real customers, not just a demo</h3>
-            <p>A hand-rolled agent usually only runs for one person, in one environment. onagent has accounts, API keys, and quotas built in, so you can open your AI feature up to real customers without building an ops layer yourself.</p>
+            <h3>Wires straight into your existing UI</h3>
+            <p>No frontend rewrite needed. Map tools to what's already there, and AI can operate it.</p>
           </div>
         </div>
       </div>
@@ -600,7 +644,7 @@ demo-app        1 tool, has key</pre>
 <pre><span class="t-kw">import</span> <span class="t-punc">{</span> AgentBridge <span class="t-punc">}</span> <span class="t-kw">from</span> <span class="t-str">"@onagent/bridge"</span><span class="t-punc">;</span>
 
 <span class="t-kw">const</span> bridge <span class="t-punc">=</span> <span class="t-kw">new</span> <span class="t-fn">AgentBridge</span><span class="t-punc">({</span>
-  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://your-backend/ws"</span><span class="t-punc">,</span>
+  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://onagent.shuttle.tools/ws"</span><span class="t-punc">,</span>
   <span class="t-key">appId</span><span class="t-punc">:</span> <span class="t-str">"demo-app"</span><span class="t-punc">,</span>
   <span class="t-key">apiKey</span><span class="t-punc">:</span> <span class="t-str">"YOUR_APP_API_KEY"</span><span class="t-punc">,</span>
   <span class="t-key">tools</span><span class="t-punc">:</span> <span class="t-punc">{</span>
@@ -626,20 +670,26 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
         <div class="cases">
           <div class="case reveal">
             <span class="case-badge">examples/react-demo · React</span>
-            <h3>Checkout assistant</h3>
-            <p>Let AI fill in a search, navigate between pages, and even click the checkout button — every action maps to a handler you registered.</p>
+            <h3>Merchant assistant</h3>
+            <p>One complex instruction, broken into a chain of actions — create the product, add variants, set stock and price for each — every action maps to a handler you registered.</p>
             <div class="chat">
-              <span class="bubble-u">check me out</span>
-              <span class="bubble-a"><span class="tc">→ click_checkout_button()</span><br />Your order has been placed ✓</span>
+              <span class="bubble-u">List this shirt in black, white, grey, and khaki — 50 in stock and $29 for each</span>
+              <span class="bubble-a"><span class="tc">→ fill_product_form({...})
+→ add_variant("black") → set_stock_price(50, 29)
+→ add_variant("white") → set_stock_price(50, 29)
+→ add_variant("grey") → set_stock_price(50, 29)
+→ add_variant("khaki") → set_stock_price(50, 29)
+→ click_publish_button()</span><br />Published with 4 color variants ✓</span>
             </div>
           </div>
           <div class="case reveal">
             <span class="case-badge">examples/analysis · Vue 3</span>
             <h3>Survey analysis assistant</h3>
-            <p>On a list of survey questions, let AI select the relevant ones in natural language, ready to run statistical analysis.</p>
+            <p>Ask about a topic you want to analyze, and AI picks the relevant questions, then picks the matching analysis method.</p>
             <div class="chat">
-              <span class="bubble-u">select the questions about age</span>
-              <span class="bubble-a"><span class="tc">→ select_question(["p2q1", …])</span><br />Selected 3 questions</span>
+              <span class="bubble-u">I want to see how age relates to satisfaction</span>
+              <span class="bubble-a"><span class="tc">→ select_question(["p2q1", …])
+→ set_analysis_method("crosstab")</span><br />Selected 3 questions, analysis method set to crosstab</span>
             </div>
           </div>
         </div>
@@ -673,7 +723,6 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
       </div>
       <div class="foot-bottom">
         <span>© 2026 onagent · <a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a></span>
-        <span>Built for developers · LLM tool calling</span>
       </div>
     </div>
   </footer>
@@ -701,11 +750,11 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
       { t: 'prompt', cmd: 'onagent save-tools demo-app tools' },
       { t: 'ok', text: '✓ Saved 1 tool to "demo-app"' },
       { t: 'gap' },
-      { t: 'comment', text: '# 2. Embed the SDK in your front end' },
+      { t: 'comment', text: '# 2. Embed the SDK in your frontend' },
       { t: 'prompt', cmd: 'npm i @onagent/bridge' },
       { t: 'gap' },
-      { t: 'comment', text: '# 3. Let AI drive the UI with one sentence' },
-      { t: 'code', text: 'const bridge = new AgentBridge({ tools: { select_item } })' },
+      { t: 'comment', text: '# 3. One sentence to let AI operate your UI' },
+      { t: 'code', text: 'const bridge = new AgentBridge({ tools: { delete_product, fill_product_form, add_variant, set_stock_price, click_publish_button } })' },
     ];
     var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -723,27 +772,107 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
     }
 
     // After the terminal finishes setting up the bridge, a second card
-    // (myshop.com) pops into view on top of it, and the actual bridge.prompt
-    // call plays out visually there instead of as another line of terminal
-    // text — typed into a real chat input, ending with the AI picking the
-    // matching item: a visual result, so the "why does this need an LLM"
-    // answer is "it read three similar options and picked the one matching
-    // a free-text description," not "it echoed a string into a field."
+    // (myshop.com/admin) pops into view on top of it, and the actual
+    // bridge.prompt call plays out visually there instead of as another line
+    // of terminal text — typed into a real chat input, then filling four
+    // product rows one at a time: a visual result, so the "why does this
+    // need an LLM" answer is "it turned one free-text instruction into a
+    // multi-step form fill," not "it echoed a string into a field."
     var stage = document.querySelector('.card-stack');
     var mockInputText = document.getElementById('mock-input-text');
-    var mockTarget = document.getElementById('mock-item-target');
-    var MOCK_INPUT_VALUE = 'select the red sneakers';
+    var mockPublish = document.getElementById('mock-publish');
 
+    // Clicking either window brings that one to front — not a blind toggle,
+    // so clicking whichever is already in front is a no-op rather than
+    // sending it to back. Whichever one is in back always peeks its own
+    // title bar out above the front one (see .showing-mock rules above), so
+    // there's always something clickable to bring forward — mock-card is
+    // visible and clickable from page load, same as .term.
+    document.querySelector('.term').addEventListener('click', function () {
+      stage.classList.remove('showing-mock');
+    });
+    document.getElementById('mock-card').addEventListener('click', function () {
+      stage.classList.add('showing-mock');
+    });
+    var MOCK_INPUT_VALUE = 'Delete the sold-out items and list this new shirt — black, white, grey, khaki, sizes S/M/L, 50 in stock each';
+    var MOCK_ROWS = [
+      { name: 'Black shirt', spec: 'S/M/L', stock: '50' },
+      { name: 'White shirt', spec: 'S/M/L', stock: '50' },
+      { name: 'Grey shirt', spec: 'S/M/L', stock: '50' },
+      { name: 'Khaki shirt', spec: 'S/M/L', stock: '50' },
+    ];
+    var FIELD_FILL_STAGGER_MS = 140;
+    var REPLACE_FADE_MS = 260;
+
+    // Rows 1-3: each field fades its old (sold-out) content out — removing
+    // .old falls back to .mock-cell's own default opacity:0, no extra class
+    // needed — then, once that fade finishes, swaps in the new value and
+    // fades it back in via .filled. One row, two products, never two rows.
+    function replaceRow(i) {
+      var row = MOCK_ROWS[i];
+      ['name', 'spec', 'stock'].forEach(function (field, j) {
+        setTimeout(function () {
+          var cell = document.getElementById('mock-r' + (i + 1) + '-' + field);
+          cell.classList.remove('old');
+          setTimeout(function () {
+            cell.textContent = row[field];
+            cell.classList.add('filled');
+          }, REPLACE_FADE_MS);
+        }, j * FIELD_FILL_STAGGER_MS);
+      });
+    }
+
+    // Row 4: no old content to replace, just fades each field in directly —
+    // same .mock-cell base-state → .filled transition as replaceRow's
+    // second half, just without the preceding fade-out.
+    function fillRow(i) {
+      var row = MOCK_ROWS[i];
+      ['name', 'spec', 'stock'].forEach(function (field, j) {
+        setTimeout(function () {
+          var cell = document.getElementById('mock-r' + (i + 1) + '-' + field);
+          cell.textContent = row[field];
+          cell.classList.add('filled');
+        }, j * FIELD_FILL_STAGGER_MS);
+      });
+    }
+
+    // Reduced-motion path: final state immediately, no stagger.
     function showMockPicked() {
       mockInputText.textContent = MOCK_INPUT_VALUE;
       stage.classList.add('showing-mock');
-      mockTarget.classList.add('picked');
+      MOCK_ROWS.forEach(function (row, i) {
+        ['name', 'spec', 'stock'].forEach(function (field) {
+          var cell = document.getElementById('mock-r' + (i + 1) + '-' + field);
+          cell.classList.remove('old');
+          cell.textContent = row[field];
+          cell.classList.add('filled');
+        });
+      });
+      mockPublish.classList.add('done');
     }
 
     // Must match .mock-card's `transition: transform 0.45s ...` above (the
     // longer of its two transitioned properties) — the card shouldn't start
     // "typing" into itself until it has actually finished popping into view.
     var SLIDE_DURATION_MS = 450;
+    var ROW_ADD_DELAY_MS = 600;
+
+    // Rows 1-3 replace their sold-out content in place; row 4 (no old
+    // counterpart) is added last.
+    function runRowSequence() {
+      var i = 0;
+      (function next() {
+        if (i < 3) {
+          replaceRow(i);
+          i++;
+          setTimeout(next, ROW_ADD_DELAY_MS);
+        } else if (i === 3) {
+          fillRow(3);
+          i++;
+          setTimeout(function () { mockPublish.classList.add('done'); }, ROW_ADD_DELAY_MS);
+        }
+      })();
+    }
 
     function playMockTransition() {
       setTimeout(function () {
@@ -754,9 +883,9 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
             if (typed <= MOCK_INPUT_VALUE.length) {
               mockInputText.textContent = MOCK_INPUT_VALUE.slice(0, typed);
               typed++;
-              setTimeout(typeChar, 40);
+              setTimeout(typeChar, 28);
             } else {
-              setTimeout(function () { mockTarget.classList.add('picked'); }, 450);
+              setTimeout(runRowSequence, 450);
             }
           })();
         }, SLIDE_DURATION_MS);
