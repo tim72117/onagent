@@ -18,6 +18,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      # Required for npm Trusted Publishing (OIDC) — lets this job request a
+      # short-lived identity token from GitHub that npm verifies against the
+      # Trusted Publisher config on @onagent/claude-skill's npm page (repo +
+      # this exact workflow filename). No NPM_TOKEN secret needed as a
+      # result, and nothing long-lived to leak.
+      id-token: write
 
     steps:
       - name: Checkout code
@@ -63,6 +69,9 @@ jobs:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Update npm to a Trusted-Publishing-capable version
+        run: npm install -g npm@latest
+
       - name: Check version isn't already published
         working-directory: packages/claude-skill
         run: |
@@ -75,9 +84,11 @@ jobs:
 
       - name: Publish to npm
         working-directory: packages/claude-skill
+        # No NODE_AUTH_TOKEN — npm detects the OIDC id-token permission above
+        # and authenticates via Trusted Publishing instead. Requires the
+        # Trusted Publisher config on npmjs.com/package/@onagent/claude-skill
+        # to list this exact repo + workflow filename.
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Show published version
         run: |
