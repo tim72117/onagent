@@ -274,15 +274,16 @@ func main() {
 			log.Error("APP_ENV=production but GOOGLE_OAUTH_REDIRECT_URL is not set")
 			os.Exit(1)
 		}
-		// Success/failure both land back on the console's own origin — the
-		// first ALLOWED_ORIGIN entry, same origin the console SPA is served
-		// from. siteOrigins is guaranteed non-empty by the fail-fast above
-		// (prod) or the localhost:5173 fallback (dev). FailureRedirect is
-		// deliberately a bare URL with no query string — see its doc
-		// comment on Handler for why appending one here would break
-		// callback's own "?error=<reason>" append.
+		// Success/failure both land back on the console SPA, mounted at
+		// "/app" on the first ALLOWED_ORIGIN entry (see mountStatic in
+		// web.go) — not "/", which is the marketing landing site sharing
+		// that same origin. siteOrigins is guaranteed non-empty by the
+		// fail-fast above (prod) or the localhost:5173 fallback (dev).
+		// FailureRedirect is deliberately a bare URL with no query string
+		// — see its doc comment on Handler for why appending one here
+		// would break callback's own "?error=<reason>" append.
 		consoleOrigin := siteOrigins[0]
-		googleAuthHandler = googleauth.New(googleClientID, googleClientSecret, googleRedirectURL, sessionStore, cookieSecure, consoleOrigin+"/", consoleOrigin+"/")
+		googleAuthHandler = googleauth.New(googleClientID, googleClientSecret, googleRedirectURL, sessionStore, cookieSecure, consoleOrigin+"/app", consoleOrigin+"/app")
 		log.Info("Google sign-in enabled")
 	} else {
 		log.Info("GOOGLE_OAUTH_CLIENT_ID not set: Google sign-in disabled")
