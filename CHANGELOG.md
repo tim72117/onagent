@@ -6,6 +6,28 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.12
+
+No breaking changes — patch release. Adds a new, independently-versioned
+npm package and a manual-only CI workflow; doesn't touch the onagent CLI's
+existing flags/behavior, the backend's HTTP/WebSocket API, or any database
+schema.
+
+- Publish `@onagent/claude-skill` on npm (`npx claude-skill-onagent`),
+  packaging the `onagent-cli-setup` Claude Code skill with 5 bundled
+  `onagent` CLI binaries (Windows, Intel/Apple Silicon macOS, Linux
+  amd64/arm64), stripped with the same `-trimpath -ldflags="-s -w"`
+  `release-onagent.yml` uses. Verified end-to-end locally: `npm pack`,
+  `npx` install, `login --web`, and `list-apps` against production all
+  succeed.
+- Remove `.claude/skills/onagent-cli-setup/` (the repo-root vendored copy
+  of this skill) and gitignore it — `packages/claude-skill/skill/SKILL.md`
+  is now the sole copy and source of truth.
+- Add `.github/workflows/release-claude-skill.yml`, a manual-only
+  (`workflow_dispatch`) publish workflow mirroring
+  `release-bridge-sdk.yml`'s structure: builds all 5 binaries, checks the
+  version isn't already published, then `npm publish`.
+
 ## v0.2.11
 
 No breaking changes — patch release. Purely additive pages and one
