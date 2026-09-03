@@ -6,14 +6,37 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.13
+
+No breaking changes — patch release. One admin-only API field
+(`GET /admin/api/users`' `tier`) gains a new possible value (`""`), but
+that endpoint has no caller outside this repo's own `apps/admin`, which is
+updated in the same commit.
+
+- Fix the admin user list fabricating a "free" tier for accounts with no
+  `subscriptions` row at all. Traced from a real report of an account's
+  usage never incrementing in production: `ListUsers`'
+  `COALESCE(sub.tier, 'free')` and `COALESCE(sub.started_at, now())` made
+  such an account look like a normal free-tier account whose billing
+  period was, in reality, being recomputed to start "right now" on every
+  admin page load — permanently hiding any real usage it had ever
+  accumulated. `ListUsers` now reports `Tier == ""` for these accounts
+  instead (`backend/internal/quota/admin.go`); enforcement
+  (`ownerStanding`/`StandingFor`) is untouched, since an account actively
+  using the product is a different situation from a historical one with
+  no row at all. The admin UI shows these as an unselected plan dropdown
+  and "—" for plan/usage rather than a misleading `0/100`.
+- Add `CGO_ENABLED=0` to `release-claude-skill.yml`'s binary builds — the
+  first CI-built `linux-amd64` binary linked dynamically against the
+  runner's libc, which `release-onagent.yml` already avoids for its own
+  binaries.
+
 ## v0.2.12
 
 No breaking changes — patch release. Adds a new, independently-versioned
 npm package and a manual-only CI workflow; doesn't touch the onagent CLI's
-existing flags/behavior or any database schema. One admin-only API field
-(`GET /admin/api/users`' `tier`) gains a new possible value (`""`), but
-that endpoint has no caller outside this repo's own `apps/admin`, which is
-updated in the same commit.
+existing flags/behavior, the backend's HTTP/WebSocket API, or any database
+schema.
 
 - Publish `@onagent/claude-skill` on npm (`npx claude-skill-onagent`),
   packaging the `onagent-cli-setup` Claude Code skill with 5 bundled
@@ -61,23 +84,6 @@ updated in the same commit.
 - Update the docs page's Claude Code skill section for the npm-packaged
   skill above — it previously described a Windows-only bundled binary
   that no longer reflects how the skill is actually installed.
-- Fix the admin user list fabricating a "free" tier for accounts with no
-  `subscriptions` row at all. Traced from a real report of an account's
-  usage never incrementing in production: `ListUsers`'
-  `COALESCE(sub.tier, 'free')` and `COALESCE(sub.started_at, now())` made
-  such an account look like a normal free-tier account whose billing
-  period was, in reality, being recomputed to start "right now" on every
-  admin page load — permanently hiding any real usage it had ever
-  accumulated. `ListUsers` now reports `Tier == ""` for these accounts
-  instead (`backend/internal/quota/admin.go`); enforcement
-  (`ownerStanding`/`StandingFor`) is untouched, since an account actively
-  using the product is a different situation from a historical one with
-  no row at all. The admin UI shows these as an unselected plan dropdown
-  and "—" for plan/usage rather than a misleading `0/100`.
-- Add `CGO_ENABLED=0` to `release-claude-skill.yml`'s binary builds — the
-  first CI-built `linux-amd64` binary linked dynamically against the
-  runner's libc, which `release-onagent.yml` already avoids for its own
-  binaries.
 
 ## v0.2.11
 
