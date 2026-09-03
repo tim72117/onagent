@@ -11,6 +11,11 @@ export interface AdminUser {
 }
 
 // One row of the user table. Mirrors quota.UserSummary on the backend.
+// tier/planName are "" when this user has no subscriptions row at all
+// (distinct from actually being on the free tier — see UserSummary's doc
+// comment on the backend for why this isn't defaulted to "free" here).
+// limit/used are both 0 in that case too, since there is no real billing
+// period to count usage against.
 export interface UserSummary {
   id: number
   email: string
@@ -20,6 +25,7 @@ export interface UserSummary {
   used: number
   quotaOverride?: number
   createdAt: string
+  appCount: number
 }
 
 export interface UsersResponse {

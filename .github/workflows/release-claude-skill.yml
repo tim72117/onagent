@@ -46,6 +46,13 @@ jobs:
 
       - name: Build bundled onagent binaries
         working-directory: backend
+        env:
+          # Static binaries — same reasoning as release-onagent.yml: without
+          # this, the linux-amd64 build linked dynamically against the CI
+          # runner's libc (a mismatch caught after 0.0.2's first CI-built
+          # publish), which can fail to run on a minimal container image
+          # lacking that exact libc.
+          CGO_ENABLED: "0"
         run: |
           # Same build flags as release-onagent.yml (-trimpath -ldflags="-s -w"):
           # strips debug symbols/DWARF info and local file paths, ~30% smaller.

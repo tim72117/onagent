@@ -218,6 +218,7 @@ function UsersTab({ onLoggedOut }: { onLoggedOut: () => void }) {
                 <th>ID</th>
                 <th>Email</th>
                 <th>Created</th>
+                <th>Apps</th>
                 <th>Plan</th>
                 <th>Usage (this period)</th>
                 <th>Change plan</th>
@@ -229,15 +230,25 @@ function UsersTab({ onLoggedOut }: { onLoggedOut: () => void }) {
                   <td className="muted">{u.id}</td>
                   <td>{u.email}</td>
                   <td className="muted">{new Date(u.createdAt).toLocaleString()}</td>
+                  <td className="muted">{u.appCount}</td>
                   <td>
-                    {u.planName}
+                    {u.tier === '' ? <span className="muted">—</span> : u.planName}
                     {u.quotaOverride != null && <span className="badge" title="Manual per-user override">override</span>}
                   </td>
-                  <td className={u.used >= u.limit ? 'over' : ''}>
-                    {u.used} / {u.limit}
+                  <td className={u.tier !== '' && u.used >= u.limit ? 'over' : ''}>
+                    {u.tier === '' ? <span className="muted">—</span> : `${u.used} / ${u.limit}`}
                   </td>
                   <td>
+                    {/* An empty-value placeholder option so a user with no
+                        subscriptions row (tier === '') renders as genuinely
+                        unselected rather than silently falling back to
+                        whichever plan happens to be listed first — see
+                        UserSummary's doc comment on the backend for why ""
+                        is a distinct state from actually being on the free
+                        tier. Selecting any real plan calls changePlan, which
+                        always creates/updates a real subscriptions row. */}
                     <select value={u.tier} onChange={(e) => void changePlan(u.id, e.target.value)}>
+                      {u.tier === '' && <option value="">— no subscription —</option>}
                       {plans.map((p) => (
                         <option key={p.tier} value={p.tier}>
                           {p.name} ({p.monthlyPrompts}/mo)
@@ -249,7 +260,7 @@ function UsersTab({ onLoggedOut }: { onLoggedOut: () => void }) {
               ))}
               {users.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={6} className="muted center-cell">
+                  <td colSpan={7} className="muted center-cell">
                     No users yet.
                   </td>
                 </tr>

@@ -351,11 +351,20 @@ func TestCountUsersAndListUsers(t *testing.T) {
 	if foundA.Email != "quota-list-a@example.com" {
 		t.Errorf("userA Email = %q, want %q", foundA.Email, "quota-list-a@example.com")
 	}
-	if foundA.Tier != DefaultTier {
-		t.Errorf("userA (no subscriptions row) Tier = %q, want %q", foundA.Tier, DefaultTier)
+	// A user with no subscriptions row at all reports Tier == "" (not
+	// DefaultTier) — see UserSummary's doc comment: that default belongs to
+	// enforcement (ownerStanding), not to this display-only listing, which
+	// would otherwise fabricate a billing period anchored to "right now" on
+	// every call and could never show real accumulated usage for such an
+	// account.
+	if foundA.Tier != "" {
+		t.Errorf("userA (no subscriptions row) Tier = %q, want \"\"", foundA.Tier)
 	}
 	if foundA.Used != 0 {
 		t.Errorf("userA Used = %d, want 0", foundA.Used)
+	}
+	if foundA.Limit != 0 {
+		t.Errorf("userA (no subscriptions row) Limit = %d, want 0", foundA.Limit)
 	}
 	if foundA.QuotaOverride != nil {
 		t.Errorf("userA QuotaOverride = %v, want nil", foundA.QuotaOverride)
