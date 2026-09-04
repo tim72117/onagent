@@ -6,6 +6,33 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.14
+
+No breaking changes — patch release. `quota.Record`'s signature is
+unchanged; the dedup mechanism removed was an internal implementation
+detail, not part of its contract.
+
+- Fix Playground prompts silently not counting against quota. Root cause:
+  `Playground.tsx` sent `requestId: String(nextId.current)` — a counter
+  that resets to 0 on every page reload — and `Quota.Record`'s idempotency
+  key (`sessionID+":"+requestId`) collided with a previous page load's
+  event for the same user+app, so a real new prompt got a real inference
+  response but was silently absorbed by `usage_events`' unique index via
+  `ON CONFLICT DO NOTHING`.
+- `Playground.tsx` now uses `crypto.randomUUID()` for `requestId`, and the
+  dedup mechanism is removed at its root rather than patched at the one
+  caller that tripped it: `usage_events_app_id_event_id_idx` is dropped
+  (`schema.sql`) and `quota.Record` no longer has an `ON CONFLICT` clause.
+  `eventID` is kept as a column for audit purposes only. Neither
+  Playground nor `packages/bridge`'s real SDK ever resends an
+  already-sent `requestId`, so this isn't expected to introduce real
+  double-counting — revisit once Stripe billing lands.
+- `Quota.Check`/`Quota.Record` failures in `playground.go` are now logged
+  (`slog.Error`) instead of silently discarded.
+- Add `docs/known-issues-pending-discussion.md`, recording the full
+  incident and a remaining open question (should `requestId` be
+  caller-supplied at all).
+
 ## v0.2.13
 
 No breaking changes — patch release. One admin-only API field
