@@ -6,7 +6,19 @@
 
 ---
 
-## 最新掃描：2026-08-16
+## 最新掃描：2026-09-04
+
+> 方法：針對「Playground 改用共用 `ws.Session`」這次重構做的針對性複核（非全面重掃），比對 `docs/audit-security.md`/`docs/audit-stability.md`/本檔案既有條目與這次改動範圍的關聯。
+
+### 🟡 `playgroundResolver.ResolveApp` 與 `withOwnedApp` 是兩份手動同步的授權邏輯（新發現）
+- **位置**：`backend/internal/console/playground.go`（`playgroundResolver.ResolveApp`）＋ `backend/internal/console/console.go`（`withOwnedApp`）
+- **問題**：Playground 改用共用 `ws.Session` 後，`ws.AppResolver` 介面的簽名（`func(r *http.Request) (...)`）跟既有 `withOwnedApp`（`http.HandlerFunc` wrapper）的簽名不相容，`playgroundResolver.ResolveApp` 因此**重新刻了一份**跟 `withOwnedApp` 邏輯上等價的 session 驗證＋ownership 檢查＋404-not-403 隔離，而不是呼叫 `withOwnedApp` 本身。程式碼註解已自陳這個取捨：「the two must be kept in sync by hand if either changes」。
+- **後果**：`withOwnedApp` 之後若修改（例如調整 404/403 的判斷條件、換一種 ownership 查詢方式），`playgroundResolver.ResolveApp` 不會自動跟進，兩處可能悄悄產生行為差異——輕則造成不一致的錯誤訊息，重則其中一處的存取控制漏檢查（洩漏 app 是否存在，或誤放行未擁有的 app）。跟 A5（`RegisterAppRole` 手動維護 invariant）是同一類「型別系統不強制多處同步」的架構債模式，但這裡涉及的是存取控制邏輯，風險層級略高。
+- **修法**：把 ownership／404-not-403 判斷抽成一個不依賴 `http.HandlerFunc` 簽名的共用函式（例如 `func ownedAppOrNotFound(apps *toolschema.Registry, userID int64, appID string) (ok bool)`），讓 `withOwnedApp` 跟 `playgroundResolver.ResolveApp` 都呼叫它，而不是各自重寫判斷邏輯。
+
+---
+
+## 舊掃描：2026-08-16
 
 > 方法：14-agent workflow（4 路並行 scan：console/quota 業務邏輯、WS/inference 流程、console+admin 前端、bridge SDK/codegen → extract → 對抗式 verify）。只列出通過對抗式驗證（confidence ≥ 7/10）的項目。
 
@@ -52,7 +64,7 @@
 > 這份排序橫跨本檔案（功能/架構）與 `docs/audit-security.md`（安全）兩份報告，故單獨列在此處，不併入下方任何單一項目。安全項目（S 開頭）的現況以 `docs/audit-security.md` 為準。
 
 1. **🔴 S3 安全 header**（見 `docs/audit-security.md`）— 一個 middleware 搞定，成本最低、直接消除 clickjacking/HSTS 缺口。
-2. **🟠 A2 Playground 同步阻塞**（見下）— `ws/session.go` 已改用 goroutine 分派，`playground.go` 尚未跟進，架構不一致。範圍小、性質已知。
+2. ~~**🟠 A2 Playground 同步阻塞**~~ — 已解決（2026-09-04，見「已解決的項目」）。
 3. **🟠 S2 / A1 orchestrator 序列化＋無 rate limit**（S2 見 `docs/audit-security.md`，A1 見下）— 平台級瓶頸與 DoS 面，最重要但工程量最大，過渡期先加 rate limit。
 4. **🟠 F5 ADDR/PORT**（見下）— 部署正確性，改動小。
 5. **🟠 F1/F2 SDK 重連斷路器**（見下）— 第三方直接依賴，影響外部開發者體驗。
@@ -77,20 +89,14 @@
 - **問題**：定價頁文案寫「100 prompts **per app**, per month」，但 `quota.go` 的用量計算是 **per owner**（依 `owner_id` 跨該使用者所有 app 加總）。一個開發者若開了 3 個 app（例如 staging/prod/demo），實際上是這 3 個 app 共用 100 次，不是各自 100 次，跟頁面文案直接矛盾。
 - **修法**：修正 `pricing/index.html` 文案為「100 prompts per account/owner, per month」，或反過來改配額計算邏輯為 per-app（產品面決策，非單純程式碼修正）。
 
-### 🟠 A2. Playground 仍是同步阻塞呼叫
-- **位置**：`backend/internal/console/playground.go`
-- **問題**：prompt 迴圈在同一個 `conn.ReadMessage()` 迴圈裡直接同步呼叫 `h.Inference.Complete`，沒有用 `go` 關鍵字分派到獨立 goroutine（`ws/session.go` 已有 `go s.handlePrompt(...)`，playground 沒有跟進）。
-- **修法**：Playground 的 prompt 也比照 `session.go` 分派到獨立 goroutine，維持兩處架構一致。
-- **現況**：確認仍未修。因為 A1 已修好物件層級隔離（每個 session 各自 orchestrator），這裡的同步阻塞不再是「鎖住全平台」的死結，影響範圍縮小為「這一個 Playground 連線自己卡住」，嚴重度從 🔴 調降為 🟠。
-
 ### 🟠 A3. `ws.Session.run()` 的 `ctx.Done()` 無法中斷進行中的阻塞讀取
 - **位置**：`session.go:84-91`——`select { case <-ctx.Done(): return; default: }` 只在兩次 `ReadMessage()` 之間檢查；`ReadMessage()` 本身不綁 `ctx`，只有獨立的 `pongTimeout`（60s，每收到 pong 就重置）。
 - **影響**：request context 被取消時（server shutdown），idle-but-connected 的連線要等下一次 `ReadMessage()` 自然返回才退出（最長 60s，或客戶端持續 pong 就永遠不退），graceful shutdown 非確定性；且 `defer inference.UnregisterAsker(s.id)`（防 stale asker 卡住未來 query tool）被同樣延遲。
 - **修法**：shutdown 時明確 `conn.Close()` 以 error 中斷 `ReadMessage`，或確認 hijacked 連線的 per-request context 語意後不依賴它。
 
 ### 🟠 A1. 單一共用 orchestrator 序列化全平台吞吐（最大架構限制）——物件隔離已修復，吞吐量瓶頸仍未解決
-- **位置**：`backend/internal/inference/want.go`
-- **現況**：`WantService` 每個 SessionID 各自有獨立的 `*orchestrator.Orchestrator`（`want.go` 的 `sessions` map），對話內容層級的隔離已經是真正的物件隔離。**仍未解決**：每個 session 的 orchestrator 仍然共用同一個 process-wide 的 `GlobalEngine`/`RequestQueue`（`want` 的 provider `RequestQueue` 寫死 `maxConcurrent=1`）——吞吐量仍然完全序列化。要真正並行需要 `want` 開放「每個 orchestrator 各自的 provider/佇列」機制，這是改 `want` 才能根治的，詳見 `docs/known-issues-want-dependency.md`。（DoS 面的影響見 `docs/audit-security.md` 的 S2。）
+- **位置**：`backend/internal/inference/want.go`；`session.go`/`playground.go` 現在共用同一段 `ws.Session.handlePrompt` 呼叫路徑（Playground 已改用 `ws.AppResolver` 接入共用的 `ws.Session`，不再是各自獨立的實作）。
+- **現況**：`WantService` 每個 SessionID 各自有獨立的 `*orchestrator.Orchestrator`（`want.go` 的 `sessions` map），對話內容層級的隔離已經是真正的物件隔離。**仍未解決**：每個 session 的 orchestrator 仍然共用同一個 process-wide 的 `GlobalEngine`/`RequestQueue`（`want` 的 provider `RequestQueue` 寫死 `maxConcurrent=1`）——吞吐量仍然完全序列化，且 Playground 連線現在也吃這個瓶頸（先前 Playground 走獨立協定，不受影響）。要真正並行需要 `want` 開放「每個 orchestrator 各自的 provider/佇列」機制，這是改 `want` 才能根治的，詳見 `docs/known-issues-want-dependency.md`。（DoS 面的影響見 `docs/audit-security.md` 的 S2。）
 
 ### 🟡 A4. `askers` 是靠呼叫端紀律的 package 全域狀態
 - **位置**：`interaction.go:27-30`（`askers` 有 RWMutex，但 process 全域 key、無 TTL）
@@ -105,8 +111,8 @@
 - **修法**：批次查詢（`WHERE app_id = ANY($1)`），或把 `api_key_hash IS NOT NULL`/`allowed_origin` 直接併進 `OwnedBy` 的 SELECT。
 
 ### 🟡 A7. `codegen.ToLLMTools`/`Request.Tools` 在真實推論路徑是死碼
-- **位置**：`WantService.Complete`（`want.go`）從不讀 `req.Tools`（工具來源全靠預註冊的 want role）；唯一讀者是 `mock.go`。但兩個真實呼叫點（`session.go`、`playground.go`）每次 prompt 仍計算 `codegen.ToLLMTools(app)` 傳進去——熱路徑上的浪費，也誤導讀者以為 `Tools` 對 want 有作用。
-- **修法**：要嘛讓 `Complete` 真的用 `req.Tools` 對已註冊 role 做一致性檢查，要嘛從兩個真實呼叫點移除、保留 mock-only。
+- **位置**：`WantService.Complete`（`want.go`）從不讀 `req.Tools`（工具來源全靠預註冊的 want role）；唯一讀者是 `mock.go`。唯一真實呼叫點是 `session.go:295`（`handlePrompt`）——Playground 改用共用 `ws.Session` 後，`playground.go` 已不再自己組 `inference.Request`/呼叫 `codegen.ToLLMTools`（原本各自獨立時是兩個呼叫點,現已收斂成一個）,但這一處每次 prompt 仍計算 `codegen.ToLLMTools(app)` 傳進去——熱路徑上的浪費，也誤導讀者以為 `Tools` 對 want 有作用。
+- **修法**：要嘛讓 `Complete` 真的用 `req.Tools` 對已註冊 role 做一致性檢查，要嘛從這個呼叫點移除、保留 mock-only。
 
 ### 🟠 F1. SDK 無限重連無斷路器/終端狀態
 - **位置**：`packages/bridge/src/client.ts:132-145`——`scheduleReconnect` 永遠重試（backoff 封頂 10s），無法區分暫時性斷線 vs 致命狀況（key 錯/被撤銷/app 被刪/appId 錯）。stale 分頁會每 10s 無限敲後端。無回呼告訴嵌入方「這連線已永久死掉」。
@@ -138,7 +144,7 @@
 - **修法**：deploy workflow 加 `go test ./...`/`go vet ./...` 關卡；補文件化的 rollback SOP。
 
 ### ⚪ 低優先（多為 cosmetic）
-- **後端測試覆蓋率偏低**：Go 後端 14 個 `internal/` package 只有 4 個（`adminauth`、`adminconsole`、`db`、`quota`，29%）有測試，且多為 `*_integration_test.go`（需真實 DB）。`auth`、`ws`、`session`、`usertoken`、`cliauth`、`inference`（LLM 核心邏輯）等安全/核心敏感模組完全沒有單元測試。最高風險未測路徑：ws.Session 的 mutex 狀態機（`handlePrompt`/`handleToolResult`/`AskInteraction` 競爭 `pendingCalls`/`app`）、`sanitizeSessionID`/`AgentIDToSessionID` 的 `"WS-"` prefix round-trip（單邊改就默默壞掉所有 query tool）、`saveApp` 的 delete-then-insert transaction、`withOwnedApp` 的 404-not-403 隔離 invariant。`backend/internal/codegen` 整個套件也無任何測試檔，2026-08-16 複掃確認的三個 codegen bug 都出在這個無測試覆蓋的套件。前端 `apps/admin`、`packages/bridge` 仍是零測試；`apps/console` 已補上 vitest + jsdom（`ThoughtEditor.markdown.test.ts`，14 個測試涵蓋 Markdown 編輯的字元/段落層級狀態），但僅此一支測試檔，其餘元件（`App.tsx`、`Sidebar.tsx` 等）仍未覆蓋。`quota/quota_test.go`（222 行）是後端最完整的測試，顯示團隊有測試意識但尚未鋪開。
+- **後端測試覆蓋率偏低**：Go 後端 `internal/` package 多數仍是 `*_integration_test.go`（需真實 DB）為主，`auth`、`session`、`usertoken`、`cliauth`、`inference`（LLM 核心邏輯）等安全/核心敏感模組完全沒有單元測試。`ws` package 已有基本覆蓋：`AskInteraction`/`handleToolResult` 的 `pendingCalls` 配對/逾時/race（`session_test.go`）、`resolveSessionID`（`TestResolveSessionID`）、`ws.Handler.ServeHTTP`/`AppResolver` 分流與 `APIKeyResolver` 六個認證分支（`handler_test.go`/`handler_integration_test.go`）；`internal/console` 也新增了 `playgroundResolver.ResolveApp` 七個分支的測試（`playground_integration_test.go`，含 404-not-403 隔離，等同 `withOwnedApp` 邏輯的覆蓋）。仍未覆蓋的最高風險路徑：**`handlePrompt` 本身**（需要真實 `inference.Service`/`toolschema.Registry`/`quota.Service`，目前完全沒有測試碰到它）、`sanitizeSessionID`/`AgentIDToSessionID` 的 `"WS-"` prefix round-trip（單邊改就默默壞掉所有 query tool）、`saveApp` 的 delete-then-insert transaction、`withOwnedApp` 函式本身（其邏輯等價物 `playgroundResolver.ResolveApp` 已有測試，但兩者是各自獨立維護的程式碼，見上方新增的架構債條目）。`backend/internal/codegen` 整個套件也無任何測試檔，2026-08-16 複掃確認的三個 codegen bug 都出在這個無測試覆蓋的套件。前端 `apps/admin`、`packages/bridge` 仍是零測試；`apps/console` 已補上 vitest + jsdom（`ThoughtEditor.markdown.test.ts`，14 個測試涵蓋 Markdown 編輯的字元/段落層級狀態），但僅此一支測試檔，其餘元件（`App.tsx`、`Sidebar.tsx` 等）仍未覆蓋。`quota/quota_test.go`（222 行）是後端最完整的測試，顯示團隊有測試意識但尚未鋪開。
 - **console 無 `kind: query` UI**（`schema.ts:17-22` 的 TS `Tool` interface 根本沒有 `kind`）：只能手改 YAML 才能建 query 工具；需確認 `saveTools` 的 payload 會不會把 `kind` drop 掉。
 - **`codegen.ts:143-153` 巢狀 object 屬性 description 在 TS 預覽被丟棄**（`tsType` 的 `case 'object'` vs `writeInterface`）：僅預覽準確度，不影響 runtime。
 - **`db.Open` 每次開機重跑 `schema.sql`、無 migration 版本控制**：additive 時 OK，但與 `cmd/migrate` 兩套 schema 變更機制並存，未來破壞性變更（改欄位型別/rename）易 drift。
@@ -157,6 +163,7 @@
 
 - **admin 後台「Users」清單在 `QUOTA_ENABLED=false` 時完全壞掉**（2026-08-16 修復並實測確認）：`backend/internal/quota/admin.go` 的 `CountUsers`/`ListUsers` 只要 `quota.Service` 是 `nil`（停用配額服務時）就直接回傳 `"quota: service is disabled"` 錯誤，`adminconsole.go` 把這個 500 原樣丟給前端，前端吞掉顯示成「No users yet」。已修復為：`main.go` 讓 admin 後台拿自己獨立、恆常建構的 `quota.Service`（`quota.New(database)`），與 `/ws`/`/console` 用來做額度**執行**的可為 nil 的 `quotaSvc` 分開。實測：`QUOTA_ENABLED=false` 下註冊 2 個帳號，`/admin/api/users` 正確回傳 `total:2` 與完整資料。
 - **console 登入頁密碼欄位 placeholder 是字面上的 `••••••••`**（2026-08-16 修復並截圖確認）：`apps/console/src/Login.tsx` 空白密碼欄位視覺上看起來像已填密碼，易誤導使用者。已改成 `Enter your password`。
+- **A2. Playground 仍是同步阻塞呼叫**（2026-09-04 修復並複核確認）：`backend/internal/console/playground.go` 原本在同一個 `conn.ReadMessage()` 迴圈裡直接同步呼叫 `h.Inference.Complete`，沒有像 `ws/session.go` 用 `go` 關鍵字分派。根本解法不是「補上這一個 goroutine」，而是整個刪除 Playground 自己重寫的獨立 WebSocket 協定，改為共用 `internal/ws.Session`——`playground.go` 現在透過新增的 `ws.AppResolver` 介面（`playgroundResolver`）把認證方式（console session cookie + ownership）接進 `ws.NewSession(...)`，之後的 prompt 處理走的就是 `ws.Session.handlePrompt` 既有的 `go s.handlePrompt(ctx, ...)` 非同步分派，兩處架構自然一致，不再是兩份需要手動同步的程式碼。順帶修復了 Playground 從未呼叫 `inference.RegisterAsker` 導致 `ToolKindAction`/`ToolKindQuery` 工具必然失敗（"no connected page for session..."）的獨立缺陷（這個缺陷本身未曾被稽核記錄過，僅在此併記）。複核：`go build`/`go vet`/`go test`（含新增的 `handler_test.go`/`handler_integration_test.go`/`playground_integration_test.go`）全數通過，並用真實 WebSocket client 手動驗證過 hello/ack 握手正確共用 `ws.Session`。
 
 ---
 

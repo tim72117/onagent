@@ -71,6 +71,23 @@ func (r *recordingWriter) count() int {
 	return len(r.sent)
 }
 
+// TestResolveSessionID covers NewSession's id-selection logic in isolation
+// from actually building a *websocket.Conn — see resolveSessionID's doc
+// comment for why NewSession itself delegates to it instead of being tested
+// directly here.
+func TestResolveSessionID(t *testing.T) {
+	if got := resolveSessionID(""); got == "" {
+		t.Error("resolveSessionID(\"\") returned empty string, want a generated id")
+	}
+	if a, b := resolveSessionID(""), resolveSessionID(""); a == b {
+		t.Errorf("resolveSessionID(\"\") returned the same id twice (%q) — randomID() should differ per call", a)
+	}
+	const fixed = "PG-7-my-app"
+	if got := resolveSessionID(fixed); got != fixed {
+		t.Errorf("resolveSessionID(%q) = %q, want it returned unchanged", fixed, got)
+	}
+}
+
 // TestAskInteraction_DeliveredResultUnblocksWithTheAnswer is the golden
 // path: the page answers before the timeout, and AskInteraction returns
 // exactly the Result bytes handleToolResult delivered — this is the

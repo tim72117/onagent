@@ -6,7 +6,20 @@
 
 ---
 
-## 最新掃描：2026-08-16
+## 最新掃描：2026-09-04
+
+> 方法：針對「Playground 改用共用 `ws.Session`」這次重構做的針對性複核（非全面重掃）。
+
+### 🟡 `toolschema.Registry` 記憶體快照落後於資料庫，多實例部署下可能讓已刪除 app 短暫通過存在性檢查（新發現）
+- **位置**：`backend/internal/ws/handler.go`（`APIKeyResolver.ResolveApp`）＋ `backend/internal/console/playground.go`（`playgroundResolver.ResolveApp`）＋ `backend/internal/toolschema/registry.go`（`Registry.Get`/`OwnerOf`）
+- **問題**：`auth.Store.Verify`/`session.Store.Verify` 都是即時查資料庫，但 `toolschema.Registry.Get`/`OwnerOf` 讀的是建構/`Reload` 時載入的記憶體快照，只在該實例自己呼叫 `Save`/`Create`/`Delete`/`Reload` 時才會更新。這代表：若後端跑多個實例（水平擴展），某個實例的 app 被刪除後，另一個尚未 `Reload` 的實例的 `Registry` 快照仍然「認得」這個已刪除的 app。
+- **攻擊/失效情境**：app 被刪除的瞬間，若攻擊者手上還有一把該 app **尚未被撤銷**的 API key（`auth.Store` 是即時查詢，key 是否失效跟 app 是否還在 `Registry` 快照裡是兩件事），指向一個還沒 `Reload` 的實例的請求，`APIKeyResolver.ResolveApp`（或 `playgroundResolver.ResolveApp`）的 `Apps.Get`/`OwnerOf` 檢查仍會通過，讓一個「已刪除」的 app 在該實例上短暫繼續可用。窗口大小取決於該實例下次 `Reload` 的時機（若該實例完全沒有其他寫入觸發 `Reload`，理論上窗口可以持續到下次部署重啟）。
+- **修法**：`Registry.Get`/`OwnerOf` 改成短 TTL 快取＋定期背景 `Reload`（而非只在寫入時才刷新），或改成 delete 操作透過某種跨實例通知機制（pub/sub、DB LISTEN/NOTIFY）主動觸發所有實例 `Reload`。過渡期至少在文件/註解明確記錄這個假設（「單一實例部署」），避免未來水平擴展時被忽略。
+- **狀態**：未修復；是這次補寫 `ws`/`console` 認證測試過程中發現的邊界情況，非本次重構引入的新問題（`APIKeyResolver`/舊版 `ws.Handler.ServeHTTP` 本來就有這個特性），只是首次被記錄下來。
+
+---
+
+## 舊掃描：2026-08-16
 
 > 方法：13-agent workflow（recon → 4 路並行 scan → extract → 對抗式 verify），對比 2026-07-15 版稽核後 71 個 commit 的現況（新增 admin app、quota 系統、`sessionstore`、want v0.4.0）。只列出通過對抗式驗證（confidence ≥ 8/10）的項目；被推翻的候選（WS token-in-URL 重複舊發現、quota fail-open-on-DB-error 屬刻意設計）不列入。
 
@@ -42,9 +55,9 @@
 ---
 
 ### 🟠 S2. 無任何 rate limit ＋ 單一序列化 orchestrator = 一把 key 就能癱瘓全平台
-- **位置**：全 `backend/` 無 rate-limit middleware；`backend/internal/inference/want.go`（per-session orchestrator，但底層 provider `RequestQueue` 仍 `maxConcurrent=1`）；`backend/internal/ws/session.go`（query tool 的 `interactionTimeout` 卡住該次推論）
-- **攻擊情境**：一個免費帳號建一個 app、定義一個 `ToolKindQuery` 工具、開 WebSocket、送出觸發該工具的 prompt，然後永遠不回答 `tool_query`。每一次這樣的呼叫佔用 orchestrator 直到逾時；攻擊者可開無上限的並發 WS 連線（無連線數上限）各自迴圈這樣做，把全平台推論吞吐量壓到零。
-- **修法**：per-app 或 pooled orchestrator（見 A1）；過渡期至少加 per-appId/IP 的並發與速率限制、限制每 key/app 的同時 WS 連線數。
+- **位置**：全 `backend/` 無 rate-limit middleware；`backend/internal/inference/want.go`（per-session orchestrator，但底層 provider `RequestQueue` 仍 `maxConcurrent=1`）；`backend/internal/ws/session.go`（query tool 的 `interactionTimeout` 卡住該次推論，Playground 經 `backend/internal/console/playground.go` 的 `playgroundResolver` 共用同一套 `ws.Session` 機制後，同樣受影響）
+- **攻擊情境**：一個免費帳號建一個 app、定義一個 `ToolKindQuery` 工具、開 WebSocket、送出觸發該工具的 prompt，然後永遠不回答 `tool_query`。每一次這樣的呼叫佔用 orchestrator 直到逾時；攻擊者可開無上限的並發 WS 連線（無連線數上限）各自迴圈這樣做，把全平台推論吞吐量壓到零。同樣的觸發方式現在也能透過 Console 自己的 Playground 做到——開發者對自己的 app 定義一個 `ToolKindQuery` 工具、在 Playground 觸發後不回答，一樣能卡住該 session 的 orchestrator（誘因較低，因為是攻擊自己帳號，不構成跨租戶危害，但技術上是同一漏洞的另一個入口）。
+- **修法**：per-app 或 pooled orchestrator（見 A1）；過渡期至少加 per-appId/IP 的並發與速率限制、限制每 key/app 的同時 WS 連線數。因為 Agent Bridge SDK 與 Playground 現在共用同一段 `ws.Session` 程式碼，修好一次即可同時涵蓋兩條路徑，不需要分別修。
 - **現況（2026-08-16 複核）**：仍未修復。`want.go` 每個 session 已有獨立 orchestrator 物件（物件隔離修好了，見 A1），但套件文件明確寫著底層 `RequestQueue` 仍是 process-wide `maxConcurrent=1`——吞吐量仍全平台序列化，是 `want` 函式庫本身的限制。新增的 `quota` 套件是「每月用量上限」，不是併發/速率限制，無法擋住惡意 `tool_query` 卡住 orchestrator 的情境。
 
 ### 🟠 S3. 完全沒有設定任何安全 header

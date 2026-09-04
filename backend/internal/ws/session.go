@@ -53,13 +53,35 @@ type Session struct {
 	writeMessage func(data []byte) error
 }
 
+// resolveSessionID returns id if non-empty, otherwise a fresh randomID() —
+// see NewSession's doc comment for which callers pass which.
+func resolveSessionID(id string) string {
+	if id == "" {
+		return randomID()
+	}
+	return id
+}
+
 // NewSession wires a freshly-upgraded connection into a Session and starts
 // its read/write pumps. It blocks until the connection closes. authAppID is
 // the server-verified appId from the handshake (empty when auth is
 // disabled); see Session.authAppID.
-func NewSession(ctx context.Context, conn *websocket.Conn, apps *toolschema.Registry, infer inference.Service, log *slog.Logger, authAppID string, quotaSvc *quota.Service) {
+//
+// sessionID, if non-empty, is used as this Session's id (and therefore its
+// inference.RegisterAsker key and want SessionID — see handlePrompt) instead
+// of a fresh randomID(). The real Agent Bridge SDK path (ws.Handler) always
+// passes "" here — one random id per browser tab is exactly right there.
+// Playground (internal/console) is the one caller that passes a stable id
+// ("PG-<userID>-<appID>") instead, so a developer re-opening Playground for
+// the same app resumes the same want conversation transcript rather than
+// starting a fresh one on every page load — see playground.go's own comment
+// on why that id shape was chosen. See resolveSessionID for the actual
+// choice, pulled out so it's testable without a real *websocket.Conn (which
+// NewSession itself can't avoid — s.run blocks on it until the connection
+// closes).
+func NewSession(ctx context.Context, conn *websocket.Conn, apps *toolschema.Registry, infer inference.Service, log *slog.Logger, authAppID string, quotaSvc *quota.Service, sessionID string) {
 	s := &Session{
-		id:           randomID(),
+		id:           resolveSessionID(sessionID),
 		conn:         conn,
 		apps:         apps,
 		infer:        infer,

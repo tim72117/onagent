@@ -21,6 +21,7 @@ package console
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -32,29 +33,87 @@ import (
 	"github.com/tim72117/onagent/internal/session"
 	"github.com/tim72117/onagent/internal/toolschema"
 	"github.com/tim72117/onagent/internal/usertoken"
+	"github.com/tim72117/onagent/internal/ws"
 )
+
+// accountLifecycle is the subset of *session.Store's methods console.go's
+// register/login/logout handlers need — Verify is deliberately not part of
+// this (it's cookieVerifier's job instead, used via verifyUser) since that's
+// a different concern (authenticating an existing request) from these
+// (creating/ending a session). Handler.Session is typed as this interface,
+// not *session.Store directly, purely for unit-testability — see
+// cookieVerifier's doc comment for the same rationale applied to auth
+// itself. *session.Store satisfies both interfaces simultaneously; nothing
+// about its own implementation changes.
+type accountLifecycle interface {
+	Register(email, password string) (*session.User, error)
+	Login(email, password string) (*session.User, error)
+	CreateSession(w http.ResponseWriter, userID int64) (string, error)
+	Logout(w http.ResponseWriter, r *http.Request)
+}
+
+// tokenLifecycle is the subset of *usertoken.Store's methods console.go's
+// token-management handlers (issueToken/listTokens/revokeToken) need —
+// Verify is, again, tokenVerifier's job instead (see accountLifecycle's
+// doc comment for the identical split on the session side).
+type tokenLifecycle interface {
+	Issue(userID int64, name string) (id int64, plaintext string, err error)
+	List(userID int64) ([]usertoken.Token, error)
+	Revoke(userID, tokenID int64) error
+}
 
 // Handler serves the /console/* and /auth/* APIs.
 type Handler struct {
-	Apps      *toolschema.Registry
-	Auth      *auth.Store
-	Session   *session.Store
-	Tokens    *usertoken.Store
-	CliAuth   *cliauth.Store
-	Inference inference.Service // used only by playground.go's test-prompt endpoint
-	Quota     *quota.Service    // nil disables enforcement; playground prompts count against the owner's quota like real traffic
+	Apps    *toolschema.Registry
+	Auth    *auth.Store
+	Session accountLifecycle
+	Tokens  tokenLifecycle
+	// sessionVerify/tokenVerify/appOwner are the same underlying
+	// *session.Store/*usertoken.Store/*toolschema.Registry as Session/
+	// Tokens/Apps above, seen through the narrower cookieVerifier/
+	// tokenVerifier/appOwnerLookup interfaces withAuth/withCookieAuth/
+	// withOwnedApp's verifyUser/ownedAppOrNotFound calls need. Separate
+	// fields instead of widening accountLifecycle/tokenLifecycle (or typing
+	// Apps as an interface everywhere) so each call site keeps depending on
+	// only the methods it actually uses — see verifyUser's and
+	// accountLifecycle's doc comments; Apps itself stays a concrete
+	// *toolschema.Registry since the other ~10 call sites in this package
+	// need its full method set (Get/Save/Create/Delete/...), not just
+	// OwnerOf. Set once in NewHandler; all three point at the same objects
+	// as Session/Tokens/Apps for the lifetime of this Handler.
+	sessionVerify cookieVerifier
+	tokenVerify   tokenVerifier
+	appOwner      appOwnerLookup
+	CliAuth       *cliauth.Store
+	Inference     inference.Service // used to construct the Playground ws.Handler (see playgroundWS)
+	Quota         *quota.Service    // nil disables enforcement; playground prompts count against the owner's quota like real traffic
 	// ConsoleOrigins is the set of origins the console front-end itself is
 	// served from (e.g. http://localhost:5173 in dev). Used only by
-	// playground.go to accept the Playground WebSocket's cross-origin
-	// handshake — the console (this API's own frontend) and this backend
-	// almost never share a host:port, even in dev, so gorilla/websocket's
-	// same-origin default rejects every real Playground connection unless
-	// these are explicitly trusted. See playground.go's playgroundUpgrader.
+	// playgroundResolver (playground.go) to accept the Playground
+	// WebSocket's cross-origin handshake — the console (this API's own
+	// frontend) and this backend almost never share a host:port, even in
+	// dev, so ws.Handler's default same-origin-ish behavior would reject
+	// every real Playground connection unless these are explicitly trusted.
 	ConsoleOrigins []string
+
+	// playgroundWS is the shared internal/ws.Handler that serves
+	// GET /console/apps/{appId}/playground — see playground.go's package
+	// comment for why Playground reuses ws.Session instead of its own
+	// connection-management code. Built once in NewHandler.
+	playgroundWS *ws.Handler
 }
 
-func NewHandler(apps *toolschema.Registry, authStore *auth.Store, sessionStore *session.Store, tokenStore *usertoken.Store, cliAuthStore *cliauth.Store, inferSvc inference.Service, quotaSvc *quota.Service, consoleOrigins []string) *Handler {
-	return &Handler{Apps: apps, Auth: authStore, Session: sessionStore, Tokens: tokenStore, CliAuth: cliAuthStore, Inference: inferSvc, Quota: quotaSvc, ConsoleOrigins: consoleOrigins}
+func NewHandler(apps *toolschema.Registry, authStore *auth.Store, sessionStore *session.Store, tokenStore *usertoken.Store, cliAuthStore *cliauth.Store, inferSvc inference.Service, quotaSvc *quota.Service, consoleOrigins []string, log *slog.Logger) *Handler {
+	h := &Handler{
+		Apps: apps, appOwner: apps, Auth: authStore,
+		Session: sessionStore, sessionVerify: sessionStore,
+		Tokens: tokenStore, tokenVerify: tokenStore,
+		CliAuth: cliAuthStore, Inference: inferSvc, Quota: quotaSvc, ConsoleOrigins: consoleOrigins,
+	}
+
+	resolver := &playgroundResolver{apps: apps, sessions: sessionStore, consoleOrigins: consoleOrigins, quota: quotaSvc, log: log}
+	h.playgroundWS = ws.NewHandler(apps, inferSvc, log, ws.AllowAllOrigins, resolver, quotaSvc)
+	return h
 }
 
 // syncWantRole re-registers appID's want agent role (tool whitelist +
@@ -91,7 +150,15 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /console/apps/{appId}", h.withOwnedApp(h.deleteApp))
 	mux.HandleFunc("POST /console/apps/{appId}/key", h.withOwnedApp(h.issueKey))
 	mux.HandleFunc("DELETE /console/apps/{appId}/key", h.withOwnedApp(h.revokeKey))
-	mux.HandleFunc("GET /console/apps/{appId}/playground", h.withOwnedApp(h.playgroundWS))
+	// Not h.withOwnedApp: session-cookie verification and app-ownership
+	// checks are done inside playgroundResolver.ResolveApp instead (see
+	// playground.go), because ws.Handler.ServeHTTP needs to run its own
+	// AppResolver before upgrading the connection — withOwnedApp's
+	// http.HandlerFunc-wrapper shape has no hook for that. This is not a
+	// weaker check than withOwnedApp: it verifies the same session cookie
+	// and the same ownerID == user.ID comparison, just inlined into
+	// ResolveApp rather than composed via the wrapper.
+	mux.Handle("GET /console/apps/{appId}/playground", h.playgroundWS)
 
 	// issueToken and approveCliAuth are withCookieAuth, not withAuth: both
 	// mint a new bearer token, and if a bearer token itself could
@@ -119,6 +186,54 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /console/cli-auth/{id}/exchange", h.exchangeCliAuth)
 }
 
+// cookieVerifier and tokenVerifier are the minimal shapes withAuth/
+// withCookieAuth/playgroundResolver actually need from *session.Store and
+// *usertoken.Store, respectively — not full interfaces for those packages,
+// just enough surface for the pure functions below (verifyUser,
+// ownedAppOrNotFound) to be exercised with a fake in a unit test, without
+// touching how Handler stores its real *session.Store/*usertoken.Store/
+// *toolschema.Registry fields (those stay concrete types: this package has
+// exactly one real implementation of each, and widening every call site to
+// an interface for testability elsewhere would be a much bigger, unrelated
+// change — see docs/audit-functional.md's entry on this tradeoff).
+// tokenVerifier.Verify returns *usertoken.User (a different concrete type
+// than cookieVerifier.Verify's *session.User — see verifyUser for the
+// conversion between them).
+type cookieVerifier interface {
+	Verify(r *http.Request) (*session.User, bool)
+}
+type tokenVerifier interface {
+	Verify(r *http.Request) (*usertoken.User, bool)
+}
+type appOwnerLookup interface {
+	OwnerOf(appID string) (ownerID int64, ok bool)
+}
+
+// verifyUser resolves the caller's identity from r — a session cookie via
+// cookies first (the browser console's path), falling back to a bearer
+// token via tokens (the CLI's path) — normalizing both onto *session.User so
+// callers never need to know which method authenticated the caller. tokens
+// may be nil to skip the fallback entirely (see withCookieAuth, which needs
+// cookie-only verification).
+//
+// A pure function deliberately independent of http.HandlerFunc or any
+// particular wrapper shape (compare playgroundResolver.ResolveApp in
+// playground.go, which needs the same identity resolution but a completely
+// different surrounding signature) — this is what actually lets withAuth's
+// logic be unit-tested with a fake cookieVerifier/tokenVerifier instead of a
+// live database.
+func verifyUser(cookies cookieVerifier, tokens tokenVerifier, r *http.Request) (*session.User, bool) {
+	if user, ok := cookies.Verify(r); ok {
+		return user, true
+	}
+	if tokens != nil {
+		if u, ok := tokens.Verify(r); ok {
+			return &session.User{ID: u.ID, Email: u.Email}, true
+		}
+	}
+	return nil, false
+}
+
 // withAuth resolves the caller's identity — a session cookie first (the
 // browser console's path), falling back to a bearer token
 // (internal/usertoken, the CLI's path) — and rejects the request if
@@ -126,15 +241,12 @@ func (h *Handler) Register(mux *http.ServeMux) {
 // way; they never need to know which method authenticated the caller.
 func (h *Handler) withAuth(next func(http.ResponseWriter, *http.Request, *session.User)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if user, ok := h.Session.Verify(r); ok {
-			next(w, r, user)
+		user, ok := verifyUser(h.sessionVerify, h.tokenVerify, r)
+		if !ok {
+			http.Error(w, "not authenticated", http.StatusUnauthorized)
 			return
 		}
-		if u, ok := h.Tokens.Verify(r); ok {
-			next(w, r, &session.User{ID: u.ID, Email: u.Email})
-			return
-		}
-		http.Error(w, "not authenticated", http.StatusUnauthorized)
+		next(w, r, user)
 	}
 }
 
@@ -143,13 +255,31 @@ func (h *Handler) withAuth(next func(http.ResponseWriter, *http.Request, *sessio
 // matters specifically for token-minting routes.
 func (h *Handler) withCookieAuth(next func(http.ResponseWriter, *http.Request, *session.User)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		user, ok := h.Session.Verify(r)
+		user, ok := verifyUser(h.sessionVerify, nil, r)
 		if !ok {
 			http.Error(w, "not authenticated", http.StatusUnauthorized)
 			return
 		}
 		next(w, r, user)
 	}
+}
+
+// ownedAppOrNotFound reports whether userID owns appID, per apps.OwnerOf.
+// Shared by withOwnedApp and playgroundResolver.ResolveApp (internal/console/
+// playground.go) — the two can't share the same wrapper function (one is an
+// http.HandlerFunc middleware, the other implements ws.AppResolver's very
+// different signature), but the ownership check itself, and its
+// leak-no-information rationale, must stay identical between them: a
+// nonexistent appId and an appId owned by someone else both must be
+// indistinguishable to the caller (see withOwnedApp's own doc comment on why
+// that's 404, not 403). Pulling just this check into one function means a
+// future change to how ownership is determined only has one place to edit,
+// instead of two call sites that must be kept in sync by hand. Takes
+// appOwnerLookup (not *toolschema.Registry directly) for the same
+// unit-testability reason verifyUser takes cookieVerifier/tokenVerifier.
+func ownedAppOrNotFound(apps appOwnerLookup, userID int64, appID string) bool {
+	ownerID, known := apps.OwnerOf(appID)
+	return known && ownerID == userID
 }
 
 // withOwnedApp is withAuth plus an ownership check on the {appId} path
@@ -163,8 +293,7 @@ func (h *Handler) withCookieAuth(next func(http.ResponseWriter, *http.Request, *
 func (h *Handler) withOwnedApp(next func(http.ResponseWriter, *http.Request, *session.User)) http.HandlerFunc {
 	return h.withAuth(func(w http.ResponseWriter, r *http.Request, user *session.User) {
 		appID := r.PathValue("appId")
-		ownerID, ok := h.Apps.OwnerOf(appID)
-		if !ok || ownerID != user.ID {
+		if !ownedAppOrNotFound(h.appOwner, user.ID, appID) {
 			http.Error(w, "unknown appId", http.StatusNotFound)
 			return
 		}

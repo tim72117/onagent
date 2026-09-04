@@ -1,95 +1,162 @@
 package console
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"runtime/debug"
-	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"github.com/tim72117/onagent/internal/codegen"
-	"github.com/tim72117/onagent/internal/inference"
+	"github.com/tim72117/onagent/internal/quota"
 	"github.com/tim72117/onagent/internal/session"
+	"github.com/tim72117/onagent/internal/toolschema"
 )
 
 // Package playground: lets a developer test-drive their app's agent from
 // inside the console itself, without a real front-end site to talk to.
 //
-// This is deliberately a separate, simpler protocol from internal/ws — the
-// one AgentBridge and real developer sites speak — rather than reusing that
-// package's ws.Session:
+// This used to be a whole separate, simpler WebSocket protocol reimplementing
+// ping/pong, a read loop, and tool_call display — but with no tool_result
+// round trip at all, any tool backed by ToolKindAction/ToolKindQuery (see
+// internal/inference's askPage) had no way to ever succeed here: the
+// forwarding/query tool's Call blocks on an inference.RegisterAsker'd asker
+// that this endpoint never registered, so it always failed with "no
+// connected page for session ... (it may have disconnected)".
+//
+// Rather than growing a second implementation of that machinery
+// (AskInteraction, pendingCalls, tool_result correlation) to fix it,
+// Playground now reuses internal/ws's Session/Handler wholesale — the exact
+// same connection-management code the real Agent Bridge SDK path uses. Only
+// the authentication/authorization half differs, via the AppResolver
+// interface (see internal/ws/handler.go):
 //
 //   - Auth is the developer's own session cookie (internal/session), not an
-//     API key. A console session is already proof the caller owns the app
-//     (see withOwnedApp), so there's no reason to make them mint and paste
-//     in a real key just to try a prompt — and the console never even holds
-//     a plaintext key to use for this (KeyModal shows it exactly once).
-//   - No Origin/allowedOrigin check: this endpoint is reached from the
-//     console's own origin, not the developer's site, so ws.Handler's
-//     per-app origin binding (see that package's ServeHTTP) doesn't apply
-//     here at all — enforcing it would require the console's own origin to
-//     be the app's configured one, which is nonsensical.
-//   - No tool_result round-trip: nothing here can execute a DOM action, so
-//     a tool_call is displayed and the turn ends — see playgroundPrompt.
+//     API key. A console session is already proof the caller owns the app,
+//     so there's no reason to make them mint and paste in a real key just to
+//     try a prompt — and the console never even holds a plaintext key to use
+//     for this (KeyModal shows it exactly once). See playgroundResolver
+//     below.
+//   - Origin is checked against the console's own origin allowlist
+//     (Handler.ConsoleOrigins), not any per-app allowedOrigin — Playground is
+//     reached from the console's own origin, not the developer's site, so
+//     ws.Handler's per-app origin binding (APIKeyResolver) doesn't apply
+//     here at all.
+//   - The session id is a stable "PG-<userID>-<appID>" (not a fresh random
+//     one per connection) so a developer re-opening Playground for the same
+//     app resumes the same want conversation transcript rather than starting
+//     a fresh one on every page load — see ws.NewSession's doc comment on
+//     sessionID.
+//   - playgroundResolver.ResolveApp also does its own handshake-time quota
+//     check, mirroring APIKeyResolver.ResolveApp's — see that method's own
+//     comment for why this is a cheap early gate, not the real enforcement
+//     (ws.Session.handlePrompt's per-prompt check is).
 //
-// The wire format still mirrors internal/protocol's shape (type/requestId/
-// payload) for familiarity, but is intentionally a distinct, smaller type
-// set (playgroundEnvelope et al.) rather than importing internal/protocol,
-// since the two are allowed to diverge (e.g. this has no hello/context/
-// tool_result messages at all).
+// Everything past ResolveApp — hello/ack, prompt, tool_call/tool_query
+// dispatch via AskInteraction, tool_result correlation, ping/pong, per-prompt
+// quota enforcement — is exactly ws.Session's existing implementation. The
+// frontend (apps/console/src/Playground.tsx) now speaks the real
+// internal/protocol wire format instead of a hand-rolled subset.
 
-const (
-	playgroundWriteTimeout = 10 * time.Second
-	playgroundPongTimeout  = 60 * time.Second
-	playgroundPingInterval = 30 * time.Second
-)
-
-type playgroundEnvelope struct {
-	Type      string          `json:"type"`
-	RequestID string          `json:"requestId,omitempty"`
-	Payload   json.RawMessage `json:"payload,omitempty"`
+// playgroundResolver implements ws.AppResolver for the console's Playground
+// endpoint. See this file's package comment above for why Playground needs
+// its own resolver instead of APIKeyResolver: authentication is a console
+// session cookie plus app ownership, not an API key plus per-app origin.
+type playgroundResolver struct {
+	apps           *toolschema.Registry
+	sessions       *session.Store
+	consoleOrigins []string
+	quota          *quota.Service // nil disables the handshake-time check below; per-prompt enforcement (ws.Session.handlePrompt) still applies regardless
+	log            *slog.Logger
 }
 
-type playgroundPromptPayload struct {
-	Text string `json:"text"`
-}
+// ResolveApp implements ws.AppResolver. It is the WebSocket-handshake
+// equivalent of withOwnedApp (see console.go): both require a valid session
+// cookie and confirmed ownership of the {appId} path value, and both return
+// 404 (not 401/403) for an unknown or not-owned app — the ownership check
+// itself is shared (see ownedAppOrNotFound in console.go) so this and
+// withOwnedApp can't drift apart; only the surrounding wrapper (an
+// http.HandlerFunc there, an AppResolver here) differs, since the two
+// signatures aren't compatible with each other.
+//
+// Origin is checked here too, since ws.Handler.CheckOrigin becomes a no-op
+// whenever a Resolver is set (see that package's doc comment) — Playground's
+// own notion of "allowed origin" is the console's origin allowlist, not any
+// per-app one, so it has to be enforced inside this method rather than left
+// to Handler.AllowedOrigins.
+func (p *playgroundResolver) ResolveApp(r *http.Request) (appID, sessionID string, ok bool, msg string, code int) {
+	// Defense-in-depth, not a documented mode: NewHandler always sets both
+	// sessions and log (see console.go), so this shouldn't be reachable in
+	// practice — but p.log.Warn/Info below would otherwise panic on a nil
+	// *slog.Logger receiver, and p.sessions is dereferenced immediately
+	// after. Fail closed with a generic message instead.
+	if p.sessions == nil || p.log == nil {
+		return "", "", false, "playground unavailable", http.StatusServiceUnavailable
+	}
+	if !originAllowed(r, p.consoleOrigins) {
+		return "", "", false, "origin not allowed", http.StatusForbidden
+	}
 
-type playgroundToolCallPayload struct {
-	ToolName string          `json:"toolName"`
-	Args     json.RawMessage `json:"args"`
-}
+	// Cookie-only, no bearer-token fallback (unlike withAuth) — Playground is
+	// only ever reached from a logged-in browser tab, never a CLI/script.
+	// verifyUser is the same identity resolution withAuth/withCookieAuth use
+	// (console.go) — shared for the same reason ownedAppOrNotFound is:
+	// keeping only one implementation of "how do we resolve who's calling"
+	// instead of two that must be kept in sync by hand.
+	user, verified := verifyUser(p.sessions, nil, r)
+	if !verified {
+		return "", "", false, "not authenticated", http.StatusUnauthorized
+	}
 
-type playgroundAssistantMessagePayload struct {
-	Text string `json:"text"`
-}
+	appID = r.PathValue("appId")
+	if !ownedAppOrNotFound(p.apps, user.ID, appID) {
+		// 404, not 403 — see withOwnedApp's comment on why an app that
+		// exists but belongs to someone else must look identical to one
+		// that doesn't exist at all.
+		return "", "", false, "unknown appId", http.StatusNotFound
+	}
 
-type playgroundErrorPayload struct {
-	Message string `json:"message"`
-}
+	// Cheap early gate, mirroring APIKeyResolver.ResolveApp: refuse to even
+	// upgrade the connection if this app's owner is already over quota, so
+	// an exhausted account can't keep opening fresh Playground sockets.
+	// ws.Session.handlePrompt still enforces this per-prompt regardless —
+	// that's the real backstop an owner can't bypass by reconnecting — this
+	// is purely an earlier, cheaper rejection. A DB error here is fail-open
+	// (log and allow), matching APIKeyResolver: a transient database blip
+	// must not block an owner from testing their own app. Deliberately not
+	// r.Context() for the same reason APIKeyResolver isn't either — see its
+	// comment on quick-reconnect "context canceled" false positives.
+	checkCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	dec, err := p.quota.Check(checkCtx, appID)
+	cancel()
+	if err != nil {
+		p.log.Warn("playground handshake: quota check failed, allowing (fail-open)", "appId", appID, "err", err)
+	} else if !dec.Allowed {
+		p.log.Info("playground handshake rejected: owner over quota", "appId", appID, "used", dec.Used, "limit", dec.Limit)
+		return "", "", false, "monthly quota exceeded for this app's plan", http.StatusTooManyRequests
+	}
 
-var playgroundUpgrader = websocket.Upgrader{
-	ReadBufferSize:  4096,
-	WriteBufferSize: 4096,
-	// gorilla/websocket's default CheckOrigin rejects any request whose
-	// Origin header doesn't exactly match the request's own Host — i.e.
-	// literal same-origin, not "same site" or "trusted browser tab". The
-	// console frontend and this backend are two separate servers (different
-	// ports even in dev, different hosts in any real deployment), so that
-	// default rejects every legitimate Playground connection. CheckOrigin is
-	// set per-request in playgroundWS below (it needs the Handler's
-	// ConsoleOrigins, not available at package-init time).
+	// PG-<userID>-<appID> gives this playground run its own want
+	// conversation transcript (see WantService.Complete's AgentID
+	// switching), isolated both from the app's real end-user sessions and
+	// from other developers' playground runs against the same app, and
+	// stable across reconnects/page reloads for the same user+app.
+	sessionID = fmt.Sprintf("PG-%d-%s", user.ID, appID)
+	return appID, sessionID, true, "", 0
 }
 
 // originAllowed reports whether r's Origin header matches one of allowed
-// exactly. A missing Origin header (e.g. a non-browser client) is allowed,
-// matching gorilla/websocket's own default behavior for that case.
+// exactly. Fail-closed on a missing Origin header — unlike APIKeyResolver
+// (which must tolerate non-browser clients such as curl/server-to-server
+// callers with no Origin header at all), Playground's own doc comment
+// (this file's package comment) says it is only ever reached from a
+// logged-in browser tab; a real browser always sends Origin on a
+// cross-origin WebSocket handshake, so a missing header here means the
+// request isn't what it claims to be, and should be rejected rather than
+// let through.
 func originAllowed(r *http.Request, allowed []string) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		return true
+		return false
 	}
 	for _, a := range allowed {
 		if origin == a {
@@ -97,153 +164,4 @@ func originAllowed(r *http.Request, allowed []string) bool {
 		}
 	}
 	return false
-}
-
-// playgroundWS upgrades the connection and runs the session loop. Reached
-// only through withOwnedApp (see Register), so the caller's ownership of
-// r.PathValue("appId") is already confirmed by the time this runs.
-func (h *Handler) playgroundWS(w http.ResponseWriter, r *http.Request, user *session.User) {
-	appID := r.PathValue("appId")
-	app, ok := h.Apps.Get(appID)
-	if !ok {
-		http.Error(w, "unknown appId", http.StatusNotFound)
-		return
-	}
-
-	upgrader := playgroundUpgrader
-	upgrader.CheckOrigin = func(r *http.Request) bool { return originAllowed(r, h.ConsoleOrigins) }
-
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		return
-	}
-	defer conn.Close()
-
-	// PG-<userID>-<appID> gives this playground run its own want
-	// conversation transcript (see WantService.Complete's AgentID
-	// switching), isolated both from the app's real end-user sessions and
-	// from other developers' playground runs against the same app.
-	sessionID := fmt.Sprintf("PG-%d-%s", user.ID, appID)
-	// Releases this run's want orchestrator (see inference.WantService) —
-	// without this, every playground run that ever completed a prompt would
-	// leak its orchestrator's dispatch goroutine for the life of the
-	// process.
-	defer h.Inference.CloseSession(sessionID)
-	var writeMu sync.Mutex
-	send := func(env playgroundEnvelope) {
-		data, err := json.Marshal(env)
-		if err != nil {
-			return
-		}
-		writeMu.Lock()
-		defer writeMu.Unlock()
-		_ = conn.SetWriteDeadline(time.Now().Add(playgroundWriteTimeout))
-		_ = conn.WriteMessage(websocket.TextMessage, data)
-	}
-	sendError := func(requestID, message string) {
-		payload, _ := json.Marshal(playgroundErrorPayload{Message: message})
-		send(playgroundEnvelope{Type: "error", RequestID: requestID, Payload: payload})
-	}
-
-	conn.SetReadLimit(1 << 20)
-	_ = conn.SetReadDeadline(time.Now().Add(playgroundPongTimeout))
-	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(playgroundPongTimeout))
-	})
-
-	pingDone := make(chan struct{})
-	go func() {
-		// An unrecovered panic on any goroutine kills the whole process,
-		// taking every other user's session down with it — a plain http
-		// middleware's recover() can't reach a goroutine spawned like this
-		// one, so it needs its own.
-		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("panic recovered in playground ping loop", "err", r, "stack", string(debug.Stack()))
-			}
-		}()
-		ticker := time.NewTicker(playgroundPingInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				writeMu.Lock()
-				_ = conn.SetWriteDeadline(time.Now().Add(playgroundWriteTimeout))
-				err := conn.WriteMessage(websocket.PingMessage, nil)
-				writeMu.Unlock()
-				if err != nil {
-					return
-				}
-			case <-pingDone:
-				return
-			}
-		}
-	}()
-	defer close(pingDone)
-
-	ctx := r.Context()
-	for {
-		_, raw, err := conn.ReadMessage()
-		if err != nil {
-			return
-		}
-
-		var env playgroundEnvelope
-		if err := json.Unmarshal(raw, &env); err != nil {
-			sendError("", "invalid message")
-			continue
-		}
-		if env.Type != "prompt" {
-			sendError(env.RequestID, "unknown message type: "+env.Type)
-			continue
-		}
-
-		var p playgroundPromptPayload
-		if err := json.Unmarshal(env.Payload, &p); err != nil {
-			sendError(env.RequestID, "invalid prompt payload")
-			continue
-		}
-
-		// Playground prompts count against the owner's quota like real
-		// traffic: an owner testing their own app is still driving real
-		// inference cost. Check before the paid call; a DB error here is
-		// fail-open (fall through and allow), matching ws.Session — a
-		// database blip must not block an owner from testing. The event_id
-		// is namespaced by sessionID ("PG-<userID>-<appID>") so a playground
-		// prompt and a real end-user prompt that happen to share a RequestID
-		// don't collide with each other.
-		if dec, err := h.Quota.Check(ctx, app.AppID); err != nil {
-			slog.Error("playground: quota check failed, allowing (fail-open)", "err", err, "appID", app.AppID, "sessionID", sessionID)
-		} else if !dec.Allowed {
-			sendError(env.RequestID, "monthly prompt quota exceeded for this app's plan")
-			continue
-		}
-
-		result, err := h.Inference.Complete(ctx, inference.Request{
-			Prompt:    p.Text,
-			Tools:     codegen.ToLLMTools(app),
-			AppID:     app.AppID,
-			SessionID: sessionID,
-		})
-		if err != nil {
-			sendError(env.RequestID, "inference error: "+err.Error())
-			continue
-		}
-
-		// Best-effort: an uncounted playground prompt (record failed) favors
-		// the user and never blocks the response that already happened.
-		eventID := sessionID + ":" + env.RequestID
-		if err := h.Quota.Record(ctx, app.AppID, eventID); err != nil {
-			slog.Error("playground: failed to record usage event", "err", err, "appID", app.AppID, "sessionID", sessionID, "eventID", eventID)
-		}
-
-		for _, tc := range result.ToolCalls {
-			payload, _ := json.Marshal(playgroundToolCallPayload{ToolName: tc.ToolName, Args: tc.Args})
-			send(playgroundEnvelope{Type: "tool_call", RequestID: env.RequestID, Payload: payload})
-		}
-		if result.AssistantMessage != "" {
-			payload, _ := json.Marshal(playgroundAssistantMessagePayload{Text: result.AssistantMessage})
-			send(playgroundEnvelope{Type: "assistant_message", RequestID: env.RequestID, Payload: payload})
-		}
-	}
 }

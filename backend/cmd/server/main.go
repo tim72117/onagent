@@ -212,13 +212,16 @@ func main() {
 		log.Warn("no admin account exists and ADMIN_BOOTSTRAP_EMAIL/PASSWORD were not set; the admin back-office (/admin) has no way to log in until you set them and redeploy. The rest of the service is unaffected.")
 	}
 
-	// wsAuth == nil is what tells ws.Handler to skip verification entirely
-	// (see Handler.ServeHTTP) — appropriate only when literally no app can
-	// have a key yet. Since the console API is always on now (no ADMIN_TOKEN
-	// gate anymore — any registered user can create an app and issue it a
-	// key at any moment), auth must always stay enforced once at least one
-	// app exists. An empty Store just rejects every token until the first
-	// Issue call, rather than skipping the check.
+	// wsAuth feeds ws.APIKeyResolver below (see Handler.Resolver's doc
+	// comment for what a nil AppResolver means instead — a nil *auth.Store
+	// here is NOT that: it would make APIKeyResolver.ResolveApp panic on
+	// every connection attempt, not skip verification). authStore is always
+	// a real, non-nil *auth.Store by this point (constructed unconditionally
+	// above); an empty one just rejects every token until the first Issue
+	// call, rather than skipping the check. The console API is always on now
+	// (no ADMIN_TOKEN gate anymore — any registered user can create an app
+	// and issue it a key at any moment), so auth must always stay enforced
+	// once at least one app exists.
 	wsAuth := authStore
 	if authStore.Count() > 0 {
 		log.Info("API key auth enabled", "keys", authStore.Count())
@@ -290,8 +293,9 @@ func main() {
 	}
 
 	inferSvc := newInferenceService(log, apps, database)
-	wsHandler := ws.NewHandler(apps, inferSvc, log, originChecker, wsAuth, quotaSvc)
-	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore, inferSvc, quotaSvc, siteOrigins)
+	wsResolver := &ws.APIKeyResolver{Auth: wsAuth, Apps: apps, Quota: quotaSvc, Log: log}
+	wsHandler := ws.NewHandler(apps, inferSvc, log, originChecker, wsResolver, quotaSvc)
+	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore, inferSvc, quotaSvc, siteOrigins, log)
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", wsHandler)

@@ -13,8 +13,8 @@
 ### 🟠 `ws.Session.run()` 斷線時未取消進行中的 `Complete()` 呼叫
 - **位置**：`backend/internal/ws/session.go:85-124`（`run`）、`:225-275`（`handlePrompt`，內部呼叫 `s.infer.Complete(ctx, ...)`，271 行）
 - **問題**：`run(ctx)` 收到的 `ctx` 是 `ws/handler.go:162` 傳入的 `r.Context()`（HTTP upgrade 請求的 context）。當客戶端斷線，`s.conn.ReadMessage()`（110 行）會因連線錯誤返回，`run` 就此 `return`；但這**不會**取消已經用 `go s.handlePrompt(ctx, ...)` 分派出去、正在跑 `Complete()` 的 goroutine——因為那個 goroutine 拿到的 `ctx` 只在 HTTP request context 被取消時才會結束，而 WebSocket 斷線不等於 HTTP request context 被取消。`Complete()` 最長可跑到 `completeTimeout`（~90 秒），且會佔用該 session 的 orchestrator 資源直到逾時或完成。
-- **影響**：使用者關掉分頁或斷線後，一個已經沒有人在等待結果的推論呼叫仍會繼續佔用資源長達 90 秒；若疊加 `docs/audit-functional.md` 已追蹤的「completeTimeout 分支未呼叫 `Interrupt()`」，這條殘留呼叫完成後產生的事件還可能污染同一 session 之後新建立的推論（見該檔案交叉引用）。
-- **修法**：在 `NewSession`/`run` 內用 `context.WithCancel` 包一層獨立於 HTTP request context 的 ctx，`ReadMessage` 因錯誤返回時明確呼叫該 cancel，讓正在進行的 `handlePrompt`/`Complete` 呼叫能真正被中斷。
+- **影響**：使用者關掉分頁或斷線後，一個已經沒有人在等待結果的推論呼叫仍會繼續佔用資源長達 90 秒；若疊加 `docs/audit-functional.md` 已追蹤的「completeTimeout 分支未呼叫 `Interrupt()`」，這條殘留呼叫完成後產生的事件還可能污染同一 session 之後新建立的推論（見該檔案交叉引用）。Console 的 Playground 功能改用共用 `ws.Session`（見 `docs/audit-functional.md` 的 A2「已解決」條目）後，這段程式碼現在同時服務兩種連線——真實 Agent Bridge SDK 的連線，以及 Console 開發者自己開的 Playground 連線；開發者在 console 裡關閉 Playground 分頁，同樣會留下最長 90 秒的殘留 `Complete()` 呼叫。
+- **修法**：在 `NewSession`/`run` 內用 `context.WithCancel` 包一層獨立於 HTTP request context 的 ctx，`ReadMessage` 因錯誤返回時明確呼叫該 cancel，讓正在進行的 `handlePrompt`/`Complete` 呼叫能真正被中斷。因為兩條連線路徑現在共用同一段程式碼，修好一次即可同時涵蓋兩者，不需要分別修。
 - **現況**：確認仍未修復（2026-08-16 對照現行程式碼複核）。
 
 ### ⚪ `/healthz` 無條件回 200，不反映資料庫健康狀態
