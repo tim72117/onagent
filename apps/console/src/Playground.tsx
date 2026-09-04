@@ -86,7 +86,16 @@ export function Playground({ appId }: { appId: string }) {
     if (!text || state !== 'open' || sending) return
     appendMessage('user', text)
     setSending(true)
-    wsRef.current?.send(JSON.stringify({ type: 'prompt', requestId: String(nextId.current), payload: { text } }))
+    // requestId must be globally unique, not just unique within this page
+    // load: the backend's Quota.Record uses sessionID+":"+requestId as an
+    // idempotency key against usage_events (app_id, event_id), and
+    // sessionID ("PG-<userID>-<appID>") is the same string across every
+    // page load for a given user+app. Reusing nextId.current here (a
+    // useRef that resets to 0 on every mount, i.e. every page refresh)
+    // collided with the exact same event_id from a previous page load —
+    // silently swallowed by that idempotency check, so the prompt got a
+    // real response but never counted against quota.
+    wsRef.current?.send(JSON.stringify({ type: 'prompt', requestId: crypto.randomUUID(), payload: { text } }))
     setInput('')
   }
 

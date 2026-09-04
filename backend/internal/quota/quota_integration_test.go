@@ -79,12 +79,18 @@ func makeTestApp(t *testing.T, conn *sql.DB, appID string, ownerID int64) {
 	})
 }
 
-// TestRecordIsIdempotentThroughThePackage exercises Record's dedup semantics
-// via the exported API (unlike schema_integration_test.go's
-// TestSchemaApplyIsIdempotent, which inserts raw SQL to pin the DB
-// constraint itself). Three Record calls with the same (appID, eventID) must
-// leave usage counted once, observed through StandingFor's Used field since
-// usageSince is unexported.
+// TestRecordCountsEveryCallEvenWithTheSameEventID exercises Record's
+// current semantics via the exported API (unlike
+// schema_integration_test.go's TestSchemaApplyIsIdempotent, which inserts
+// raw SQL to pin the DB constraint itself): eventID is no longer a dedup
+// key (see Record's doc comment and
+// docs/known-issues-pending-discussion.md's "用量記錄機制" section), so
+// three Record calls with the same (appID, eventID) must count three
+// times, not once. This test used to assert the opposite (Used == 1) back
+// when Record used ON CONFLICT (app_id, event_id) DO NOTHING — that
+// dedup logic was removed after it silently swallowed real, distinct
+// Playground prompts whose caller-supplied requestId happened to collide
+// across page loads.
 //
 // Needs an explicit subscriptions row with started_at safely in the past:
 // with no row at all, StandingFor/ownerStanding COALESCE started_at to
@@ -95,7 +101,7 @@ func makeTestApp(t *testing.T, conn *sql.DB, appID string, ownerID int64) {
 // it, which is exactly what TestStandingForDefaultsWhenNoSubscriptionRow
 // exists to test instead (it only asserts Used==0 for a fresh user with no
 // usage at all, so the race there is harmless).
-func TestRecordIsIdempotentThroughThePackage(t *testing.T) {
+func TestRecordCountsEveryCallEvenWithTheSameEventID(t *testing.T) {
 	database := openTestDB(t)
 	sqlDB, _ := database.DB()
 	conn := sqlDB
@@ -123,8 +129,8 @@ func TestRecordIsIdempotentThroughThePackage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StandingFor: %v", err)
 	}
-	if st.Used != 1 {
-		t.Errorf("Used after 3 Records of the same event_id = %d, want 1", st.Used)
+	if st.Used != 3 {
+		t.Errorf("Used after 3 Records of the same event_id = %d, want 3 (eventID is no longer a dedup key)", st.Used)
 	}
 }
 
@@ -305,7 +311,7 @@ func TestCountUsersAndListUsers(t *testing.T) {
 	// Give userB a non-default tier and an app with recorded usage, so
 	// ListUsers' join and its per-row usageSince call are both exercised
 	// with non-trivial values. started_at is backdated for the same reason
-	// TestRecordIsIdempotentThroughThePackage backdates it: with no
+	// TestRecordCountsEveryCallEvenWithTheSameEventID backdates it: with no
 	// subscriptions row (or one whose started_at is "now" at query time),
 	// the period boundary can land after the usage rows just recorded and
 	// exclude them by a race, not by design.

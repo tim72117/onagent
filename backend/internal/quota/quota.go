@@ -147,23 +147,38 @@ func (s *Service) Check(ctx context.Context, appID string) (Decision, error) {
 // Resolved inside Record rather than passed in by callers so ws.Session and
 // the console playground don't have to carry billing's ownership model
 // around — they already only know the appID (see both call sites).
+//
+// eventID is stored for audit/debugging only — it is NOT used to
+// deduplicate anymore (see docs/known-issues-pending-discussion.md's
+// "用量記錄機制" section). This used to INSERT ... ON CONFLICT (app_id,
+// event_id) DO NOTHING, on the theory that a client retrying the same
+// RequestID after a dropped response shouldn't be charged twice. In
+// practice, a caller-supplied identifier turned out to be an unreliable
+// dedup key: apps/console's Playground reused requestId="0" (a useRef
+// counter that resets on every page reload) across page loads sharing the
+// same sessionID, so a brand-new prompt silently collided with a real
+// prompt's event_id from a previous session — an uncounted prompt, but
+// with zero errors anywhere to catch it. With no real payment processing
+// yet (free tier only), an occasional double-count from an actual retry
+// is a smaller, cheaper-to-accept risk than silently losing usage that
+// already happened. Revisit this once Stripe billing lands (see
+// docs/refactor-subscription-billing-cycle-2026-09-03.md) — real money
+// changes which side of this tradeoff is safer.
 func (s *Service) Record(ctx context.Context, appID, eventID string) error {
 	if s == nil {
 		return nil
 	}
-	// Insert-select with an ON CONFLICT clause has no GORM builder
-	// equivalent, and deliberately isn't split into "look up owner_id, then
-	// insert" — that would open a race window where the app is deleted
-	// between the two steps, leaving an orphaned or missing usage row. Kept
-	// as raw SQL, unchanged from the pre-GORM version, executed through
+	// Insert-select has no GORM builder equivalent, and deliberately isn't
+	// split into "look up owner_id, then insert" — that would open a race
+	// window where the app is deleted between the two steps, leaving an
+	// orphaned or missing usage row. Kept as raw SQL, executed through
 	// *gorm.DB so it still runs on the same connection/pool as everything
 	// else this Service does.
 	err := s.db.WithContext(ctx).Exec(`
 		INSERT INTO usage_events (app_id, owner_id, event_id, kind)
 		SELECT $1, a.owner_id, $2, 'prompt'
 		  FROM apps a
-		 WHERE a.app_id = $1
-		ON CONFLICT (app_id, event_id) DO NOTHING`,
+		 WHERE a.app_id = $1`,
 		appID, eventID).Error
 	if err != nil {
 		return fmt.Errorf("quota: record usage event: %w", err)

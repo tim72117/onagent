@@ -19,8 +19,11 @@ var dsn = flag.String("dsn", "postgres://platform:platform@localhost:5434/platfo
 
 // TestSchemaApplyIsIdempotent applies schema.sql twice (Open does it once
 // per call) and verifies the second apply is a no-op, then confirms the
-// quota tables/indexes exist and the (app_id, event_id) idempotency
-// constraint actually collapses duplicate inserts to one row.
+// quota tables/indexes exist and that the (app_id, event_id) idempotency
+// index that used to collapse duplicate inserts to one row is gone —
+// event_id is no longer a dedup key (see quota.Record's doc comment and
+// docs/known-issues-pending-discussion.md's "用量記錄機制" section), so
+// three inserts of the same event_id must now leave three rows, not one.
 func TestSchemaApplyIsIdempotent(t *testing.T) {
 	database, err := Open(*dsn)
 	if err != nil {
@@ -46,7 +49,6 @@ func TestSchemaApplyIsIdempotent(t *testing.T) {
 	}{
 		{"subscriptions table", `SELECT to_regclass('public.subscriptions') IS NOT NULL`},
 		{"usage_events table", `SELECT to_regclass('public.usage_events') IS NOT NULL`},
-		{"idempotency index", `SELECT count(*)=1 FROM pg_indexes WHERE indexname='usage_events_app_id_event_id_idx'`},
 		{"lookup index", `SELECT count(*)=1 FROM pg_indexes WHERE indexname='usage_events_app_id_created_at_idx'`},
 	} {
 		var ok bool
@@ -58,21 +60,30 @@ func TestSchemaApplyIsIdempotent(t *testing.T) {
 		}
 	}
 
-	// Idempotency in practice: three inserts of the same (app_id, event_id)
-	// must leave exactly one row. Uses throwaway user/app rows, cleaned up
-	// via CASCADE at the end.
+	var idempotencyIndexGone bool
+	if err := conn.QueryRow(`SELECT count(*)=0 FROM pg_indexes WHERE indexname='usage_events_app_id_event_id_idx'`).Scan(&idempotencyIndexGone); err != nil {
+		t.Fatalf("idempotency index check errored: %v", err)
+	}
+	if !idempotencyIndexGone {
+		t.Error("usage_events_app_id_event_id_idx still present after schema apply — should have been dropped")
+	}
+
+	// No dedup: three inserts of the same (app_id, event_id) must now leave
+	// three rows, since there's no longer a unique index for ON CONFLICT to
+	// match against. Uses throwaway user/app rows, cleaned up via CASCADE
+	// at the end.
 	mustExec(t, conn, `INSERT INTO users (id, email, password_hash) VALUES (999999, 'quotatest@example.com', 'x') ON CONFLICT DO NOTHING`)
 	mustExec(t, conn, `INSERT INTO apps (app_id, owner_id) VALUES ('quota-verify-app', 999999) ON CONFLICT DO NOTHING`)
 	mustExec(t, conn, `DELETE FROM usage_events WHERE app_id='quota-verify-app'`)
 	for i := 0; i < 3; i++ {
-		mustExec(t, conn, `INSERT INTO usage_events (app_id, event_id, kind) VALUES ('quota-verify-app','req-1','prompt') ON CONFLICT (app_id,event_id) DO NOTHING`)
+		mustExec(t, conn, `INSERT INTO usage_events (app_id, event_id, kind) VALUES ('quota-verify-app','req-1','prompt')`)
 	}
 	var n int
 	if err := conn.QueryRow(`SELECT count(*) FROM usage_events WHERE app_id='quota-verify-app'`).Scan(&n); err != nil {
 		t.Fatalf("count usage_events: %v", err)
 	}
-	if n != 1 {
-		t.Errorf("idempotency broken: 3 inserts of same event_id → count=%d, want 1", n)
+	if n != 3 {
+		t.Errorf("3 inserts of same event_id → count=%d, want 3 (event_id is no longer a dedup key)", n)
 	}
 
 	// Clean up. Deleting the app no longer removes its usage rows (they're
@@ -114,13 +125,13 @@ func TestDeletingAnAppKeepsItsUsageLedger(t *testing.T) {
 	mustExec(t, conn, `INSERT INTO apps (app_id, owner_id) VALUES ('`+appID+`', 999998)`)
 
 	// Record two prompts the way quota.Record does: owner_id resolved from
-	// the app at write time, not joined back at read time.
+	// the app at write time, not joined back at read time. No ON CONFLICT
+	// — event_id is no longer a dedup key (see quota.Record's doc comment).
 	for _, ev := range []string{"req-a", "req-b"} {
 		mustExec(t, conn, `
 			INSERT INTO usage_events (app_id, owner_id, event_id, kind)
 			SELECT '`+appID+`', a.owner_id, '`+ev+`', 'prompt'
-			  FROM apps a WHERE a.app_id = '`+appID+`'
-			ON CONFLICT (app_id, event_id) DO NOTHING`)
+			  FROM apps a WHERE a.app_id = '`+appID+`'`)
 	}
 
 	countForOwner := func() int {

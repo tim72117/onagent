@@ -224,12 +224,20 @@ BEGIN
     END IF;
 END $$;
 
--- Idempotency: the same event_id must never be counted twice, even if a
--- client retries a request whose response it never saw (e.g. a dropped
--- WebSocket write). Scoped per-app rather than globally unique, matching
--- how RequestID is only unique within one session/app's own traffic.
-CREATE UNIQUE INDEX IF NOT EXISTS usage_events_app_id_event_id_idx
-    ON usage_events (app_id, event_id);
+-- Removed: this used to enforce that the same event_id is never counted
+-- twice (ON CONFLICT (app_id, event_id) DO NOTHING in quota.Record), on
+-- the theory that a client retrying the same RequestID after a dropped
+-- response shouldn't be charged twice. In practice, a caller-supplied
+-- identifier turned out to be an unreliable dedup key: apps/console's
+-- Playground reused requestId="0" (a useRef counter that resets on every
+-- page reload) across page loads sharing the same sessionID, silently
+-- swallowing a real, distinct prompt's usage row — no error anywhere to
+-- catch it. See docs/known-issues-pending-discussion.md's "用量記錄機制"
+-- section for the full story and the tradeoff this reverses (an
+-- occasional double-count from an actual retry, accepted for now since
+-- there's no real payment processing yet — revisit once Stripe billing
+-- lands, per docs/refactor-subscription-billing-cycle-2026-09-03.md).
+DROP INDEX IF EXISTS usage_events_app_id_event_id_idx;
 
 -- The query this whole design exists to make fast: "how much has this OWNER
 -- used since some timestamp." Every enforcement point (ws.Handler.ServeHTTP

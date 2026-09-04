@@ -211,9 +211,10 @@ func (h *Handler) playgroundWS(w http.ResponseWriter, r *http.Request, user *ses
 		// database blip must not block an owner from testing. The event_id
 		// is namespaced by sessionID ("PG-<userID>-<appID>") so a playground
 		// prompt and a real end-user prompt that happen to share a RequestID
-		// don't collide on the (app_id, event_id) idempotency key and
-		// wrongly cancel each other out.
-		if dec, err := h.Quota.Check(ctx, app.AppID); err == nil && !dec.Allowed {
+		// don't collide with each other.
+		if dec, err := h.Quota.Check(ctx, app.AppID); err != nil {
+			slog.Error("playground: quota check failed, allowing (fail-open)", "err", err, "appID", app.AppID, "sessionID", sessionID)
+		} else if !dec.Allowed {
 			sendError(env.RequestID, "monthly prompt quota exceeded for this app's plan")
 			continue
 		}
@@ -230,9 +231,11 @@ func (h *Handler) playgroundWS(w http.ResponseWriter, r *http.Request, user *ses
 		}
 
 		// Best-effort: an uncounted playground prompt (record failed) favors
-		// the user and never blocks the response that already happened. This
-		// package keeps no logger, matching the rest of playground.go.
-		_ = h.Quota.Record(ctx, app.AppID, sessionID+":"+env.RequestID)
+		// the user and never blocks the response that already happened.
+		eventID := sessionID + ":" + env.RequestID
+		if err := h.Quota.Record(ctx, app.AppID, eventID); err != nil {
+			slog.Error("playground: failed to record usage event", "err", err, "appID", app.AppID, "sessionID", sessionID, "eventID", eventID)
+		}
 
 		for _, tc := range result.ToolCalls {
 			payload, _ := json.Marshal(playgroundToolCallPayload{ToolName: tc.ToolName, Args: tc.Args})
