@@ -1,6 +1,7 @@
 import type { Tool } from './schema'
 import type { AppSummary, Quota } from './api'
 import type { ValidationIssue } from './validate'
+import styles from './Sidebar.module.css'
 
 export function Sidebar({
   userEmail,
@@ -18,6 +19,7 @@ export function Sidebar({
   onSelectAgent,
   onSelectPlayground,
   onAddTool,
+  onAddToolWizard,
   onDeleteApp,
   onLogout,
 }: {
@@ -36,6 +38,7 @@ export function Sidebar({
   onSelectAgent: () => void
   onSelectPlayground: () => void
   onAddTool: () => void
+  onAddToolWizard: () => void
   onDeleteApp: () => void
   onLogout: () => void
 }) {
@@ -109,9 +112,23 @@ export function Sidebar({
         <div className="sidebar-section sidebar-section-grow">
           <div className="sidebar-section-head">
             <span>Tools</span>
-            <button type="button" className="sidebar-icon-btn" onClick={onAddTool} aria-label="New tool">
-              +
-            </button>
+            <span className={styles.sectionActions}>
+              <button
+                type="button"
+                className="sidebar-icon-btn"
+                onClick={onAddToolWizard}
+                aria-label="New tool, guided"
+                title="New tool, guided"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="13" height="13">
+                  <path d="M12 4v4M12 16v4M4 12h4M16 12h4" />
+                  <path d="M8 8l1.5 1.5M14.5 14.5L16 16M16 8l-1.5 1.5M9.5 14.5L8 16" />
+                </svg>
+              </button>
+              <button type="button" className="sidebar-icon-btn" onClick={onAddTool} aria-label="New tool">
+                +
+              </button>
+            </span>
           </div>
           {tools.length === 0 ? (
             <p className="sidebar-empty">No tools yet</p>

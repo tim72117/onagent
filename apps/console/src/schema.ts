@@ -19,6 +19,12 @@ export interface Tool {
   description: string
   parameters: ParameterSchema
   returns?: ParameterSchema
+  // Which ToolWizard template (see ToolWizard.tsx's TEMPLATES) this tool
+  // was built from, if any — round-trips through the backend
+  // (toolschema.Tool.SourceTemplate) purely as a display hint; never
+  // affects validation or behavior. Undefined for tools built from the
+  // blank form, hand-written tools.yaml, or saved before this existed.
+  sourceTemplate?: string
 }
 
 export interface App {

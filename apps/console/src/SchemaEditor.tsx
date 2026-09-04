@@ -16,10 +16,23 @@ export function SchemaEditor({
   schema,
   onChange,
   depth = 0,
+  hideRootHeader = false,
 }: {
   schema: ParameterSchema
   onChange: (next: ParameterSchema) => void
   depth?: number
+  // A tool's top-level parameters schema must always stay type "object" —
+  // OpenAI/Anthropic tool-calling conventions require it (see Tool.
+  // Parameters' doc comment in toolschema/schema.go) — so the type
+  // dropdown and object-level description this component otherwise always
+  // renders at the top (letting you switch it to "string"/"number"/etc,
+  // which would produce a broken tool) are pure noise there: for a tool
+  // with no properties at all (e.g. one built from the "Click a fixed
+  // button" wizard template), they're the only thing this editor renders,
+  // and read as a stray, unlabeled row rather than deliberate empty
+  // state. ToolForm passes this for the parameters editor only — returns
+  // can legitimately be any type at its root, so it keeps the selector.
+  hideRootHeader?: boolean
 }) {
   const properties = schema.properties ?? {}
   const required = new Set(schema.required ?? [])
@@ -80,23 +93,25 @@ export function SchemaEditor({
 
   return (
     <div className={depth > 0 ? styles.nested : undefined}>
-      <div className={styles.row}>
-        <select value={schema.type} onChange={(e) => setType(e.target.value as ParamType)}>
-          {PARAM_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        <label className="inline-label">
-          Description
-          <input
-            placeholder="What this field is for"
-            value={schema.description ?? ''}
-            onChange={(e) => onChange({ ...schema, description: e.target.value })}
-          />
-        </label>
-      </div>
+      {!hideRootHeader && (
+        <div className={styles.row}>
+          <select value={schema.type} onChange={(e) => setType(e.target.value as ParamType)}>
+            {PARAM_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
+          <label className="inline-label">
+            Description
+            <input
+              placeholder="What this field is for"
+              value={schema.description ?? ''}
+              onChange={(e) => onChange({ ...schema, description: e.target.value })}
+            />
+          </label>
+        </div>
+      )}
 
       {schema.type === 'string' && (
         <div className={`${styles.row} ${styles.sub}`}>

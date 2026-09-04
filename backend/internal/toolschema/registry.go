@@ -29,14 +29,15 @@ func (appRow) TableName() string { return "apps" }
 // (nil) for the common case of a tool that dispatches to the connected
 // browser page — see Tool.BackendDispatch's doc comment.
 type toolRow struct {
-	AppID           string `gorm:"column:app_id;primaryKey"`
-	Name            string `gorm:"column:name;primaryKey"`
-	Description     string `gorm:"column:description"`
-	Parameters      []byte `gorm:"column:parameters"`
-	Returns         []byte `gorm:"column:returns"`
-	Kind            string `gorm:"column:kind"`
-	BackendDispatch []byte `gorm:"column:backend_dispatch"`
-	Position        int    `gorm:"column:position"`
+	AppID           string  `gorm:"column:app_id;primaryKey"`
+	Name            string  `gorm:"column:name;primaryKey"`
+	Description     string  `gorm:"column:description"`
+	Parameters      []byte  `gorm:"column:parameters"`
+	Returns         []byte  `gorm:"column:returns"`
+	Kind            string  `gorm:"column:kind"`
+	BackendDispatch []byte  `gorm:"column:backend_dispatch"`
+	Position        int     `gorm:"column:position"`
+	SourceTemplate  *string `gorm:"column:source_template"`
 }
 
 func (toolRow) TableName() string { return "tools" }
@@ -234,6 +235,9 @@ func loadAllApps(db *gorm.DB) (map[string]*App, error) {
 		}
 
 		tool := Tool{Name: tr.Name, Description: tr.Description, Parameters: params, Kind: ToolKind(tr.Kind)}
+		if tr.SourceTemplate != nil {
+			tool.SourceTemplate = *tr.SourceTemplate
+		}
 		if tr.Returns != nil {
 			var ret ParameterSchema
 			if err := json.Unmarshal(tr.Returns, &ret); err != nil {
@@ -310,10 +314,14 @@ func saveApp(db *gorm.DB, app *App) error {
 					return fmt.Errorf("toolschema: marshal backend_dispatch for %s: %w", t.Name, err)
 				}
 			}
+			var sourceTemplate *string
+			if t.SourceTemplate != "" {
+				sourceTemplate = &t.SourceTemplate
+			}
 			rows = append(rows, toolRow{
 				AppID: app.AppID, Name: t.Name, Description: t.Description,
 				Parameters: paramsJSON, Returns: returnsJSON, Kind: string(kind),
-				BackendDispatch: backendDispatchJSON, Position: i,
+				BackendDispatch: backendDispatchJSON, Position: i, SourceTemplate: sourceTemplate,
 			})
 		}
 		if len(rows) > 0 {

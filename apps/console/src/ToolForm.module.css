@@ -1,0 +1,6 @@
+.sourceTemplate {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}

@@ -382,12 +382,19 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request, user *session.User)
 // infrastructure have no reason to enforce onagent's own SaaS tiers against
 // themselves), not a failure — see getQuota below for why that distinction
 // matters.
+// Limit/Used are deliberately NOT `omitempty` — encoding/json's omitempty on
+// an int drops the field entirely when it's 0, but 0 is a real, meaningful
+// value here (a brand-new account has genuinely used 0 prompts; a plan
+// could in principle have a 0 allowance) and must round-trip as "0", not be
+// silently absent from the response. Tier/PlanName/PeriodStart/PeriodEnd
+// keep omitempty since their zero values ("" / the zero time.Time) only
+// ever occur when Enabled is false, and the frontend never reads them then.
 type quotaResponse struct {
 	Enabled     bool      `json:"enabled"`
 	Tier        string    `json:"tier,omitempty"`
 	PlanName    string    `json:"planName,omitempty"`
-	Limit       int       `json:"limit,omitempty"`
-	Used        int       `json:"used,omitempty"`
+	Limit       int       `json:"limit"`
+	Used        int       `json:"used"`
 	PeriodStart time.Time `json:"periodStart,omitempty"`
 	PeriodEnd   time.Time `json:"periodEnd,omitempty"`
 }

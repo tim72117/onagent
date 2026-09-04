@@ -55,7 +55,11 @@ import (
 // dispatch via AskInteraction, tool_result correlation, ping/pong, per-prompt
 // quota enforcement — is exactly ws.Session's existing implementation. The
 // frontend (apps/console/src/Playground.tsx) now speaks the real
-// internal/protocol wire format instead of a hand-rolled subset.
+// internal/protocol wire format instead of a hand-rolled subset — including
+// for a subset of ToolWizard-templated tools that get a mock visual effect
+// and a genuine tool_result answer (see Playground.tsx's TOOL_MOCK_HANDLERS
+// and handleToolMessage); anything without a registered mock effect gets an
+// honest ok:false tool_result instead of a fabricated success.
 
 // playgroundResolver implements ws.AppResolver for the console's Playground
 // endpoint. See this file's package comment above for why Playground needs
