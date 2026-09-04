@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { BASE } from './api'
+import type { Tool } from './schema'
+import styles from './Playground.module.css'
 
 type ConnectionState = 'connecting' | 'open' | 'closed'
 
@@ -15,6 +17,12 @@ interface PlaygroundEnvelope {
   payload?: unknown
 }
 
+// How long a mock button stays visibly "clicked" after a matching tool_call
+// arrives — long enough to notice, short enough that a burst of tool calls
+// (a real click_button tool being called repeatedly) still reads as
+// distinct events rather than one stuck-on highlight.
+const CLICK_FLASH_MS = 900
+
 // Playground lets a developer test-drive their app's agent from inside the
 // console — no real front-end site required. It talks to a dedicated,
 // simpler WS endpoint (backend/internal/console/playground.go) rather than
@@ -23,18 +31,46 @@ interface PlaygroundEnvelope {
 // there's no Origin/allowedOrigin check to satisfy since this never leaves
 // the console's own origin.
 //
-// tool_call results are displayed, not executed — there's no real DOM here
-// for a tool to act on. That's the one behavioral difference from a real
-// integration worth calling out to the developer (see the hint text below
-// the transcript).
-export function Playground({ appId }: { appId: string }) {
+// tool_call results are logged as plain text below, not executed — there's
+// no real DOM here for a tool to act on in general. The one exception:
+// tools built from the "Click a fixed button" wizard template (see
+// ToolWizard.tsx's TEMPLATES) get an actual mock button rendered above the
+// transcript, since that template's whole point is "click one specific,
+// named button" — simple enough to genuinely simulate here, unlike a form
+// fill or a list of dynamic items. Other templates still only log; this is
+// deliberately a first step, not full simulation for every tool shape.
+export function Playground({ appId, tools }: { appId: string; tools: Tool[] }) {
   const [state, setState] = useState<ConnectionState>('connecting')
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [flashedTool, setFlashedTool] = useState<string | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const nextId = useRef(0)
   const transcriptRef = useRef<HTMLDivElement>(null)
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clickButtonTools = tools.filter((t) => t.sourceTemplate === 'click_button')
+
+  // SDK-style dispatch: tool_call.toolName is looked up in a handler map,
+  // the same shape AgentBridgeOptions.tools takes (packages/bridge/src/
+  // client.ts) — a name with no registered handler logs a warning instead
+  // of silently doing nothing, mirroring the real SDK's validateHandlers.
+  // Only "click fixed button" tools have a real handler today; every tool
+  // call still reaches the transcript log below regardless, just without a
+  // handler to also run if it's some other template.
+  //
+  // Kept in a ref, refreshed every render (not inside the connection
+  // effect, which intentionally only reconnects when appId changes) so the
+  // WS message listener — bound once at mount — always dispatches through
+  // whatever the current tools prop is, without needing a socket reconnect
+  // every time a tool is added/edited.
+  const toolHandlersRef = useRef<Record<string, (args: unknown) => void>>({})
+  useEffect(() => {
+    toolHandlersRef.current = Object.fromEntries(
+      clickButtonTools.map((t) => [t.name, () => triggerClickFlash(t.name)]),
+    )
+  })
 
   useEffect(() => {
     setMessages([])
@@ -61,6 +97,12 @@ export function Playground({ appId }: { appId: string }) {
       } else if (env.type === 'tool_call') {
         const p = env.payload as { toolName: string; args: unknown } | undefined
         appendMessage('tool_call', `${p?.toolName ?? '?'}(${JSON.stringify(p?.args ?? {})})`)
+        // Unlike the real SDK's validateHandlers, a missing entry here
+        // isn't warned about — most templates genuinely have no mock
+        // handler yet (see toolHandlersRef's comment), so "no handler
+        // registered" would read as a developer mistake when it's actually
+        // just an unimplemented Playground visualization.
+        if (p?.toolName) toolHandlersRef.current[p.toolName]?.(p.args)
       } else if (env.type === 'error') {
         const text = (env.payload as { message: string } | undefined)?.message ?? 'Unknown error'
         appendMessage('error', text)
@@ -75,6 +117,18 @@ export function Playground({ appId }: { appId: string }) {
   useEffect(() => {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight })
   }, [messages])
+
+  // Clears any pending flash timer on unmount so it doesn't fire setState
+  // after this component is gone.
+  useEffect(() => () => {
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
+  }, [])
+
+  function triggerClickFlash(toolName: string) {
+    if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
+    setFlashedTool(toolName)
+    flashTimerRef.current = setTimeout(() => setFlashedTool(null), CLICK_FLASH_MS)
+  }
 
   function appendMessage(role: ChatMessage['role'], text: string) {
     setMessages((cur) => [...cur, { id: nextId.current++, role, text }])
@@ -108,9 +162,26 @@ export function Playground({ appId }: { appId: string }) {
         </span>
       </div>
       <p className="thought-copy">
-        Test prompts against this app's agent without a real site. Tool calls are shown, not
-        executed — there's no page here for them to act on.
+        Test prompts against this app's agent without a real site. Most tool calls are shown, not
+        executed — there's no page here for them to act on — but a fixed-button tool gets a real
+        mock button below that lights up when the agent calls it.
       </p>
+
+      {clickButtonTools.length > 0 && (
+        <div className={styles.mockButtons}>
+          {clickButtonTools.map((t) => (
+            <button
+              key={t.name}
+              type="button"
+              className={t.name === flashedTool ? `${styles.mockButton} ${styles.mockButtonClicked}` : styles.mockButton}
+              disabled
+              title={t.description}
+            >
+              {t.description || t.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="playground-transcript" ref={transcriptRef}>
         {messages.length === 0 && (

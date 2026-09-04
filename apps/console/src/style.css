@@ -807,6 +807,12 @@ select:focus-visible {
   line-height: 1.6;
 }
 
+.empty-state-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 /* ---------------------------------------------------------------------- */
 /* Buttons & inputs                                                         */
 /* ---------------------------------------------------------------------- */
@@ -828,6 +834,11 @@ button.primary {
 
 button.primary:hover {
   filter: brightness(1.06);
+}
+
+button.primary.danger {
+  background: var(--danger);
+  border-color: var(--danger);
 }
 
 .text-btn {
@@ -1222,6 +1233,7 @@ button.primary:disabled {
   line-height: 1.6;
   margin: 0 0 14px;
 }
+
 
 .key-row {
   display: flex;

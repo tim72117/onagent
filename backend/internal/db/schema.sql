@@ -143,6 +143,12 @@ CREATE TABLE IF NOT EXISTS tools (
 -- (see internal/db.Open), so it must stay safe to re-run indefinitely.
 ALTER TABLE tools ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'action';
 ALTER TABLE tools ADD COLUMN IF NOT EXISTS backend_dispatch JSONB;
+-- Which console tool-creation template (if any) this tool was built from,
+-- e.g. "fill_form" or "click_list_item" (see apps/console/src/ToolWizard.tsx's
+-- TEMPLATES) — purely informational (never read by enforcement/inference),
+-- NULL for tools built from a blank form, hand-written tools.yaml, or from
+-- a version of the console that predates this column.
+ALTER TABLE tools ADD COLUMN IF NOT EXISTS source_template TEXT;
 
 -- Subscription tier + billing-cycle anchor per user. One row per user,
 -- written at signup (session.Register) with just a tier; readers still

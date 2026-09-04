@@ -1,7 +1,9 @@
 import type { Tool } from './schema'
 import { emptyObjectSchema } from './schema'
 import { SchemaEditor } from './SchemaEditor'
+import { TEMPLATES } from './ToolWizard'
 import type { ValidationIssue } from './validate'
+import styles from './ToolForm.module.css'
 
 export function ToolForm({
   tool,
@@ -14,6 +16,10 @@ export function ToolForm({
   onChange: (next: Tool) => void
   onRemove: () => void
 }) {
+  const templateLabel = tool.sourceTemplate
+    ? (TEMPLATES.find((t) => t.key === tool.sourceTemplate)?.label ?? tool.sourceTemplate)
+    : null
+
   return (
     <div className="tool-form">
       <div className="tool-form-header">
@@ -28,6 +34,11 @@ export function ToolForm({
             value={tool.name}
             onChange={(e) => onChange({ ...tool, name: e.target.value })}
           />
+          {templateLabel && (
+            <span className={styles.sourceTemplate} title="Built from this template in the guided wizard">
+              From template: {templateLabel}
+            </span>
+          )}
         </div>
         <button type="button" className="text-btn danger" onClick={onRemove}>
           Delete tool
@@ -58,6 +69,7 @@ export function ToolForm({
         <SchemaEditor
           schema={tool.parameters}
           onChange={(next) => onChange({ ...tool, parameters: next })}
+          hideRootHeader
         />
       </div>
 

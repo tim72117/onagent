@@ -1,0 +1,103 @@
+/* ToolWizard-only styles — the shared .modal/.field/.checkbox-row shell
+   these compose with stays in style.css since KeyModal/AddAppModal/
+   ConfirmModal all reuse that same shell. */
+
+/* Step indicator row — a plain label trail, not clickable (steps only move
+   via Next/Back so earlier answers stay validated). */
+.wizardSteps {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 18px;
+}
+
+.wizardStep {
+  flex: 1;
+  padding: 6px 0;
+  border-bottom: 2px solid var(--border);
+  font-size: 11px;
+  color: var(--ink-faint);
+  text-align: center;
+}
+
+.wizardStepDone {
+  border-color: var(--accent);
+  color: var(--ink-dim);
+}
+
+.wizardStepActive {
+  border-color: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.templateGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.templateCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.templateCard:hover {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.templateCardIcon {
+  display: inline-flex;
+  color: var(--ink-dim);
+}
+
+.templateCardIcon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.templateCard:hover .templateCardIcon {
+  color: var(--accent);
+}
+
+.templateCardLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.templateCardHint {
+  font-size: 11.5px;
+  color: var(--ink-dim);
+  line-height: 1.4;
+}
+
+.templateCardCustomize {
+  margin-top: 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.templateBlankBtn {
+  font-size: 12.5px;
+}
+
+.templateCustomizeCallout {
+  color: var(--accent);
+}
+
+.templateCustomizeCallout code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}

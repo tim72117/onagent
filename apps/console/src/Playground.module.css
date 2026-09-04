@@ -1,0 +1,36 @@
+/* Mock buttons for tools built from the "Click a fixed button" wizard
+   template — a small taste of "the agent actually did something" without
+   a real page to act on. disabled (not clickable by the developer) since
+   these represent the agent's own action, not a control for the person
+   testing the app. */
+.mockButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+
+.mockButton {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--ink);
+  border-radius: var(--radius-sm);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: default;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.mockButtonClicked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mockButton {
+    transition: none;
+  }
+}

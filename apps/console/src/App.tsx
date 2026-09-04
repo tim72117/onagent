@@ -7,8 +7,10 @@ import { Login } from './Login'
 import { fireRegistrationConversion } from './analytics'
 import { KeyModal } from './KeyModal'
 import { AddAppModal } from './AddAppModal'
+import { ConfirmModal } from './ConfirmModal'
 import { Sidebar } from './Sidebar'
 import { ToolForm } from './ToolForm'
+import { ToolWizard } from './ToolWizard'
 import { Playground } from './Playground'
 import { PreviewPanel } from './PreviewPanel'
 import { validateApp } from './validate'
@@ -68,6 +70,16 @@ export default function App() {
   const [playgroundSelected, setPlaygroundSelected] = useState(false)
   const [issuedKey, setIssuedKey] = useState<IssuedKey | null>(null)
   const [showAddApp, setShowAddApp] = useState(false)
+  const [showToolWizard, setShowToolWizard] = useState(false)
+  // Replaces window.confirm — set to show ConfirmModal, cleared (with or
+  // without running the action) on either button. A single slot is enough
+  // since only one confirmation is ever in flight at a time.
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    message: string
+    confirmLabel?: string
+    destructive?: boolean
+    onConfirm: () => void
+  } | null>(null)
   const [busy, setBusy] = useState(false)
   // Origin edits save immediately on submit (unlike tool edits, which batch
   // into draft/dirty until Save) — it's a single field with its own PUT
@@ -199,27 +211,39 @@ export default function App() {
     setThoughtDraft(activeSummary?.thought ?? '')
   }, [activeSummary?.appId, activeSummary?.thought])
 
-  function confirmDiscard(): boolean {
-    return !dirty || confirm('Discard unsaved changes to this app?')
+  // Runs action immediately if there's nothing unsaved to lose; otherwise
+  // gates it behind a confirmation. action itself may be async — this
+  // helper doesn't need to await it, callers that care already do.
+  function withDiscardConfirm(action: () => void) {
+    if (!dirty) {
+      action()
+      return
+    }
+    setPendingConfirm({
+      message: 'Discard unsaved changes to this app?',
+      confirmLabel: 'Discard',
+      destructive: false,
+      onConfirm: action,
+    })
   }
 
-  async function selectApp(appId: string) {
-    if (!confirmDiscard()) return
-    try {
-      const app = await api.getApp(appId)
-      setDraft({ appId: app.appId, tools: app.tools ?? [] })
-      setDirty(false)
-      setActiveToolIndex(null)
-      setAgentSelected(false)
-      setPlaygroundSelected(false)
-    } catch (err) {
-      reportError(err)
-    }
+  function selectApp(appId: string) {
+    withDiscardConfirm(async () => {
+      try {
+        const app = await api.getApp(appId)
+        setDraft({ appId: app.appId, tools: app.tools ?? [] })
+        setDirty(false)
+        setActiveToolIndex(null)
+        setAgentSelected(false)
+        setPlaygroundSelected(false)
+      } catch (err) {
+        reportError(err)
+      }
+    })
   }
 
   function addApp() {
-    if (!confirmDiscard()) return
-    setShowAddApp(true)
+    withDiscardConfirm(() => setShowAddApp(true))
   }
 
   async function createApp(appId: string) {
@@ -238,20 +262,26 @@ export default function App() {
     }
   }
 
-  async function deleteApp() {
+  function deleteApp() {
     if (!draft) return
-    if (!confirm(`Delete app "${draft.appId}" and its tools? Its API key is revoked too.`)) return
-    try {
-      await api.deleteApp(draft.appId)
-      await refreshSummaries()
-      setDraft(null)
-      setDirty(false)
-      setActiveToolIndex(null)
-      setAgentSelected(false)
-      setPlaygroundSelected(false)
-    } catch (err) {
-      reportError(err)
-    }
+    const appId = draft.appId
+    setPendingConfirm({
+      message: `Delete app "${appId}" and its tools? Its API key is revoked too.`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        try {
+          await api.deleteApp(appId)
+          await refreshSummaries()
+          setDraft(null)
+          setDirty(false)
+          setActiveToolIndex(null)
+          setAgentSelected(false)
+          setPlaygroundSelected(false)
+        } catch (err) {
+          reportError(err)
+        }
+      },
+    })
   }
 
   async function saveDraft() {
@@ -268,20 +298,26 @@ export default function App() {
     }
   }
 
-  async function issueKey() {
+  function issueKey() {
     if (!draft) return
-    if (
-      activeSummary?.hasKey &&
-      !confirm('This app already has a key. Issuing a new one revokes the old key immediately. Continue?')
-    ) {
-      return
+    const appId = draft.appId
+    const proceed = async () => {
+      try {
+        const issued = await api.issueKey(appId)
+        setIssuedKey(issued)
+        await refreshSummaries()
+      } catch (err) {
+        reportError(err)
+      }
     }
-    try {
-      const issued = await api.issueKey(draft.appId)
-      setIssuedKey(issued)
-      await refreshSummaries()
-    } catch (err) {
-      reportError(err)
+    if (activeSummary?.hasKey) {
+      setPendingConfirm({
+        message: 'This app already has a key. Issuing a new one revokes the old key immediately. Continue?',
+        confirmLabel: 'Issue new key',
+        onConfirm: proceed,
+      })
+    } else {
+      proceed()
     }
   }
 
@@ -313,15 +349,21 @@ export default function App() {
     }
   }
 
-  async function revokeKey() {
+  function revokeKey() {
     if (!draft) return
-    if (!confirm(`Revoke the API key for "${draft.appId}"? Connected sites stop working immediately.`)) return
-    try {
-      await api.revokeKey(draft.appId)
-      await refreshSummaries()
-    } catch (err) {
-      reportError(err)
-    }
+    const appId = draft.appId
+    setPendingConfirm({
+      message: `Revoke the API key for "${appId}"? Connected sites stop working immediately.`,
+      confirmLabel: 'Revoke',
+      onConfirm: async () => {
+        try {
+          await api.revokeKey(appId)
+          await refreshSummaries()
+        } catch (err) {
+          reportError(err)
+        }
+      },
+    })
   }
 
   function updateDraft(next: AppSchema) {
@@ -329,12 +371,44 @@ export default function App() {
     setDirty(true)
   }
 
-  function addTool() {
+  function appendTool(tool: Tool) {
     if (!draft) return
-    updateDraft({ ...draft, tools: [...draft.tools, emptyTool()] })
+    updateDraft({ ...draft, tools: [...draft.tools, tool] })
     setActiveToolIndex(draft.tools.length)
     setAgentSelected(false)
     setPlaygroundSelected(false)
+  }
+
+  function addTool() {
+    appendTool(emptyTool())
+  }
+
+  // Unlike appendTool (used by the blank-form "+ New tool" path, which only
+  // stages the change in draft/dirty until the user hits Save), a tool
+  // built through the guided wizard saves immediately — it went through a
+  // multi-step review already, so there's less risk of it being a
+  // half-finished edit someone would want to back out of before it's
+  // persisted. Computes the new tools list explicitly (not via draft.tools
+  // after updateDraft) since setDraft's update wouldn't be visible yet in
+  // this same function body.
+  async function addToolFromWizard(tool: Tool) {
+    setShowToolWizard(false)
+    if (!draft) return
+    const tools = [...draft.tools, tool]
+    updateDraft({ ...draft, tools })
+    setActiveToolIndex(tools.length - 1)
+    setAgentSelected(false)
+    setPlaygroundSelected(false)
+    setBusy(true)
+    try {
+      await api.saveTools(draft.appId, tools)
+      setDirty(false)
+      await refreshSummaries()
+    } catch (err) {
+      reportError(err)
+    } finally {
+      setBusy(false)
+    }
   }
 
   function updateTool(index: number, next: Tool) {
@@ -344,51 +418,85 @@ export default function App() {
     updateDraft({ ...draft, tools })
   }
 
+  // Saves immediately, unlike updateTool/appendTool (staged in draft/dirty
+  // until an explicit Save) — matches addToolFromWizard's reasoning:
+  // "Delete tool" is itself a deliberate, named action (behind a
+  // confirmation here too, since it's destructive), not an in-progress
+  // edit someone might want to back out of before it's persisted.
   function removeTool(index: number) {
     if (!draft) return
-    updateDraft({ ...draft, tools: draft.tools.filter((_, i) => i !== index) })
-    setActiveToolIndex(null)
+    const toolName = draft.tools[index]?.name || 'this tool'
+    const appId = draft.appId
+    setPendingConfirm({
+      message: `Delete "${toolName}"? This can't be undone.`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        const tools = draft.tools.filter((_, i) => i !== index)
+        updateDraft({ ...draft, tools })
+        setActiveToolIndex(null)
+        setBusy(true)
+        try {
+          await api.saveTools(appId, tools)
+          setDirty(false)
+          await refreshSummaries()
+        } catch (err) {
+          reportError(err)
+        } finally {
+          setBusy(false)
+        }
+      },
+    })
   }
 
   // Re-fetches draft (and, via refreshSummaries, the thought/origin/key
   // fields selectApp's fetch doesn't cover) before switching sub-views
   // within the same app — so e.g. a Thought edit saved from another tab
   // shows up here without a full app reselect. Gated by the same
-  // confirmDiscard() every other draft-replacing action here uses: if
-  // there are unsaved local edits, ask before overwriting them with the
-  // server's copy, rather than either silently discarding or silently
-  // skipping the refresh.
-  async function refreshDraftForSwitch() {
-    if (!draft || !confirmDiscard()) return
-    try {
-      const app = await api.getApp(draft.appId)
-      setDraft({ appId: app.appId, tools: app.tools ?? [] })
-      setDirty(false)
-      await refreshSummaries()
-    } catch (err) {
-      reportError(err)
+  // withDiscardConfirm() every other draft-replacing action here uses: the
+  // switch itself (switchView) only actually runs once confirmed (or
+  // immediately if there's nothing unsaved) — the view must not change
+  // before the user has answered, or the confirmation reads as showing up
+  // after the fact instead of gating it.
+  function refreshDraftForSwitch(switchView: () => void) {
+    if (!draft) {
+      switchView()
+      return
     }
+    withDiscardConfirm(async () => {
+      switchView()
+      try {
+        const app = await api.getApp(draft.appId)
+        setDraft({ appId: app.appId, tools: app.tools ?? [] })
+        setDirty(false)
+        await refreshSummaries()
+      } catch (err) {
+        reportError(err)
+      }
+    })
   }
 
-  async function selectTool(index: number) {
-    await refreshDraftForSwitch()
-    setActiveToolIndex(index)
-    setAgentSelected(false)
-    setPlaygroundSelected(false)
+  function selectTool(index: number) {
+    refreshDraftForSwitch(() => {
+      setActiveToolIndex(index)
+      setAgentSelected(false)
+      setPlaygroundSelected(false)
+    })
   }
 
-  async function selectAgent() {
-    await refreshDraftForSwitch()
-    setActiveToolIndex(null)
-    setAgentSelected(true)
-    setPlaygroundSelected(false)
+  function selectAgent() {
+    refreshDraftForSwitch(() => {
+      setActiveToolIndex(null)
+      setAgentSelected(true)
+      setPlaygroundSelected(false)
+    })
   }
 
-  async function selectPlayground() {
-    await refreshDraftForSwitch()
-    setActiveToolIndex(null)
-    setAgentSelected(false)
-    setPlaygroundSelected(true)
+  function selectPlayground() {
+    refreshDraftForSwitch(() => {
+      setActiveToolIndex(null)
+      setAgentSelected(false)
+      setPlaygroundSelected(true)
+    })
   }
 
   async function doLogout() {
@@ -443,6 +551,7 @@ export default function App() {
         onSelectAgent={selectAgent}
         onSelectPlayground={selectPlayground}
         onAddTool={addTool}
+        onAddToolWizard={() => setShowToolWizard(true)}
         onDeleteApp={deleteApp}
         onLogout={doLogout}
       />
@@ -506,7 +615,7 @@ export default function App() {
             {playgroundSelected ? (
               <div className="workspace-body workspace-body-single">
                 <section className="editor-pane editor-pane-wide">
-                  <Playground appId={draft.appId} />
+                  <Playground appId={draft.appId} tools={draft.tools} />
                 </section>
               </div>
             ) : (
@@ -537,9 +646,14 @@ export default function App() {
                       <p className="empty-state-body">
                         Choose a tool from the sidebar, or add a new one to define its parameters.
                       </p>
-                      <button type="button" className="primary" onClick={addTool}>
-                        + New tool
-                      </button>
+                      <div className="empty-state-actions">
+                        <button type="button" className="primary" onClick={addTool}>
+                          + New tool
+                        </button>
+                        <button type="button" className="text-btn" onClick={() => setShowToolWizard(true)}>
+                          Build one step by step →
+                        </button>
+                      </div>
                     </div>
                   )}
                 </section>
@@ -565,6 +679,20 @@ export default function App() {
 
       {issuedKey && <KeyModal issued={issuedKey} onClose={() => setIssuedKey(null)} />}
       {showAddApp && <AddAppModal onSubmit={createApp} onClose={() => setShowAddApp(false)} />}
+      {showToolWizard && <ToolWizard onCreate={addToolFromWizard} onClose={() => setShowToolWizard(false)} />}
+      {pendingConfirm && (
+        <ConfirmModal
+          message={pendingConfirm.message}
+          confirmLabel={pendingConfirm.confirmLabel}
+          destructive={pendingConfirm.destructive}
+          onConfirm={() => {
+            const action = pendingConfirm.onConfirm
+            setPendingConfirm(null)
+            action()
+          }}
+          onCancel={() => setPendingConfirm(null)}
+        />
+      )}
     </div>
   )
 }

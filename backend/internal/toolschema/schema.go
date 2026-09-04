@@ -7,6 +7,8 @@
 // stub for the Agent Bridge SDK.
 package toolschema
 
+import "encoding/json"
+
 // Tool is one developer-defined capability exposed to the LLM.
 type Tool struct {
 	// Name is the tool's identifier as seen by the LLM. Must be unique
@@ -58,6 +60,14 @@ type Tool struct {
 	// callback mode. This is deliberately unauthenticated — do not point it
 	// at an endpoint that isn't already trusted out of band.
 	BackendDispatch *BackendDispatch `yaml:"backendDispatch,omitempty" json:"backendDispatch,omitempty"`
+
+	// SourceTemplate records which console tool-creation template (if any)
+	// this tool was built from, e.g. "fill_form" or "click_list_item" — see
+	// apps/console/src/ToolWizard.tsx's TEMPLATES for the defined keys.
+	// Purely informational: never read by validation, enforcement, or
+	// inference. Empty for tools built from a blank form, hand-written
+	// tools.yaml, or saved before this field existed.
+	SourceTemplate string `yaml:"sourceTemplate,omitempty" json:"sourceTemplate,omitempty"`
 }
 
 // BackendDispatch configures the outbound HTTP call for a Tool.BackendDispatch
@@ -91,6 +101,45 @@ type ParameterSchema struct {
 	Items       *ParameterSchema            `yaml:"items,omitempty" json:"items,omitempty"`
 	Required    []string                    `yaml:"required,omitempty" json:"required,omitempty"`
 	Enum        []string                    `yaml:"enum,omitempty" json:"enum,omitempty"`
+}
+
+// MarshalJSON ensures an "object"-type schema always includes an explicit
+// "properties" key — as {} when there are none — instead of Properties'
+// `omitempty` tag dropping the key entirely for a tool with zero
+// parameters (Go's omitempty treats a length-0 map the same as nil,
+// regardless of whether it was ever explicitly set to {}). A bare
+// {"type":"object"} with no properties key at all is ambiguous JSON
+// Schema — traced to a real bug: it hung the vLLM tool-calling grammar
+// generator (no error, no response) for a tool built from the "Click a
+// fixed button" wizard template, which takes intentionally zero
+// parameters (ToolWizard.tsx's TEMPLATES). Applies uniformly to every JSON
+// encode of this type — codegen.ToLLMTools' payload to the inference
+// service, and the console API's own tool responses — not just the LLM
+// path, so the same shape is stored and returned consistently everywhere.
+// YAML encoding (tools.yaml/onagent save-tools) is untouched; want's own
+// loader has never shown this failure mode, and yaml.v3 doesn't support a
+// MarshalYAML override on a per-field-omission basis the same way.
+func (p ParameterSchema) MarshalJSON() ([]byte, error) {
+	if p.Type != "object" {
+		type alias ParameterSchema // avoids infinite recursion into this method
+		return json.Marshal(alias(p))
+	}
+	type objectSchema struct {
+		Type        string                      `json:"type"`
+		Description string                      `json:"description,omitempty"`
+		Properties  map[string]*ParameterSchema `json:"properties"` // no omitempty — always present for "object"
+		Items       *ParameterSchema            `json:"items,omitempty"`
+		Required    []string                    `json:"required,omitempty"`
+		Enum        []string                    `json:"enum,omitempty"`
+	}
+	props := p.Properties
+	if props == nil {
+		props = map[string]*ParameterSchema{}
+	}
+	return json.Marshal(objectSchema{
+		Type: p.Type, Description: p.Description, Properties: props,
+		Items: p.Items, Required: p.Required, Enum: p.Enum,
+	})
 }
 
 // App groups the tools that belong to one developer application (one

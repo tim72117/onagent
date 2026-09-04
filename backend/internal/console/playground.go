@@ -13,6 +13,7 @@ import (
 	"github.com/tim72117/onagent/internal/codegen"
 	"github.com/tim72117/onagent/internal/inference"
 	"github.com/tim72117/onagent/internal/session"
+	"github.com/tim72117/onagent/internal/toolschema"
 )
 
 // Package playground: lets a developer test-drive their app's agent from
@@ -32,14 +33,19 @@ import (
 //     per-app origin binding (see that package's ServeHTTP) doesn't apply
 //     here at all — enforcing it would require the console's own origin to
 //     be the app's configured one, which is nonsensical.
-//   - No tool_result round-trip: nothing here can execute a DOM action, so
-//     a tool_call is displayed and the turn ends — see playgroundPrompt.
+//   - A tool_call still has no real page to run on, but the console itself
+//     mocks a subset of templated tools (see ToolWizard.tsx's TEMPLATES and
+//     Playground.tsx's toolHandlersRef) and answers with a tool_result the
+//     same way a real page would — see playgroundSession.AskInteraction.
+//     Templates with no mock handler yet get no answer at all, which
+//     surfaces to the LLM exactly like a real page failing to respond
+//     (interactionTimeout below), not as a fabricated success.
 //
 // The wire format still mirrors internal/protocol's shape (type/requestId/
 // payload) for familiarity, but is intentionally a distinct, smaller type
 // set (playgroundEnvelope et al.) rather than importing internal/protocol,
-// since the two are allowed to diverge (e.g. this has no hello/context/
-// tool_result messages at all).
+// since the two are allowed to diverge (e.g. this has no hello/context
+// messages).
 
 const (
 	playgroundWriteTimeout = 10 * time.Second
@@ -68,6 +74,100 @@ type playgroundAssistantMessagePayload struct {
 
 type playgroundErrorPayload struct {
 	Message string `json:"message"`
+}
+
+// playgroundToolResultPayload is the Payload of an inbound "tool_result"
+// message — the console's mocked answer to a "tool_call" this session sent
+// out, in the same shape protocol.ToolResultPayload uses for a real page
+// (see ws.Session.handleToolResult), kept as a separate type per this
+// package's own wire format (see the package doc comment above).
+type playgroundToolResultPayload struct {
+	ToolName string          `json:"toolName"`
+	OK       bool            `json:"ok"`
+	Result   json.RawMessage `json:"result,omitempty"`
+	Error    string          `json:"error,omitempty"`
+}
+
+// playgroundInteractionTimeout bounds how long AskInteraction waits for the
+// console to answer a tool_call/tool_query with a matching tool_result.
+// var, not const, so a test can shrink it — mirrors ws.Session's
+// interactionTimeout.
+var playgroundInteractionTimeout = 20 * time.Second
+
+// playgroundSession implements inference.InteractionAsker so a
+// ToolKindAction/ToolKindQuery tool called from this playground run blocks
+// on and receives the console's mocked answer, the same bridge a real
+// ws.Session provides for an app's actual connected page (see
+// inference.RegisterAsker's doc comment). Without this, forwardingTool/
+// queryTool's askPage always failed with "no connected page for session" —
+// correct for a query (there's no real page data to return) but misleading
+// for an action tool the console can plausibly mock (e.g. ToolWizard's
+// click_button), which read back to the LLM as a fabricated disconnect
+// error rather than the mock succeeding.
+type playgroundSession struct {
+	send func(env playgroundEnvelope)
+
+	mu           sync.Mutex
+	pendingCalls map[string]chan playgroundToolResultPayload
+}
+
+func newPlaygroundSession(send func(env playgroundEnvelope)) *playgroundSession {
+	return &playgroundSession{
+		send:         send,
+		pendingCalls: make(map[string]chan playgroundToolResultPayload),
+	}
+}
+
+func (p *playgroundSession) AskInteraction(toolName string, args json.RawMessage, kind toolschema.ToolKind) (json.RawMessage, error) {
+	requestID := fmt.Sprintf("%p-%d", p, time.Now().UnixNano())
+	ch := make(chan playgroundToolResultPayload, 1)
+
+	p.mu.Lock()
+	p.pendingCalls[requestID] = ch
+	p.mu.Unlock()
+
+	payload, _ := json.Marshal(playgroundToolCallPayload{ToolName: toolName, Args: args})
+	p.send(playgroundEnvelope{Type: "tool_call", RequestID: requestID, Payload: payload})
+
+	select {
+	case result := <-ch:
+		if !result.OK {
+			if result.Error != "" {
+				return nil, fmt.Errorf("page reported an error answering %q: %s", toolName, result.Error)
+			}
+			return nil, fmt.Errorf("page reported failure answering %q", toolName)
+		}
+		return result.Result, nil
+	case <-time.After(playgroundInteractionTimeout):
+		p.mu.Lock()
+		delete(p.pendingCalls, requestID)
+		p.mu.Unlock()
+		return nil, fmt.Errorf("page didn't answer %q within %s", toolName, playgroundInteractionTimeout)
+	}
+}
+
+// handleToolResult delivers an inbound tool_result to whichever
+// AskInteraction call is waiting on its requestID — see
+// ws.Session.handleToolResult, which this mirrors. A requestID with no
+// pending caller (already timed out, or a stray/duplicate message) is
+// silently ignored, matching that same behavior.
+func (p *playgroundSession) handleToolResult(env playgroundEnvelope) {
+	var result playgroundToolResultPayload
+	if err := json.Unmarshal(env.Payload, &result); err != nil {
+		return
+	}
+
+	p.mu.Lock()
+	ch, ok := p.pendingCalls[env.RequestID]
+	if ok {
+		delete(p.pendingCalls, env.RequestID)
+	}
+	p.mu.Unlock()
+
+	if ok {
+		ch <- result
+		close(ch)
+	}
 }
 
 var playgroundUpgrader = websocket.Upgrader{
