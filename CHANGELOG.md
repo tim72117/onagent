@@ -6,6 +6,72 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.15
+
+No breaking changes for any external consumer — patch release.
+`ws.Handler`'s `Auth *auth.Store` field was replaced with `Resolver
+AppResolver` and `NewHandler`'s signature changed to match, but
+`internal/ws` has exactly one caller (`backend/cmd/server/main.go` and
+`backend/internal/console/console.go`, both updated in the same change) and
+is unreachable from outside this module by Go's own `internal/` visibility
+rule, so there's no external code this could break.
+
+- Fix Playground tool calls always failing with "no connected page for
+  session ... (it may have disconnected)". Root cause: Playground
+  reimplemented its own simplified WebSocket protocol with no `tool_result`
+  round trip and never registered an `inference.RegisterAsker`, so any
+  `ToolKindAction`/`ToolKindQuery` tool call had nothing to answer it.
+  Playground now reuses `internal/ws.Session` wholesale via a new
+  `ws.AppResolver` interface — `APIKeyResolver` for the real Agent Bridge
+  SDK path, `playgroundResolver` for Playground's session-cookie +
+  ownership auth — so connection management, ping/pong, and
+  `AskInteraction`/`tool_result` correlation are shared code instead of two
+  implementations that could drift.
+- Add the guided tool-creation wizard (`ToolWizard.tsx`): a step-by-step
+  flow (Template → Name → Description → Parameters → Returns) for building
+  a tool from a template or from scratch, as an alternative to the flat
+  form editor.
+- Add a Playground mock for a tool built from the wizard's `click_button`
+  or `fill_form` templates: a human tester can click a mock button or type
+  into a mock field, and a matching `tool_call` triggers the exact same
+  effect and reports back whether it genuinely took hold (`ok:false`, not
+  a fabricated success, for anything the mock has no real target for).
+  Mocks are implemented as one `useXxxMock()` hook per template
+  (`playgroundMocks/`) behind a shared `render()`/`invoke()` interface, so
+  adding a future template's mock doesn't require touching
+  `Playground.tsx`. Each mock's button labels / field names come from the
+  tool's own parameter `enum` (editable in the console) rather than a
+  hardcoded list.
+- Since a mock reads a tool call's arguments by a literal parameter name
+  (e.g. `click_button`'s `label`), renaming or removing that parameter in
+  the console would silently break the mock. `SchemaEditor` now accepts
+  `lockedPropertyNames` to prevent renaming/removing/un-requiring those
+  specific parameters (in both the flat form and the wizard), while type,
+  description, and enum options stay freely editable.
+- Fix a tool built from a zero-parameter wizard template (e.g. "Click a
+  fixed button") producing a bare `{"type":"object"}` with no `properties`
+  key at all — ambiguous JSON Schema that hung the vLLM tool-calling
+  grammar generator with no error or response.
+  `ParameterSchema.MarshalJSON` now always includes an explicit
+  `"properties"` key (as `{}` when there are none) for every JSON encode
+  of an object-type schema.
+- Add a declarative click-tracking mechanism
+  (`apps/console/src/analytics.ts`'s `installClickTracking`): an element
+  marked with `data-track="event[:value]"` fires a GA4 event through one
+  delegated listener, so adding or removing an analytics point is a JSX
+  attribute change, not a new `fire*()` function and call site. Wired up
+  on the two "create a tool" entry points (guided wizard vs. blank form)
+  to see which one developers reach for.
+- Add a `source_template` column recording which wizard template (if any)
+  a tool was built from — purely informational for display and mock
+  dispatch, never read by validation or inference.
+- Bump `@onagent/claude-skill` to 0.0.3: `onagent-cli-setup`'s SKILL.md was
+  missing the `set-thought` and `get-tools` CLI commands entirely from its
+  instruction list, and didn't document that `save-tools` never sends a
+  `tools.yaml`'s `thought` field (by design — it lets one `tools.yaml`
+  apply to multiple apps without clobbering each app's own thought), not a
+  bug. Docs-only; no CLI behavior changed.
+
 ## v0.2.14
 
 No breaking changes — patch release. `quota.Record`'s signature is
