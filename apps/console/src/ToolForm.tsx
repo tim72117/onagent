@@ -2,6 +2,7 @@ import type { Tool } from './schema'
 import { emptyObjectSchema } from './schema'
 import { SchemaEditor } from './SchemaEditor'
 import { TEMPLATES } from './ToolWizard'
+import { MOCK_LOCKED_PARAM_NAMES } from './playgroundMocks'
 import type { ValidationIssue } from './validate'
 import styles from './ToolForm.module.css'
 
@@ -19,6 +20,7 @@ export function ToolForm({
   const templateLabel = tool.sourceTemplate
     ? (TEMPLATES.find((t) => t.key === tool.sourceTemplate)?.label ?? tool.sourceTemplate)
     : null
+  const lockedParamNames = tool.sourceTemplate ? (MOCK_LOCKED_PARAM_NAMES[tool.sourceTemplate] ?? []) : []
 
   return (
     <div className="tool-form">
@@ -70,6 +72,7 @@ export function ToolForm({
           schema={tool.parameters}
           onChange={(next) => onChange({ ...tool, parameters: next })}
           hideRootHeader
+          lockedPropertyNames={lockedParamNames}
         />
       </div>
 

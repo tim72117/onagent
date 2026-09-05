@@ -3,7 +3,14 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import { CliAuthPage } from './CliAuthPage'
 import { ToastProvider } from './Toast'
+import { installClickTracking } from './analytics'
 import './style.css'
+
+// One delegated listener for every data-track-marked element in the app —
+// see analytics.ts's installClickTracking for why this is declarative
+// (data-track attributes) rather than each component importing and calling
+// a fire*() function.
+installClickTracking()
 
 // No router dependency for one extra path — a plain pathname check is
 // enough for a single special-purpose page. The console SPA is mounted

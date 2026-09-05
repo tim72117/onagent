@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ParameterSchema, Tool } from './schema'
 import { emptyObjectSchema, emptyTool, TOOL_NAME_RE } from './schema'
 import { SchemaEditor } from './SchemaEditor'
+import { MOCK_LOCKED_PARAM_NAMES } from './playgroundMocks'
 import styles from './ToolWizard.module.css'
 
 const STEPS = ['Template', 'Name', 'Description', 'Parameters', 'Returns'] as const
@@ -150,25 +151,23 @@ export const TEMPLATES: Template[] = [
       name: 'fill_form',
       description: 'Fill a specific form field with a value.',
       parameters: objectParams({
-        field: param('string', 'Which field to fill, e.g. "email" or "search"'),
+        field: { ...param('string', 'Which field to fill, e.g. "item" or "description"'), enum: ['item', 'description'] },
         value: param('string', 'The value to enter'),
       }),
     },
-    customizeParams: ['field'],
   },
   {
     key: 'click_button',
     icon: 'click',
-    label: 'Click a fixed button',
-    hint: 'One specific, one-off button — "Checkout", "Publish". No parameters needed.',
+    label: 'Click a button',
+    hint: 'Click a button on the page, identified by its label — "Confirm", "Cancel".',
     tool: {
       name: 'click_button',
-      description: 'Click a specific button on the page to trigger its action.',
-      parameters: objectParams({}),
+      description: 'Click a button on the page, identified by its visible label.',
+      parameters: objectParams({
+        label: { ...param('string', 'The visible label of the button to click, e.g. "Confirm" or "Cancel"'), enum: ['Confirm', 'Cancel'] },
+      }),
     },
-    customizeName:
-      "this tool takes no parameters, so it can only ever click one specific button — rename it to say exactly which one, e.g. click_checkout_button.",
-    noParameters: true,
   },
   {
     key: 'click_list_item',
@@ -276,9 +275,16 @@ export const TEMPLATES: Template[] = [
 // unfamiliar with JSON Schema benefits most from being asked one thing at
 // a time instead of facing the whole form at once.
 export function ToolWizard({
+  existingNames,
   onCreate,
   onClose,
 }: {
+  // Names of tools already on this app (see App.tsx's draft.tools) — the
+  // wizard builds its Tool in local state before it's ever added to that
+  // array, so without this it can't tell a name collision from a valid new
+  // one until the backend's Validate() rejects the save after the whole
+  // guided flow is already done.
+  existingNames: string[]
   onCreate: (tool: Tool) => void
   onClose: () => void
 }) {
@@ -290,10 +296,17 @@ export function ToolWizard({
   // there, so it isn't a step to click through.
   const visibleSteps: Step[] = template?.noParameters ? STEPS.filter((s) => s !== 'Parameters') : [...STEPS]
   const step: Step = visibleSteps[stepIndex]
+  const lockedParamNames = template ? (MOCK_LOCKED_PARAM_NAMES[template.key] ?? []) : []
 
-  const nameValid = TOOL_NAME_RE.test(tool.name.trim())
+  const trimmedName = tool.name.trim()
+  const nameValid = TOOL_NAME_RE.test(trimmedName)
+  const nameTaken = existingNames.includes(trimmedName)
   const canAdvance =
-    step === 'Name' ? nameValid : step === 'Description' ? tool.description.trim() !== '' : true
+    step === 'Name'
+      ? nameValid && !nameTaken
+      : step === 'Description'
+        ? tool.description.trim() !== ''
+        : true
 
   function pickTemplate(t: Template | null) {
     setTemplate(t)
@@ -378,6 +391,11 @@ export function ToolWizard({
             <p className="modal-hint">
               What the model calls to invoke this tool — letters, digits, and underscores only.
             </p>
+            {nameTaken && (
+              <p className={`modal-hint ${styles.nameTakenWarning}`}>
+                A tool named "{trimmedName}" already exists on this app.
+              </p>
+            )}
             {template?.customizeName && (
               <p className={`modal-hint ${styles.templateCustomizeCallout}`}>From the template: {template.customizeName}</p>
             )}
@@ -415,10 +433,22 @@ export function ToolWizard({
                 called.
               </p>
             )}
+            {lockedParamNames.length > 0 && (
+              <p className={`modal-hint ${styles.templateCustomizeCallout}`}>
+                {lockedParamNames.map((p) => (
+                  <code key={p}>{p}</code>
+                ))}{' '}
+                {lockedParamNames.length > 1 ? 'are' : 'is'} this template's Playground mock in the
+                console — renaming or removing {lockedParamNames.length > 1 ? 'them' : 'it'} would
+                silently break that preview, so the name is locked. Everything else (type,
+                description, required, enum options) stays fully editable.
+              </p>
+            )}
             <SchemaEditor
               schema={tool.parameters}
               onChange={(next) => setTool({ ...tool, parameters: next })}
               hideRootHeader
+              lockedPropertyNames={lockedParamNames}
             />
           </div>
         )}

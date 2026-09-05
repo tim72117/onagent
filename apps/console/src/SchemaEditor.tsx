@@ -17,6 +17,7 @@ export function SchemaEditor({
   onChange,
   depth = 0,
   hideRootHeader = false,
+  lockedPropertyNames,
 }: {
   schema: ParameterSchema
   onChange: (next: ParameterSchema) => void
@@ -33,10 +34,20 @@ export function SchemaEditor({
   // state. ToolForm passes this for the parameters editor only — returns
   // can legitimately be any type at its root, so it keeps the selector.
   hideRootHeader?: boolean
+  // Top-level parameter names Playground's mock for this tool's
+  // sourceTemplate reads by literal key (e.g. "label" for click_button,
+  // "field"/"value" for fill_form — see playgroundMocks/*.tsx's invoke()).
+  // Renaming or removing one of these silently breaks the mock: the tool
+  // calls with the new key, but invoke() still reads the old one and gets
+  // undefined. Only ToolForm passes this, for the root parameters editor —
+  // nested levels (array items, sub-objects) and the returns editor have
+  // no such dependency, so they're left fully editable.
+  lockedPropertyNames?: string[]
 }) {
   const properties = schema.properties ?? {}
   const required = new Set(schema.required ?? [])
   const propNames = Object.keys(properties)
+  const locked = new Set(lockedPropertyNames ?? [])
 
   function setType(type: ParamType) {
     const next: ParameterSchema = { type, description: schema.description }
@@ -59,6 +70,10 @@ export function SchemaEditor({
   }
 
   function renameProperty(oldName: string, newName: string) {
+    // Guards the rename itself, not just the input's readOnly attribute —
+    // readOnly only stops keyboard input, and this is the actual gate a
+    // locked name must not get past regardless of how onChange fired.
+    if (locked.has(oldName)) return
     if (!newName || newName === oldName || newName in properties) return
     const nextProps = { ...properties }
     delete nextProps[oldName]
@@ -74,6 +89,9 @@ export function SchemaEditor({
   }
 
   function removeProperty(name: string) {
+    // Guards the removal itself, not just the button's disabled attribute
+    // — same reasoning as renameProperty's locked check above.
+    if (locked.has(name)) return
     const nextProps = { ...properties }
     delete nextProps[name]
     onChange({
@@ -84,6 +102,12 @@ export function SchemaEditor({
   }
 
   function toggleRequired(name: string) {
+    // Guards the toggle itself, not just the checkbox's disabled attribute
+    // — same reasoning as renameProperty/removeProperty's locked checks
+    // above. A locked parameter's required-ness is part of what the
+    // template's mock expects (e.g. click_button's label arriving on every
+    // call), so it's fixed together with the name.
+    if (locked.has(name)) return
     const isRequired = required.has(name)
     const nextRequired = isRequired
       ? (schema.required ?? []).filter((r) => r !== name)
@@ -149,19 +173,30 @@ export function SchemaEditor({
             <div key={name} className={styles.property}>
               <div className={styles.row}>
                 <input
-                  className={styles.propName}
+                  className={locked.has(name) ? `${styles.propName} ${styles.propNameLocked}` : styles.propName}
                   value={name}
+                  readOnly={locked.has(name)}
+                  title={locked.has(name) ? 'This parameter name is used by the Playground mock for this tool’s template and can’t be renamed.' : undefined}
                   onChange={(e) => renameProperty(name, e.target.value)}
                 />
                 <label className={styles.required}>
                   <input
                     type="checkbox"
                     checked={required.has(name)}
+                    disabled={locked.has(name)}
+                    title={locked.has(name) ? 'This parameter’s required-ness is fixed by the Playground mock for this tool’s template.' : undefined}
                     onChange={() => toggleRequired(name)}
                   />
                   required
                 </label>
-                <button type="button" className="icon-btn" onClick={() => removeProperty(name)} aria-label="Remove property">
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => removeProperty(name)}
+                  disabled={locked.has(name)}
+                  title={locked.has(name) ? 'This parameter is used by the Playground mock for this tool’s template and can’t be removed.' : undefined}
+                  aria-label="Remove property"
+                >
                   ×
                 </button>
               </div>

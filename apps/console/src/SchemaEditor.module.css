@@ -55,6 +55,19 @@
   font-family: var(--font-mono);
 }
 
+/* Visually distinct from a normal editable input — readOnly alone lets the
+   caret blink and the field take focus, which reads as "editable but not
+   responding" rather than "locked" without this. See SchemaEditor.tsx's
+   lockedPropertyNames. */
+.propNameLocked {
+  background: var(--bg);
+  color: var(--ink-dim);
+  /* Without this, a readOnly input still shows the text-caret (I-beam)
+     cursor on hover — indistinguishable from an editable field until you
+     actually try typing into it. */
+  cursor: default;
+}
+
 .required {
   display: flex;
   align-items: center;

@@ -6,11 +6,26 @@
 
 ---
 
-## 最新掃描：2026-09-04
+## 最新掃描：2026-09-05
 
-> 方法：針對「Playground 改用共用 `ws.Session`」這次重構做的針對性複核（非全面重掃）。
+> 方法：針對本次請求範圍（`backend/internal/auth/`、`backend/internal/session/`、`backend/internal/ws/`、`backend/cmd/server/main.go`）做的機密資料處理與傳輸安全定向複核——API key/token 產生與比對方式、cookie 屬性、CORS/Origin 檢查、WebSocket 升級流程。單一 agent 人工逐檔複核，非多 agent 對抗式驗證。
 
-### 🟡 `toolschema.Registry` 記憶體快照落後於資料庫，多實例部署下可能讓已刪除 app 短暫通過存在性檢查（新發現）
+### 複核結論：未發現本次範圍內的新漏洞
+
+逐項複核結果如下，均與既有記錄一致或確認安全，**沒有新增發現**：
+
+- **API key/token 產生**：`auth.randomKey`（32 bytes）、`session.randomID`（32 bytes）、`ws.randomID`（16 bytes）均用 `crypto/rand`，熵足夠，非弱隨機性。
+- **API key/token 儲存**：`auth.Store`（apps.api_key_hash）、`usertoken.Store`（user_tokens.token_hash）皆只存 SHA256 hash，明文不落地；`session.Store`/密碼走 bcrypt（`DefaultCost`）。無明文儲存問題。
+- **API key/token 比對方式**：`auth.Verify`/`usertoken.Verify` 都是「先 SHA256 hash 再送資料庫做索引等值查詢」，不是對明文做逐字元比較，時序攻擊面已由 hash 轉嫁到雜湊值等值比對（不透過使用者可控的 Go 迴圈），可接受，非漏洞（`auth.go:99` 的既有註解已說明此設計取捨）。
+- **Cookie 設定**（`session.go` `CreateSession`/`Logout`）：`HttpOnly: true` 固定開啟；`Secure` 隨 `COOKIE_SECURE`／`APP_ENV=production` 走 fail-fast（`main.go:161-167`）；`SameSite` 依 `Secure` 動態選 `None`（要求 Secure）或 `Lax`（`sameSite` 函式），符合瀏覽器對 `SameSite=None` 必須搭配 `Secure` 的要求，機制正確。
+- **CORS/Origin 檢查**：`corsMiddleware`（`main.go:457-475`）只在 origin 落在傳入的 allowlist 時才回填 `Access-Control-Allow-Origin`（且只回填成該實際 origin，從不回 `*`），三組 allowlist（`/console`+`/auth`、`/admin`、APP_ORIGINS）分別呼叫互不共用，符合既有 `TestCORSMiddleware_TrustsOnlyItsOwnAllowlist`/`TestMountCredentialedRoutes_WiresEachPrefixToTheSameAllowlist` 測試斷言。未發現遺漏路由或繞過路徑。
+- **WebSocket 升級**：`ws.Handler.CheckOrigin`（`handler.go:170-188`）在 `Resolver != nil` 時無條件回 true，但兩個目前存在的 `AppResolver` 實作（`APIKeyResolver`、`playgroundResolver`）都各自在 `ResolveApp` 內做了 Origin 檢查，符合 Handler 文件註解「Resolver 必須自己做 Origin 檢查」的約定；且 `ResolveApp` 在 `Upgrade()` 之前執行、失敗直接 `http.Error` 回應，不會先升級再拒絕。`APIKeyResolver.ResolveApp`（`handler.go:119-127`）採用「app 未設定 allowedOrigin 就整個 fail-closed」而非「無限制放行」，也是正確方向。
+
+### 對已知問題的當前狀態複核（非新發現，僅確認現況不變）
+
+以下四項在本次範圍內複核後，狀態與 2026-08-16 記錄的一致，仍未修復；具體內容見下方「進行中的發現」，不在此重複：S2（無 rate limit）、S3（無安全 header）、S4（API key 走 WS URL query 參數）、quota check-then-act 競態。
+
+### 🟡 `toolschema.Registry` 記憶體快照落後於資料庫，多實例部署下可能讓已刪除 app 短暫通過存在性檢查
 - **位置**：`backend/internal/ws/handler.go`（`APIKeyResolver.ResolveApp`）＋ `backend/internal/console/playground.go`（`playgroundResolver.ResolveApp`）＋ `backend/internal/toolschema/registry.go`（`Registry.Get`/`OwnerOf`）
 - **問題**：`auth.Store.Verify`/`session.Store.Verify` 都是即時查資料庫，但 `toolschema.Registry.Get`/`OwnerOf` 讀的是建構/`Reload` 時載入的記憶體快照，只在該實例自己呼叫 `Save`/`Create`/`Delete`/`Reload` 時才會更新。這代表：若後端跑多個實例（水平擴展），某個實例的 app 被刪除後，另一個尚未 `Reload` 的實例的 `Registry` 快照仍然「認得」這個已刪除的 app。
 - **攻擊/失效情境**：app 被刪除的瞬間，若攻擊者手上還有一把該 app **尚未被撤銷**的 API key（`auth.Store` 是即時查詢，key 是否失效跟 app 是否還在 `Registry` 快照裡是兩件事），指向一個還沒 `Reload` 的實例的請求，`APIKeyResolver.ResolveApp`（或 `playgroundResolver.ResolveApp`）的 `Apps.Get`/`OwnerOf` 檢查仍會通過，讓一個「已刪除」的 app 在該實例上短暫繼續可用。窗口大小取決於該實例下次 `Reload` 的時機（若該實例完全沒有其他寫入觸發 `Reload`，理論上窗口可以持續到下次部署重啟）。
@@ -25,18 +40,13 @@
 
 ### 本次新確認發現
 
-**🟠 高風險：Quota check-then-act 競態，可無限繞過月額度（confidence 9/10）**
-- **位置**：`backend/internal/ws/session.go:262-291`（`handlePrompt`）＋ `backend/internal/quota/quota.go:107-133`（`Check`）、`:150-172`（`Record`）
-- **問題**：`Check` 只是單純的 `COUNT(*)`，`Record` 要等 `inference.Complete` 跑完（最長可到 ~90 秒的 `completeTimeout`）才會寫入。兩者之間完全沒有鎖或交易隔離；唯一的唯一性限制是 `(app_id, event_id)`，只防止同一個 RequestID 被重複計數，擋不住不同請求同時讀到「未超額」。
-- **攻擊情境**：額度用完 0/10 的使用者，在 ~90 秒推論視窗內開多條 WebSocket 連線或發多個帶不同 RequestID 的 prompt。每個併發請求各自 `Check` 時都看到「未超額」（因為還沒有任何一個 sibling 請求寫回 `Record`），全部放行進真正的 LLM 呼叫——實質上可無限繞過月額度，直接造成計費/成本外洩。
-- **修法**：把 check-and-increment 對同一個 owner 做原子化——要嘛用 `SELECT ... FOR UPDATE`（或 `pg_advisory_xact_lock(owner_id)`）把 `Check`+`Record` 包進同一個交易，要嘛改成「先原子扣額度，推論失敗再退回」的模式（atomic conditional UPDATE，`used < limit` 才成功）。純 process-local 的 mutex 不夠，服務若有多個 replica 就無效，須是 DB 層強制的鎖。
-- **狀態**：未修復。
+Quota check-then-act 競態（confidence 9/10）於本次掃描首次確認，內容已併入下方「進行中的發現」（見「Quota check-then-act 競態，可無限繞過月額度」項目），不在此重複。
 
 ### 新增子系統掃描結果
 
 - **`backend/internal/adminauth`**：獨立於開發者帳號的身份系統（自己的表、cookie、bcrypt），無自助註冊端點，只能透過 `ADMIN_BOOTSTRAP_EMAIL/PASSWORD` 環境變數建立第一個帳號。複核無問題。
 - **`backend/internal/adminconsole`**：`/admin/api/*` 除了 login/logout 全部走 `withAdmin`，fail-closed。`setUserPlan` 可任意調整使用者方案，目前無額外的操作稽核紀錄（非漏洞，僅記錄供未來考慮）。
-- **`backend/internal/quota`**：除了上述 TOCTOU 問題外，其餘（append-only ledger、`ON CONFLICT` 冪等寫入）設計正確。
+- **`backend/internal/quota`**：除了上方 TOCTOU 問題外，其餘（append-only ledger、`ON CONFLICT` 冪等寫入）設計正確。
 - **`backend/internal/sessionstore`**：`want` 用的 GORM session store，明確以 `appId` scope（`ForApp`），複核跨 app 洩漏疑慮不成立——讀寫都有 `WHERE app_id = ? AND session_id = ?`。
 
 ### 順帶一提
@@ -46,6 +56,14 @@
 ---
 
 ## 進行中的發現（依嚴重度排序，現況持續更新）
+
+### 🟠 Quota check-then-act 競態，可無限繞過月額度
+- **位置**：`backend/internal/ws/session.go:262-291`（`handlePrompt`）＋ `backend/internal/quota/quota.go:107-133`（`Check`）、`:150-172`（`Record`）
+- **問題**：`Check` 只是單純的 `COUNT(*)`，`Record` 要等 `inference.Complete` 跑完（最長可到 ~90 秒的 `completeTimeout`）才會寫入。兩者之間完全沒有鎖或交易隔離；唯一的唯一性限制是 `(app_id, event_id)`，只防止同一個 RequestID 被重複計數，擋不住不同請求同時讀到「未超額」。
+- **攻擊情境**：額度用完 0/10 的使用者，在 ~90 秒推論視窗內開多條 WebSocket 連線或發多個帶不同 RequestID 的 prompt。每個併發請求各自 `Check` 時都看到「未超額」（因為還沒有任何一個 sibling 請求寫回 `Record`），全部放行進真正的 LLM 呼叫——實質上可無限繞過月額度，直接造成計費/成本外洩。
+- **修法**：把 check-and-increment 對同一個 owner 做原子化——要嘛用 `SELECT ... FOR UPDATE`（或 `pg_advisory_xact_lock(owner_id)`）把 `Check`+`Record` 包進同一個交易，要嘛改成「先原子扣額度，推論失敗再退回」的模式（atomic conditional UPDATE，`used < limit` 才成功）。純 process-local 的 mutex 不夠，服務若有多個 replica 就無效，須是 DB 層強制的鎖。
+- **現況（2026-08-16 複核）**：未修復（新確認發現，confidence 9/10）。
+- **現況（2026-09-05 複核）**：仍未修復。複核 `ws/session.go` 的 `handlePrompt` 確認 `Check`/`Record` 之間的窗口機制不變，這次未擴大掃描範圍到 `quota` 套件本身有無新的鎖機制。
 
 ### 🟡 明文 bearer token 無限期停留在 `cli_auth_sessions`（原 improvement-backlog 2026-07-24，併入於 2026-08-16）
 - **位置**：`backend/internal/cliauth/cliauth.go`（`Approve`/`Exchange`）
@@ -59,18 +77,21 @@
 - **攻擊情境**：一個免費帳號建一個 app、定義一個 `ToolKindQuery` 工具、開 WebSocket、送出觸發該工具的 prompt，然後永遠不回答 `tool_query`。每一次這樣的呼叫佔用 orchestrator 直到逾時；攻擊者可開無上限的並發 WS 連線（無連線數上限）各自迴圈這樣做，把全平台推論吞吐量壓到零。同樣的觸發方式現在也能透過 Console 自己的 Playground 做到——開發者對自己的 app 定義一個 `ToolKindQuery` 工具、在 Playground 觸發後不回答，一樣能卡住該 session 的 orchestrator（誘因較低，因為是攻擊自己帳號，不構成跨租戶危害，但技術上是同一漏洞的另一個入口）。
 - **修法**：per-app 或 pooled orchestrator（見 A1）；過渡期至少加 per-appId/IP 的並發與速率限制、限制每 key/app 的同時 WS 連線數。因為 Agent Bridge SDK 與 Playground 現在共用同一段 `ws.Session` 程式碼，修好一次即可同時涵蓋兩條路徑，不需要分別修。
 - **現況（2026-08-16 複核）**：仍未修復。`want.go` 每個 session 已有獨立 orchestrator 物件（物件隔離修好了，見 A1），但套件文件明確寫著底層 `RequestQueue` 仍是 process-wide `maxConcurrent=1`——吞吐量仍全平台序列化，是 `want` 函式庫本身的限制。新增的 `quota` 套件是「每月用量上限」，不是併發/速率限制，無法擋住惡意 `tool_query` 卡住 orchestrator 的情境。
+- **現況（2026-09-05 複核）**：仍未修復，`backend/` 全域無 rate-limit middleware，機制不變。
 
 ### 🟠 S3. 完全沒有設定任何安全 header
 - **位置**：全 `backend/` 無 `Strict-Transport-Security`／`X-Frame-Options`／`X-Content-Type-Options`／`Content-Security-Policy`；`main.go` 的 `recoverMiddleware` 是唯一的全域 middleware，`web.go` 的靜態回應只設 `Content-Type`。
 - **影響**：session-cookie 認證的 console SPA（以及新增的 admin SPA）可被 clickjacking（無 `X-Frame-Options`/`frame-ancestors`）；無 HSTS 留下 HTTP 降級窗口（即使 `COOKIE_SECURE=true`，除非 LB 另外補）；無 CSP，缺少對未來 XSS 的縱深防禦。
 - **修法**：加一個全域安全 header middleware（包住 `recoverMiddleware` 內外皆可），統一加上 `X-Frame-Options: DENY`（或 `CSP frame-ancestors 'none'`）、`Strict-Transport-Security`（僅正式環境）、`X-Content-Type-Options: nosniff`、`Referrer-Policy`，且要套住 `/app`、`/admin` 的靜態/SPA fallback 路由。
 - **現況（2026-08-16 複核）**：仍未修復，且範圍擴大——新增的 admin SPA 現在也暴露在同樣的 clickjacking 風險下。本次複掃已用對抗式驗證正式確認（confidence 8/10）。
+- **現況（2026-09-05 複核）**：仍未修復。複核 `main.go`（唯一全域 middleware 是 `recoverMiddleware`）與 `web.go`（靜態回應只設 `Content-Type`），確認無任何路由（含 `/app`、`/admin` 的 SPA fallback）帶有 `X-Frame-Options`/`CSP`/`HSTS`/`X-Content-Type-Options`。
 
 ### 🟠 S4. API key 以 WS URL query 參數傳輸 — 實際的日誌/歷史外洩
 - **位置**：`backend/internal/ws/handler.go`（`r.URL.Query().Get("token")`）＋ `packages/bridge/src/client.ts`（`url.searchParams.set("token", ...)`）
 - **影響**：這是刻意的取捨（瀏覽器無法對 WS upgrade 設 header），但「只用 wss://」只保護傳輸線路，不保護 Cloud Run/LB 的 access log（多數預設會記完整 URL）、瀏覽器歷史、Referer 外洩。任何記錄完整 request URL 的存取日誌都會持久儲存明文 API key。SDK 也未在 runtime 強制 `wss://`。
 - **修法**：在 Cloud Run/LB 存取日誌層 redact `token` query 參數；SDK constructor 加 runtime 檢查，`apiKey` 有值但 `url` 非 `wss://`（localhost 例外）時大聲警告；長期考慮改用短效、單次 WS ticket（HTTPS 認證後換發、WS 一次兌換）取代長效 key。
 - **現況（2026-08-16 複核）**：仍未修復，機制不變。SDK 仍未在 runtime 檢查 `apiKey` 有值但 `url` 非 `wss://` 的情況，僅在 JSDoc 註記。
+- **現況（2026-09-05 複核）**：仍未修復。複核 `ws/handler.go:107`（`r.URL.Query().Get("token")`）確認機制不變；`APIKeyResolver.ResolveApp` 對缺 token 只回通用「invalid or missing token」訊息（未區分「app 不存在」vs「key 錯誤」），這點本身正確（不洩漏 app 是否存在），但不影響 token 走 URL query 這個核心風險。
 
 ### 🟡 S6. `createApp` 無每使用者數量上限
 - **位置**：`backend/internal/console/console.go`（`createApp`）

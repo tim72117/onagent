@@ -881,6 +881,15 @@ button.primary.danger {
   color: var(--danger);
 }
 
+.icon-btn:disabled {
+  opacity: 0.35;
+}
+
+.icon-btn:disabled:hover {
+  background: transparent;
+  color: var(--ink-faint);
+}
+
 input,
 textarea,
 select {

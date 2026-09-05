@@ -95,7 +95,7 @@ onagent list-apps
 
 ## 二、建立 App、發 Key、設定 Origin
 
-建立 app、發 API key、設定 Allowed origin 三件事現在都已經有對應的 `onagent` CLI 指令，也都可以在 console 網頁 UI 完成，兩種方式效果相同、擇一即可。`onagent` 目前有 `login`、`login --web`、`list-apps`、`create-app`、`issue-key`、`set-origin`、`save-tools` 七個指令。
+建立 app、發 API key、設定 Allowed origin 三件事現在都已經有對應的 `onagent` CLI 指令，也都可以在 console 網頁 UI 完成，兩種方式效果相同、擇一即可。`onagent` 目前有 `login`、`login --web`、`list-apps`、`create-app`、`issue-key`、`set-origin`、`set-thought`、`save-tools`、`get-tools` 九個指令。
 
 ### 1. 建立 app
 
@@ -139,6 +139,18 @@ onagent set-origin <appId> <origin>
 
 **這一步最容易被忽略，但沒做的話後果是整個串接完全失敗：只要 Allowed origin 沒設定，這個 app 的所有 WebSocket 連線都會被拒絕（fail-closed）——即使 `apiKey` 完全正確也一樣連不上。** 如果使用者回報「apiKey 明明是對的，但連線就是被拒絕／WebSocket 連不上」，第一件事就是提醒他們檢查這個 app 的 Allowed origin 是否已經設定、且與實際部署網域完全一致。
 
+### 5. 設定 Thought（system prompt）
+
+優先用 CLI 設定：
+
+```bash
+onagent set-thought <appId> <thought>
+```
+
+這是目前唯一能透過 CLI 寫入某個 app 的 thought（want agent 的自訂 system prompt）的指令（見下一節「`tools.yaml` 的精確格式」裡 `thought` 欄位的說明），也可以改到 console 網頁 UI 的 Agent thought 編輯器操作，兩者效果相同。
+
+傳空字串（`onagent set-thought <appId> ""`）會清除自訂 thought，改回平台預設值。
+
 ## 三、定義 tool 並用 onagent save-tools 推上去
 
 除了在 console 網頁 UI 用 tool 編輯器手動定義 tool，也可以把 tool 定義寫成一份本機的 `tools.yaml` 檔案，再用 `onagent save-tools` 指令一次推上去，效果完全相同。當使用者的 tool 數量較多、需要版本控制、或想要重複套用到多個 app 時，優先建議這個方式。
@@ -148,7 +160,7 @@ onagent set-origin <appId> <origin>
 檔案結構如下，各欄位規則務必照著寫，不要自行增減欄位：
 
 - `appId`（最上層，可省略）：可以寫，但沒有實際作用——執行 `onagent save-tools <appId> <file>` 時，一律以指令參數上的 `appId` 為準，檔案裡寫的值會被完全覆蓋、忽略不採用。
-- `thought`（最上層，選填）：want agent 的自訂 system prompt，可省略。
+- `thought`（最上層，選填）：want agent 的自訂 system prompt，可省略。**`onagent save-tools` 一律不會讀取或送出這個欄位**——即使檔案裡填了內容，執行 `save-tools` 後這個 app 的 thought 也不會被改動（不論之前是什麼值都維持原樣）。這是刻意的設計，不是尚待修復的缺口：目的是讓同一份 `tools.yaml` 可以重複套用到多個不同的 app，而不會把某個 app 客製化的 thought 意外覆寫成另一個 app 檔案裡寫的內容。`onagent get-tools` 印出的 yaml 雖然會把現有 thought 一併列出（方便查看/備份），但那份輸出拿去餵給 `save-tools` 一樣不會把 thought 寫回去。要設定或修改 thought，一律改用 `onagent set-thought <appId> <thought>`（見上一節「設定 Thought」），這是獨立於 `save-tools` 之外的一個步驟。
 - `tools`（必填）：一個陣列，每個元素是一個 tool 定義，包含：
   - `name`（必填）：必須符合正則 `^[a-zA-Z_][a-zA-Z0-9_]*$`（英文字母或底線開頭，之後只能是英文字母、數字、底線），同一個 app 裡不能重複。
   - `description`（必填）：給 LLM 判斷何時該呼叫這個 tool 的說明文字。
@@ -230,5 +242,6 @@ onagent save-tools <appId> tools.yaml
 5. 定義 tool：在 console 的 tool 編輯器手動輸入，或撰寫本機 `tools.yaml` 準備用 `onagent save-tools` 推送。
 6. 執行 `onagent issue-key <appId>`（或在 console 按「Issue key」）取得 `apiKey`，並立刻妥善保存（**只顯示一次**，重發會讓舊 key 立刻失效）。
 7. 執行 `onagent set-origin <appId> <origin>`（或在 console 設定「Allowed origin」）為實際部署網域並存檔（**未設定會 fail-closed，WebSocket 全部連不上**，即使 `apiKey` 正確也一樣）。
-8. 若採用 `tools.yaml` 方式，執行 `onagent save-tools <appId> tools.yaml` 推送（指令參數的 `appId` 一律覆蓋檔案內的 `appId`）。
+8. 若採用 `tools.yaml` 方式，執行 `onagent save-tools <appId> tools.yaml` 推送（指令參數的 `appId` 一律覆蓋檔案內的 `appId`；檔案裡的 `thought` 欄位一律不會被送出，這個指令只處理 `tools`，設計上就是如此）。
 9. 若 `save-tools` 驗證失敗，依序檢查：tool name 正則、`description` 是否缺漏、`parameters.type` 是否缺漏、tool name 是否重複。
+10. 若要設定或修改 thought，執行 `onagent set-thought <appId> <thought>`（或在 console 的 Agent thought 編輯器操作），與 `save-tools` 是各自獨立的兩個步驟。

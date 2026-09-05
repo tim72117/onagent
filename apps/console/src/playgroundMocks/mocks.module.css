@@ -1,0 +1,68 @@
+/* Shared layout for one template mock's block inside Playground's left
+   rail (see Playground.module.css's .mockRail) — each useXxxMock's
+   render() wraps its own controls in .mockGroup, stacked vertically. */
+.mockGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Mock buttons for tools built from the "Click a button" wizard template —
+   a small taste of "the agent actually did something" without a real page
+   to act on. Genuinely clickable: a human tester's mouse click and the
+   agent's tool_call both invoke the exact same click() closure (see
+   clickButton.tsx's useClickButtonMock), so the two are two triggers for
+   one real effect, not separate simulations. */
+.mockButton {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--ink);
+  border-radius: var(--radius-sm);
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.mockButtonClicked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  transform: scale(0.97);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mockButton {
+    transition: none;
+  }
+}
+
+/* Mock inputs for tools built from the "Fill a form field" wizard template
+   — genuinely editable by a human tester, and written to by a matching
+   tool_call through the same setField() closure (see fillForm.tsx's
+   useFillFormMock), same "two triggers, one real effect" pattern as the
+   mock buttons above. */
+.mockFieldRow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mockFieldLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mockFieldInput {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-raised);
+  color: var(--ink);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 13px;
+}

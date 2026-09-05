@@ -1,36 +1,34 @@
-/* Mock buttons for tools built from the "Click a fixed button" wizard
-   template — a small taste of "the agent actually did something" without
-   a real page to act on. disabled (not clickable by the developer) since
-   these represent the agent's own action, not a control for the person
-   testing the app. */
-.mockButtons {
+/* Two-column layout below the header/copy: template mock UI (see
+   playgroundMocks/) sits in a left rail next to the transcript, rather
+   than above it, so it stays visible alongside the conversation instead
+   of scrolling out of view with it. */
+.body {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 4px 0 14px;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
 }
 
-.mockButton {
-  border: 1px solid var(--border-strong);
-  background: var(--bg-raised);
-  color: var(--ink);
-  border-radius: var(--radius-sm);
-  padding: 7px 14px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: default;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+/* .main takes over the vertical layout .playground-transcript/
+   .playground-input-row used to get directly from the parent .playground
+   (see style.css) — flex:1 column so the transcript still fills the
+   available height and the input row stays pinned below it. */
+.main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
 }
 
-.mockButtonClicked {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-  transform: scale(0.97);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .mockButton {
-    transition: none;
-  }
+/* Left rail holding every active template mock's UI block (see
+   Playground.tsx's activeTemplateKeys and playgroundMocks/index.ts's
+   MOCK_TEMPLATE_KEYS) — one .mockGroup (playgroundMocks/mocks.module.css)
+   per active template, stacked vertically in this fixed-width rail rather
+   than wrapped horizontally above the transcript.  */
+.mockRail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex-shrink: 0;
+  width: 160px;
 }

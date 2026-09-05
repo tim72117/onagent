@@ -647,10 +647,20 @@ export default function App() {
                         Choose a tool from the sidebar, or add a new one to define its parameters.
                       </p>
                       <div className="empty-state-actions">
-                        <button type="button" className="primary" onClick={addTool}>
+                        <button
+                          type="button"
+                          className="primary"
+                          onClick={addTool}
+                          data-track="tool_creation_method_selected:blank"
+                        >
                           + New tool
                         </button>
-                        <button type="button" className="text-btn" onClick={() => setShowToolWizard(true)}>
+                        <button
+                          type="button"
+                          className="text-btn"
+                          onClick={() => setShowToolWizard(true)}
+                          data-track="tool_creation_method_selected:wizard"
+                        >
                           Build one step by step →
                         </button>
                       </div>
@@ -679,7 +689,13 @@ export default function App() {
 
       {issuedKey && <KeyModal issued={issuedKey} onClose={() => setIssuedKey(null)} />}
       {showAddApp && <AddAppModal onSubmit={createApp} onClose={() => setShowAddApp(false)} />}
-      {showToolWizard && <ToolWizard onCreate={addToolFromWizard} onClose={() => setShowToolWizard(false)} />}
+      {showToolWizard && (
+        <ToolWizard
+          existingNames={draft?.tools.map((t) => t.name) ?? []}
+          onCreate={addToolFromWizard}
+          onClose={() => setShowToolWizard(false)}
+        />
+      )}
       {pendingConfirm && (
         <ConfirmModal
           message={pendingConfirm.message}

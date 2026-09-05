@@ -97,6 +97,10 @@
   color: var(--accent);
 }
 
+.nameTakenWarning {
+  color: var(--danger);
+}
+
 .templateCustomizeCallout code {
   font-family: var(--font-mono);
   font-size: 11px;

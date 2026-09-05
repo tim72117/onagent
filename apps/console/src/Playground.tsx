@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { BASE } from './api'
 import type { Tool } from './schema'
+import { MOCK_TEMPLATE_KEYS, useMockRuntimes } from './playgroundMocks'
 import styles from './Playground.module.css'
 
 type ConnectionState = 'connecting' | 'open' | 'closed'
@@ -68,12 +69,6 @@ interface ErrorPayload {
 // that would be a pointless delay, not extra honesty.
 const NO_MOCK_TIMEOUT_MS = 2_000
 
-// How long a mock button stays visibly "clicked" after a matching tool_call
-// arrives — long enough to notice, short enough that a burst of tool calls
-// (a real click_button tool being called repeatedly) still reads as
-// distinct events rather than one stuck-on highlight.
-const CLICK_FLASH_MS = 900
-
 // Playground lets a developer test-drive their app's agent from inside the
 // console — no real front-end site required.
 //
@@ -87,39 +82,58 @@ const CLICK_FLASH_MS = 900
 //
 // The one place Playground is deliberately still different from a real
 // integration: there is no actual web page here for a tool_call to act on.
-// A handful of tools get a small mock visual effect (see
-// TOOL_MOCK_HANDLERS below) — today that's tools built from the "Click a
-// fixed button" wizard template (see ToolWizard.tsx's TEMPLATES), which get
-// an actual mock button rendered above the transcript, since that
-// template's whole point is "click one specific, named button" — simple
-// enough to genuinely simulate here, unlike a form fill or a list of
-// dynamic items. Anything without a registered mock effect gets an honest
-// "no mock effect, waiting to see if it times out" treatment rather than a
-// faked success — see handleToolMessage's doc comment for why.
+// Tools built from certain ToolWizard templates get a small mock effect
+// instead (see the playgroundMocks/ package) — a fixed, real UI (mock
+// buttons, mock inputs, …) that a human tester can operate directly and
+// that a matching tool_call operates too, through the exact same code
+// path (see each template's useXxxMock for its "two triggers, one real
+// effect" implementation). tool_result's ok is derived from observing
+// whether the effect actually took hold, never assumed — see
+// handleToolMessage's doc comment. A tool whose template has no
+// registered mock (or a call naming a target Playground didn't prepare
+// for) gets an honest "no mock effect" failure rather than a fabricated
+// success.
 export function Playground({ appId, tools }: { appId: string; tools: Tool[] }) {
   const [state, setState] = useState<ConnectionState>('connecting')
   const [ready, setReady] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [flashedTool, setFlashedTool] = useState<string | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const nextId = useRef(0)
   const transcriptRef = useRef<HTMLDivElement>(null)
-  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const clickButtonTools = tools.filter((t) => t.sourceTemplate === 'click_button')
+  // One runtime per registered template mock (see playgroundMocks/) —
+  // Playground never inspects a runtime's internals, only calls its
+  // render()/invoke(). Kept out of a ref: mockRuntimes itself doesn't
+  // change identity across renders in a way handleToolMessage needs to
+  // chase (see mockRuntimesRef below, which handles that).
+  const mockRuntimes = useMockRuntimes(tools)
+  const mockRuntimesRef = useRef(mockRuntimes)
+  mockRuntimesRef.current = mockRuntimes
+
+  // Which registered-mock templates have at least one matching tool in
+  // this app — determines which mock UI blocks render in the left rail.
+  // Order comes from MOCK_TEMPLATE_KEYS, not tools' own order, so the
+  // rail's layout is stable regardless of how tools are arranged.
+  const activeTemplateKeys = MOCK_TEMPLATE_KEYS.filter((key) =>
+    tools.some((t) => t.sourceTemplate === key),
+  )
 
   // Lets handleToolMessage (bound once at mount, inside the connection
-  // effect below) check "is this tool_call's toolName a click-button
-  // template tool" without needing the WS message listener rebound every
-  // time clickButtonTools changes. Refreshed each render (not inside the
-  // connection effect, which intentionally only reconnects when appId
-  // changes) so it always reflects the current tools
-  // prop without a socket reconnect every time a tool is added/edited.
-  const clickButtonNamesRef = useRef<Set<string>>(new Set())
+  // effect below) look up "which registered template, if any, was this
+  // tool_call's toolName built from" without needing the WS message
+  // listener rebound every time tools changes. Refreshed each render (not
+  // inside the connection effect, which intentionally only reconnects
+  // when appId changes) so it always reflects the current tools prop
+  // without a socket reconnect every time a tool is added/edited.
+  const toolTemplateRef = useRef<Map<string, string>>(new Map())
   useEffect(() => {
-    clickButtonNamesRef.current = new Set(clickButtonTools.map((t) => t.name))
+    const next = new Map<string, string>()
+    for (const t of tools) {
+      if (t.sourceTemplate && t.sourceTemplate in mockRuntimes) next.set(t.name, t.sourceTemplate)
+    }
+    toolTemplateRef.current = next
   })
 
   useEffect(() => {
@@ -189,18 +203,6 @@ export function Playground({ appId, tools }: { appId: string; tools: Tool[] }) {
     transcriptRef.current?.scrollTo({ top: transcriptRef.current.scrollHeight })
   }, [messages])
 
-  // Clears any pending flash timer on unmount so it doesn't fire setState
-  // after this component is gone.
-  useEffect(() => () => {
-    if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
-  }, [])
-
-  function triggerClickFlash(toolName: string) {
-    if (flashTimerRef.current) clearTimeout(flashTimerRef.current)
-    setFlashedTool(toolName)
-    flashTimerRef.current = setTimeout(() => setFlashedTool(null), CLICK_FLASH_MS)
-  }
-
   function appendMessage(role: ChatMessage['role'], text: string) {
     setMessages((cur) => [...cur, { id: nextId.current++, role, text }])
   }
@@ -214,19 +216,22 @@ export function Playground({ appId, tools }: { appId: string; tools: Tool[] }) {
   // — it blocks the in-flight prompt's inference call until a matching
   // tool_result arrives or its own ~20s timeout fires).
   //
-  // Playground has no real page to run these against. For a "click a fixed
-  // button" template tool, or a tool with a mock effect registered in
-  // TOOL_MOCK_HANDLERS, that effect runs and a genuine ok:true tool_result
-  // is sent back immediately. For everything else, this deliberately does
-  // NOT fabricate a fake success — that would
-  // let the LLM believe an action happened when it didn't, silently
-  // corrupting the rest of the conversation. Instead it shows the call and,
-  // after a short grace period, sends back an explicit ok:false tool_result
-  // ("no mock effect for this tool in Playground") so the LLM gets a clear,
-  // truthful answer quickly rather than the developer having to wait out the
-  // backend's full interaction timeout to learn the same thing. The grace
-  // period exists only so a mock handler that resolves near-instantly still
-  // wins the race and reports its own real result first.
+  // Playground has no real page to run these against. If payload.toolName
+  // was built from a template with a registered mock (see
+  // playgroundMocks/), that mock's invoke() runs its real effect and
+  // reports what it actually observed — ok is derived from that
+  // observation, never assumed (see each useXxxMock's own invoke doc
+  // comment). Playground itself doesn't know or care which template that
+  // was, or what shape its arguments take — it's purely a toolName →
+  // templateKey → runtime lookup (see toolTemplateRef/mockRuntimesRef).
+  // For everything else, this deliberately does NOT fabricate a fake
+  // success — that would let the LLM believe an action happened when it
+  // didn't, silently corrupting the rest of the conversation. Instead it
+  // shows the call and, after a short grace period, sends back an
+  // explicit ok:false tool_result ("no mock effect for this tool in
+  // Playground") so the LLM gets a clear, truthful answer quickly rather
+  // than the developer having to wait out the backend's full interaction
+  // timeout to learn the same thing.
   function handleToolMessage(
     ws: WebSocket,
     type: 'tool_call' | 'tool_query',
@@ -235,38 +240,11 @@ export function Playground({ appId, tools }: { appId: string; tools: Tool[] }) {
   ) {
     appendMessage(type, `${payload.toolName}(${JSON.stringify(payload.args ?? {})})`)
 
-    // "Click a fixed button" template tools get a real visual effect (the
-    // mock button below flashes) instead of going through the stateless
-    // TOOL_MOCK_HANDLERS map — the effect is inherently per-component state
-    // (which button is flashing right now), not something a module-level
-    // handler keyed only by tool name could drive.
-    if (clickButtonNamesRef.current.has(payload.toolName)) {
-      triggerClickFlash(payload.toolName)
-      send(ws, 'tool_result', requestId, {
-        toolName: payload.toolName,
-        ok: true,
-        result: { message: `"${payload.toolName}" clicked (simulated)` },
-      } satisfies ToolResultPayload)
-      return
-    }
-
-    const mock = TOOL_MOCK_HANDLERS[payload.toolName]
-    if (mock) {
-      Promise.resolve(mock(payload.args))
-        .then((result) => {
-          send(ws, 'tool_result', requestId, {
-            toolName: payload.toolName,
-            ok: true,
-            result: result ?? null,
-          } satisfies ToolResultPayload)
-        })
-        .catch((err: unknown) => {
-          send(ws, 'tool_result', requestId, {
-            toolName: payload.toolName,
-            ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          } satisfies ToolResultPayload)
-        })
+    const templateKey = toolTemplateRef.current.get(payload.toolName)
+    const runtime = templateKey ? mockRuntimesRef.current[templateKey] : undefined
+    if (runtime) {
+      const outcome = runtime.invoke(payload.args)
+      send(ws, 'tool_result', requestId, { toolName: payload.toolName, ...outcome } satisfies ToolResultPayload)
       return
     }
 
@@ -316,67 +294,52 @@ export function Playground({ appId, tools }: { appId: string; tools: Tool[] }) {
       </div>
       <p className="thought-copy">
         Test prompts against this app's agent without a real site. Most tool calls have no page
-        here to act on, so they'll report failure back to the agent — but a fixed-button tool
-        gets a real mock button below that lights up when the agent calls it.
+        here to act on, so they'll report failure back to the agent — but some templates (a
+        click-a-button tool, a fill-a-form-field tool) get real mock controls below that respond
+        when the agent calls them. You can operate them yourself too — same controls, same
+        effect.
       </p>
 
-      {clickButtonTools.length > 0 && (
-        <div className={styles.mockButtons}>
-          {clickButtonTools.map((t) => (
-            <button
-              key={t.name}
-              type="button"
-              className={t.name === flashedTool ? `${styles.mockButton} ${styles.mockButtonClicked}` : styles.mockButton}
-              disabled
-              title={t.description}
-            >
-              {t.description || t.name}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="playground-transcript" ref={transcriptRef}>
-        {messages.length === 0 && (
-          <p className="sidebar-empty playground-empty">Send a prompt to see how the agent responds.</p>
-        )}
-        {messages.map((m) => (
-          <div key={m.id} className={`playground-msg playground-msg-${m.role}`}>
-            {(m.role === 'tool_call' || m.role === 'tool_query') && (
-              <span className="playground-msg-label">{m.role === 'tool_call' ? 'tool call' : 'tool query'}</span>
-            )}
-            {m.role === 'error' && <span className="playground-msg-label">error</span>}
-            <span className="playground-msg-text">{m.text}</span>
+      <div className={styles.body}>
+        {activeTemplateKeys.length > 0 && (
+          <div className={styles.mockRail}>
+            {activeTemplateKeys.map((key) => (
+              <div key={key}>{mockRuntimes[key].render()}</div>
+            ))}
           </div>
-        ))}
-        {sending && <div className="playground-msg playground-msg-pending">Thinking…</div>}
-      </div>
+        )}
 
-      <form className="playground-input-row" onSubmit={sendPrompt}>
-        <input
-          className="playground-input"
-          placeholder={connected ? 'Type a prompt…' : 'Connecting…'}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          disabled={!connected}
-        />
-        <button type="submit" className="primary" disabled={!connected || sending || !input.trim()}>
-          Send
-        </button>
-      </form>
+        <div className={styles.main}>
+          <div className="playground-transcript" ref={transcriptRef}>
+            {messages.length === 0 && (
+              <p className="sidebar-empty playground-empty">Send a prompt to see how the agent responds.</p>
+            )}
+            {messages.map((m) => (
+              <div key={m.id} className={`playground-msg playground-msg-${m.role}`}>
+                {(m.role === 'tool_call' || m.role === 'tool_query') && (
+                  <span className="playground-msg-label">{m.role === 'tool_call' ? 'tool call' : 'tool query'}</span>
+                )}
+                {m.role === 'error' && <span className="playground-msg-label">error</span>}
+                <span className="playground-msg-text">{m.text}</span>
+              </div>
+            ))}
+            {sending && <div className="playground-msg playground-msg-pending">Thinking…</div>}
+          </div>
+
+          <form className="playground-input-row" onSubmit={sendPrompt}>
+            <input
+              className="playground-input"
+              placeholder={connected ? 'Type a prompt…' : 'Connecting…'}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              disabled={!connected}
+            />
+            <button type="submit" className="primary" disabled={!connected || sending || !input.trim()}>
+              Send
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
   )
 }
-
-// TOOL_MOCK_HANDLERS maps a tool name to a small stateless simulated effect
-// Playground can run in place of a real page, so a developer testing a
-// common action-shaped tool sees something happen instead of an immediate
-// failure. "Click a fixed button" template tools are handled separately,
-// directly in handleToolMessage (see clickButtonNamesRef above) — that
-// effect needs per-component state (which button is flashing right now),
-// which a module-level map keyed only by tool name can't hold. This map is
-// for future mock effects that don't need component state; empty for now.
-// Add an entry here — keyed by the exact tool name a template produces;
-// handleToolMessage already does the race-with-the-timeout wiring needed to
-// use it.
-const TOOL_MOCK_HANDLERS: Record<string, (args: unknown) => Promise<unknown> | unknown> = {}

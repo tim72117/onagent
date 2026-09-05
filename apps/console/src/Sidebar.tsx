@@ -119,13 +119,20 @@ export function Sidebar({
                 onClick={onAddToolWizard}
                 aria-label="New tool, guided"
                 title="New tool, guided"
+                data-track="tool_creation_method_selected:wizard"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="13" height="13">
                   <path d="M12 4v4M12 16v4M4 12h4M16 12h4" />
                   <path d="M8 8l1.5 1.5M14.5 14.5L16 16M16 8l-1.5 1.5M9.5 14.5L8 16" />
                 </svg>
               </button>
-              <button type="button" className="sidebar-icon-btn" onClick={onAddTool} aria-label="New tool">
+              <button
+                type="button"
+                className="sidebar-icon-btn"
+                onClick={onAddTool}
+                aria-label="New tool"
+                data-track="tool_creation_method_selected:blank"
+              >
                 +
               </button>
             </span>
