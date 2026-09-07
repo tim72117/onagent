@@ -9,6 +9,10 @@
     "build": "vite build",
     "preview": "vite preview"
   },
+  "dependencies": {
+    "@onagent/bridge": "^0.0.2",
+    "marked": "^18.0.11"
+  },
   "devDependencies": {
     "vite": "^6.0.2"
   }

@@ -7,18 +7,24 @@
   <!-- Google Tag Manager: loads the onagent container (GTM-MXMK83XR),
        which owns the GA4 tag, the Ads tag, and the Ads registration
        conversion tag — see marketing/gtm-tools/README.md to inspect or
-       change it. Same container as apps/console/index.html. -->
-  <script>
-    (function (w, d, s, l, i) {
-      w[l] = w[l] || [];
-      w[l].push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
-      var f = d.getElementsByTagName(s)[0],
-        j = d.createElement(s),
-        dl = l != 'dataLayer' ? '&l=' + l : '';
-      j.async = true;
-      j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
-      f.parentNode.insertBefore(j, f);
-    })(window, document, 'script', 'dataLayer', 'GTM-MXMK83XR');
+       change it. Same container as apps/console/index.html.
+       Skipped entirely when VITE_DISABLE_ANALYTICS=true (see .env.example)
+       so local testing never sends page views or events. type="module" so
+       Vite processes import.meta.env here like any other module — a plain
+       inline script wouldn't get it rewritten. -->
+  <script type="module">
+    if (import.meta.env.VITE_DISABLE_ANALYTICS !== 'true') {
+      (function (w, d, s, l, i) {
+        w[l] = w[l] || [];
+        w[l].push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
+        var f = d.getElementsByTagName(s)[0],
+          j = d.createElement(s),
+          dl = l != 'dataLayer' ? '&l=' + l : '';
+        j.async = true;
+        j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
+        f.parentNode.insertBefore(j, f);
+      })(window, document, 'script', 'dataLayer', 'GTM-MXMK83XR');
+    }
   </script>
 
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -323,46 +329,12 @@
     .feature p { color: var(--text-2); font-size: 14.5px; line-height: 1.6; }
     .feature code { font-family: var(--mono); font-size: 12.5px; color: var(--accent-2); }
 
-    /* how it works */
-    .how { background: linear-gradient(180deg, var(--bg) 0%, var(--bg-2) 100%); }
-    .how-grid { display: grid; grid-template-columns: 340px 1fr; gap: 32px; align-items: stretch; }
-    .steps { display: flex; flex-direction: column; gap: 12px; }
-    .step {
-      text-align: left; display: flex; gap: 16px; padding: 20px; border-radius: 14px;
-      border: 1px solid var(--border-soft); background: rgba(255,255,255,0.015);
-      cursor: pointer; transition: border-color 0.2s, background 0.2s; font-family: var(--sans); color: inherit; width: 100%;
-    }
-    .step:hover { border-color: var(--border); }
-    .step.active { border-color: rgba(201,162,75,0.5); background: var(--accent-soft); }
-    .step-num {
-      flex: none; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
-      font-family: var(--mono); font-weight: 600; font-size: 14px; color: var(--text-2);
-      background: rgba(255,255,255,0.04); border: 1px solid var(--border); transition: all 0.2s;
-    }
-    .step.active .step-num { background: var(--grad); color: #1a1408; border-color: transparent; }
-    .step-txt h3 { font-size: 16px; font-weight: 700; margin-bottom: 5px; }
-    .step-txt p { color: var(--text-2); font-size: 13.5px; line-height: 1.55; }
-    .how-note { margin-top: 6px; font-size: 13px; color: var(--text-3); padding: 0 4px; line-height: 1.6; }
-
-    .code-panel {
-      background: linear-gradient(180deg, #16130c 0%, #120f0a 100%);
-      border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow);
-      overflow: hidden; display: flex; flex-direction: column; min-height: 420px;
-    }
-    .code-top { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border-soft); background: rgba(255,255,255,0.02); }
-    .code-file { display: flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 12.5px; color: var(--text-2); }
-    .code-file .fdot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
-    .copy-btn {
-      font-family: var(--sans); font-size: 12px; font-weight: 600; color: var(--text-2);
-      background: rgba(255,255,255,0.04); border: 1px solid var(--border); padding: 5px 11px; border-radius: 8px;
-      cursor: pointer; transition: all 0.18s;
-    }
-    .copy-btn:hover { color: var(--text); border-color: #4a4128; }
-    .copy-btn.copied { color: var(--ok); border-color: rgba(127,191,127,0.4); }
-    .code-body { flex: 1; overflow-x: auto; padding: 20px 22px; }
+    /* Syntax highlighting classes used by the marketing-demo widget's Code
+       tab (see src/marketing-demo/widget.js's highlightYaml/highlightJs) —
+       not scoped under .md-demo-* since the widget generates these spans
+       directly as innerHTML, matching the plain t-key/t-str/etc. names it
+       emits. */
     pre { margin: 0; font-family: var(--mono); font-size: 13.5px; line-height: 1.75; white-space: pre; tab-size: 2; }
-    .code-pane { display: none; }
-    .code-pane.active { display: block; }
     .t-key { color: #cbb98f; }
     .t-str { color: #a8c98a; }
     .t-com { color: var(--text-3); font-style: italic; }
@@ -391,6 +363,431 @@
     .bubble-a { align-self: flex-start; background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text-2); padding: 7px 12px; border-radius: 12px 12px 12px 3px; max-width: 90%; }
     .bubble-a .tc { color: var(--ok); }
 
+    /* Live widget mounted into the "Marketing analytics assistant" case card —
+       see src/marketing-demo/widget.js. Kept visually distinct from the
+       static .chat mock above it (light card on the dark case background,
+       same treatment the hero demo's mock browser card already uses)
+       since this one is a real, operable connection, not a scripted
+       preview. */
+    .case-try-btn { margin-top: 16px; width: 100%; }
+    /* Near-full-page modal, not edge-to-edge: a fixed backdrop with a
+       centered panel sized by inset (24px on every side) rather than a
+       literal 100vw/100vh panel, so it still reads as "a panel over the
+       page" — plenty of room for the widget's tables/charts without ever
+       looking like a full takeover. Backdrop fades in; panel scales up
+       from 0.96 — a subtle pop rather than a slide, since it's centered
+       on every axis and has nowhere to slide in from. */
+    /* Palette below mirrors apps/console/src/style.css's light-mode tokens
+       verbatim (--bg/--bg-raised/--sidebar-bg/--ink/--ink-dim/--ink-faint/
+       --border/--border-strong/--accent/--accent-wash) — hardcoded rather
+       than shared CSS custom properties since landing and console are
+       separate bundles, but kept as one literal-value block so the two stay
+       in sync by inspection. The Code tab (further down) is the deliberate
+       exception: it's meant to look like an actual dark code editor, not a
+       console-chrome panel, so it keeps its own dark palette. */
+    .md-modal-backdrop {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(28, 25, 23, 0.72); backdrop-filter: blur(3px);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.28s ease;
+    }
+    .md-modal-backdrop.is-open { opacity: 1; pointer-events: auto; }
+    .md-modal-panel {
+      width: min(1200px, calc(100vw - 48px)); height: calc(100vh - 48px);
+      background: #ffffff; border-radius: 6px; border: 1px solid rgba(255,255,255,0.08);
+      /* A dark backdrop swallows a soft drop-shadow almost entirely, which
+         is what made the panel's edge read as an abrupt hard cut rather
+         than a floating card — the thin light border above gives the edge
+         itself definition regardless of backdrop darkness; the shadow below
+         is there for depth on lighter surroundings (e.g. reduced-motion/
+         high-contrast overrides of the backdrop), not as the only cue. */
+      box-shadow: 0 1px 2px rgba(28,25,23,0.04), 0 24px 64px rgba(0,0,0,0.45);
+      display: flex; flex-direction: column; overflow: hidden;
+      transform: scale(0.96); transition: transform 0.32s cubic-bezier(0.34, 1.3, 0.64, 1);
+    }
+    .md-modal-backdrop.is-open .md-modal-panel { transform: scale(1); }
+    body.md-modal-open { overflow: hidden; }
+    @media (prefers-reduced-motion: reduce) {
+      .md-modal-backdrop, .md-modal-panel { transition: none; }
+    }
+    .md-modal-bar {
+      flex: none; display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 22px; border-bottom: 1px solid #e4e0da; background: #f1efec;
+    }
+    .md-modal-title { font-family: var(--sans); font-weight: 700; font-size: 14.5px; color: #1c1917; }
+    .md-modal-close {
+      width: 30px; height: 30px; border-radius: 4px; border: 1px solid #e4e0da;
+      background: #fff; color: #6b6560; font-size: 14px; cursor: pointer;
+      display: grid; place-items: center; transition: background 0.15s, border-color 0.15s;
+    }
+    .md-modal-close:hover { background: #f6e6db; border-color: #d2ccc3; }
+    /* No overflow/padding of its own — .md-demo-scroll inside does the
+       scrolling and .md-demo-footer needs to sit flush against this body's
+       edges to look pinned, not floating inside a padded box. */
+    .md-modal-body { flex: 1; min-height: 0; display: flex; }
+    @media (max-width: 640px) {
+      .md-modal-panel { width: calc(100vw - 16px); height: calc(100vh - 16px); border-radius: 6px; }
+    }
+    /* Three columns: a narrow view-switcher on the left, the active view's
+       content in the middle (scrolls independently), conversation sidebar
+       on the right — the chat log needs to stay visible as its own column
+       rather than sharing scroll with the results area, since a long
+       analysis result would otherwise push the conversation out of view. */
+    .md-demo {
+      font-family: var(--sans); color: #1c1917;
+      display: flex; flex: 1; min-height: 0;
+    }
+    .md-demo-nav {
+      flex: none; width: 168px; display: flex; flex-direction: column; gap: 2px;
+      padding: 16px 10px; border-right: 1px solid #e4e0da; background: #f1efec;
+    }
+    .md-demo-nav-btn {
+      text-align: left; padding: 9px 12px; border-radius: 4px; border: none;
+      background: transparent; color: #6b6560; font-family: var(--sans); font-size: 13.5px;
+      font-weight: 600; cursor: pointer; transition: background 0.15s, color 0.15s;
+      display: flex; align-items: center; gap: 9px;
+    }
+    .md-demo-nav-btn svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+    .md-demo-nav-btn:hover { background: #e4e0da; color: #1c1917; }
+    .md-demo-nav-btn.is-active { background: #c1622b; color: #ffffff; }
+    .md-demo-main { flex: 1; min-width: 0; overflow-y: auto; }
+    .md-demo-view { padding: 24px; box-sizing: border-box; }
+    /* Code view keeps the same inset/padded card positioning as the Data
+       view's tab+pane card (not edge-to-edge — that read as visually
+       inconsistent with Data's tabs sitting in the same nav position), but
+       fills its own padding zone with a dark surface instead of the
+       light .md-demo-view default, so the editor card doesn't look like a
+       dark island dropped on a light background. :not([hidden]) matters:
+       an ID selector otherwise outranks the browser's own
+       [hidden] { display: none } (attribute selector, lower specificity),
+       so an unconditional rule here would force this view visible even
+       while its `hidden` attribute is set. */
+    .md-demo-view#md-demo-view-code:not([hidden]) {
+      background: #0d0b07;
+      /* .md-demo-view sizes to its own content (short code snippets), so
+         without this the dark fill only covered as far as the card's
+         bottom edge, leaving .md-demo-main's default white showing below
+         it whenever the pane is taller than the content. .md-demo-main is
+         a flex child with a definite height (flex:1 in a stretch-aligned
+         row), so percentage height here resolves correctly against it. */
+      min-height: 100%;
+    }
+    .md-demo-chart { margin-top: 10px; overflow-x: auto; }
+    .md-demo-chart canvas { display: block; }
+    /* Skeleton pulse shown in the result pane from the moment a prompt is
+       sent until select_analysis actually renders a real result — a
+       separate cue from the chat sidebar's thinking dots, since this is a
+       different pane the visitor is watching while waiting. */
+    .md-demo-result-loading { display: flex; flex-direction: column; gap: 10px; }
+    .md-demo-skel { border-radius: 4px; background: #e4e0da; animation: mdSkelPulse 1.4s ease-in-out infinite; }
+    .md-demo-skel-title { width: 45%; height: 12px; }
+    .md-demo-skel-row { width: 100%; height: 34px; }
+    @keyframes mdSkelPulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) {
+      .md-demo-skel { animation: none; opacity: 0.7; }
+    }
+    /* Same tab-strip shape and position as the Code view's editor tabs
+       further down (a bar of box tabs with a dot, active tab's background
+       merging into the pane below it) — only the palette differs: light
+       console chrome here instead of the Code view's dark editor look. */
+    .md-demo-subtabs { display: flex; background: #f1efec; border: 1px solid #e4e0da; border-radius: 6px 6px 0 0; overflow: hidden; }
+    .md-demo-subtab {
+      display: flex; align-items: center; gap: 7px; padding: 9px 16px;
+      font-family: var(--sans); font-size: 13.5px; font-weight: 600; color: #6b6560;
+      background: transparent; border: none; border-right: 1px solid #e4e0da; cursor: pointer;
+      transition: color 0.15s, background 0.15s;
+    }
+    .md-demo-subtab-dot { width: 7px; height: 7px; border-radius: 50%; background: #d2ccc3; flex: none; }
+    .md-demo-subtab.is-active { background: #fff; color: #1c1917; }
+    .md-demo-subtab.is-active .md-demo-subtab-dot { background: #c1622b; }
+    .md-demo-subtab:hover:not(.is-active) { color: #1c1917; }
+    /* Data view is a flex column so the "資料預覽" pane's table can stretch
+       to fill the remaining height instead of stopping at an arbitrary
+       50vh cap and leaving a large empty gap below it (variable-list pane
+       just doesn't have flex:1 content, so it's unaffected — a flex column
+       with a non-growing child behaves like a normal block). */
+    .md-demo-view#md-demo-view-data:not([hidden]) { display: flex; flex-direction: column; }
+    .md-demo-view#md-demo-view-data .md-demo-subtab-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .md-demo-subtab-body {
+      border: 1px solid #e4e0da; border-top: none; border-radius: 0 0 6px 6px; padding: 20px;
+      box-sizing: border-box;
+    }
+    /* max-width:100% (not just the parent view's own padding) so this box
+       itself can never exceed the available width and force horizontal
+       page/panel scroll — only its own internal .md-sheet scrolls. */
+    /* flex:1 (not a fixed max-height) so this fills whatever room the
+       "資料預覽" pane's flex-column parent gives it — see
+       #md-demo-view-data's own comment. margin-right (not padding-right)
+       for the trailing gutter: padding at the trailing edge of a scrolling
+       container is unreliably rendered by some browsers once content
+       overflows, margin on the container's own box is not. */
+    .md-demo-data-scroll {
+      overflow: auto; flex: 1; min-height: 0; max-width: calc(100% - 20px); margin-right: 20px;
+      box-sizing: border-box; border: 1px solid #e4e0da; border-radius: 6px;
+    }
+    .md-demo-data-scroll table { margin: 0; }
+    /* Trailing spacer column (added in the actual row markup — see
+       renderDataView) so the last real column always has breathing room
+       before the scroll container's edge, instead of its border sitting
+       flush against it when scrolled all the way right. */
+    .md-sheet-gutter { width: 28px !important; border: none !important; padding: 0 !important; }
+    .md-demo-data-scroll thead th { position: sticky; top: 0; background: #f1efec; }
+    /* Google Sheets-style grid for the raw data preview: full cell borders
+       (not just row separators), a lettered column-id row above the human
+       title row (Sheets' own "A, B, C…" convention), a shaded sticky row-
+       number column, and fixed-width columns with truncation rather than
+       CJK text wrapping character-by-character into an unreadably narrow
+       column — the failure mode that broke this table's layout before. */
+    .md-sheet { border-collapse: collapse; table-layout: fixed; font-size: 12.5px; font-family: var(--mono); }
+    .md-sheet th, .md-sheet td {
+      border: 1px solid #d2ccc3; padding: 5px 10px; width: 92px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .md-sheet thead th { position: sticky; top: 0; background: #e4e0da; color: #1c1917; font-weight: 700; z-index: 1; }
+    .md-sheet thead tr:first-child th { color: #6b6560; font-weight: 400; font-size: 11px; }
+    .md-sheet .md-sheet-rownum {
+      position: sticky; left: 0; width: 34px; text-align: center;
+      background: #e4e0da; color: #6b6560; font-weight: 400; z-index: 2;
+    }
+    .md-sheet thead .md-sheet-rownum { z-index: 3; }
+    .md-sheet tbody tr:nth-child(even) td:not(.md-sheet-rownum) { background: #faf9f7; }
+    .md-sheet tbody tr:nth-child(odd) td:not(.md-sheet-rownum) { background: #fff; }
+    /* VS Code-style editor tabs — deliberately its own dark palette (not
+       console's light chrome) since the point is to look like an actual
+       code editor. Active tab's background merges into the pane below it
+       (same color, no border between them) so it reads as "this tab is
+       currently open," inactive tabs sit on a slightly darker strip. */
+    .md-demo-code-tabs { display: flex; background: #100d08; border-radius: 6px 6px 0 0; overflow: hidden; }
+    .md-demo-code-tab {
+      display: flex; align-items: center; gap: 7px; padding: 9px 16px;
+      font-family: var(--mono); font-size: 12.5px; color: #8c8468;
+      background: transparent; border: none; border-right: 1px solid #100d08; cursor: pointer;
+    }
+    .md-demo-code-tab-dot { width: 7px; height: 7px; border-radius: 50%; background: #4a4536; }
+    .md-demo-code-tab.is-active { background: #16130c; color: #f0ead9; }
+    .md-demo-code-tab.is-active .md-demo-code-tab-dot { background: #e08544; }
+    .md-demo-code-tab:hover:not(.is-active) { color: #c9bfa0; }
+    .md-demo-code-body {
+      margin: 0; background: #16130c; color: #f0ead9; padding: 16px; border-radius: 0 0 6px 6px;
+      font-family: var(--mono); font-size: 12.5px; line-height: 1.65; overflow-x: auto; white-space: pre;
+    }
+    /* :not([hidden]) matters here: an unqualified `display: flex` on a
+       plain class rule still overrides the browser's [hidden] { display:
+       none } (author stylesheet beats the UA stylesheet at this
+       specificity), which is exactly why toggling chatEl.hidden in
+       widget.js had no visible effect until this was added — same root
+       cause as the Code-view bug above. */
+    .md-demo-chat:not([hidden]) {
+      flex: none; width: 340px; display: flex; flex-direction: column; min-height: 0;
+      border-left: 1px solid #e4e0da; background: #f1efec;
+    }
+    .md-demo-chat-log { flex: 1; min-height: 0; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+    .md-demo-chat-hint { font-size: 13px; color: #6b6560; line-height: 1.6; }
+    .md-demo-chat-msg { font-size: 13.5px; line-height: 1.55; padding: 9px 12px; border-radius: 6px; max-width: 92%; }
+    .md-demo-chat-msg-user {
+      align-self: flex-end; background: #c1622b; color: #ffffff; font-weight: 600;
+      border-radius: 6px 6px 2px 6px;
+    }
+    .md-demo-chat-msg-assistant {
+      align-self: flex-start; background: #fff; border: 1px solid #e4e0da; color: #1c1917;
+      border-radius: 6px 6px 6px 2px;
+    }
+    /* A failed prompt (connection/protocol error) surfaces here, in the chat
+       log itself — not as a line of text under the input box, which is easy
+       to miss since a visitor's attention is on the log while waiting for a
+       reply. Visually distinct (warm red tint) from a normal assistant
+       bubble so it reads as "something went wrong," not more conversation. */
+    .md-demo-chat-msg-error {
+      align-self: flex-start; background: #fdf1ee; border: 1px solid #f0c4b8; color: #8a3b26;
+      border-radius: 6px 6px 6px 2px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
+    }
+    .md-demo-chat-msg-error-retry {
+      padding: 5px 12px; border-radius: 4px; border: 1px solid #c1622b;
+      background: transparent; color: #c1622b; font-size: 12px; font-weight: 700; cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .md-demo-chat-msg-error-retry:hover { background: #c1622b; color: #fff; }
+    /* A past turn's result, kept reachable after later questions overwrite
+       the result pane — sits in the chat log's own chronological order
+       (not attached to a specific bubble), styled distinctly from a plain
+       message so it reads as "a thing you can reopen," not more chat text. */
+    .md-demo-result-card {
+      align-self: stretch; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 10px 12px; border: 1px dashed #d2ccc3; border-radius: 6px; background: #faf9f7;
+    }
+    .md-demo-result-card-label { font-size: 12.5px; color: #6b6560; font-weight: 600; }
+    .md-demo-result-card-btn {
+      flex: none; padding: 5px 12px; border-radius: 4px; border: 1px solid #c1622b;
+      background: transparent; color: #c1622b; font-size: 12px; font-weight: 700; cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .md-demo-result-card-btn:hover { background: #c1622b; color: #fff; }
+    /* Thinking indicator: three dots bouncing in sequence, plus a "Thinking…"
+       label, shown in place of the assistant bubble from the moment a
+       prompt is sent until the real reply (or an error) arrives — same
+       wave-of-motion idea as a typing indicator, so a visitor isn't staring
+       at a static screen during the real inference round-trip. */
+    .md-demo-chat-msg-thinking { display: flex; gap: 8px; padding: 12px 14px; align-items: center; }
+    .md-demo-chat-msg-thinking-dots { display: flex; gap: 4px; align-items: center; }
+    .md-demo-chat-msg-thinking-dots span {
+      width: 6px; height: 6px; border-radius: 50%; background: #a39d96;
+      animation: mdThinkBounce 1.1s ease-in-out infinite;
+    }
+    .md-demo-chat-msg-thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+    .md-demo-chat-msg-thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes mdThinkBounce {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+      30% { transform: translateY(-4px); opacity: 1; }
+    }
+    .md-demo-chat-msg-thinking-label {
+      font-size: 13px; font-weight: 600; color: #6b6560;
+      display: inline-flex; align-items: center;
+    }
+    /* Same staggered-fade ellipsis technique as .md-demo-chat-msg-analyzing-label
+       below — see its own comment for why this isn't an animated `content`
+       string. */
+    .md-demo-chat-msg-thinking-label span {
+      opacity: 0; animation: mdEllipsisDot 1.2s steps(1, end) infinite;
+    }
+    .md-demo-chat-msg-thinking-label span:nth-child(1) { animation-delay: 0s; }
+    .md-demo-chat-msg-thinking-label span:nth-child(2) { animation-delay: 0.3s; }
+    .md-demo-chat-msg-thinking-label span:nth-child(3) { animation-delay: 0.6s; }
+    @media (prefers-reduced-motion: reduce) {
+      .md-demo-chat-msg-thinking-dots span { animation: none; opacity: 0.8; }
+      .md-demo-chat-msg-thinking-label span { animation: none; opacity: 1; }
+    }
+    /* "Analyzing" — a distinct, more deliberate cue than the generic
+       thinking dots: a tiny equalizer of bars (echoes the bar charts the
+       result pane is about to show) plus a label with an animated ellipsis,
+       in the accent color rather than neutral grey, so it reads as "doing
+       something specific" rather than "still waiting." */
+    .md-demo-chat-msg-analyzing { display: flex; align-items: center; gap: 10px; padding: 12px 14px; }
+    .md-demo-eq { display: flex; align-items: flex-end; gap: 3px; height: 16px; }
+    .md-demo-eq span {
+      width: 3px; border-radius: 2px; background: #c1622b;
+      animation: mdEqBounce 0.9s ease-in-out infinite;
+    }
+    .md-demo-eq span:nth-child(1) { animation-delay: 0s; }
+    .md-demo-eq span:nth-child(2) { animation-delay: 0.15s; }
+    .md-demo-eq span:nth-child(3) { animation-delay: 0.3s; }
+    .md-demo-eq span:nth-child(4) { animation-delay: 0.45s; }
+    @keyframes mdEqBounce {
+      0%, 100% { height: 4px; opacity: 0.55; }
+      50% { height: 16px; opacity: 1; }
+    }
+    .md-demo-chat-msg-analyzing-label {
+      font-size: 13px; font-weight: 600; color: #c1622b;
+      display: inline-flex; align-items: center;
+    }
+    /* Three dots fading in with staggered delay, not an animated `content`
+       string — animating the CSS content property's text isn't reliably
+       supported across browsers, this is the portable equivalent. */
+    .md-demo-chat-msg-analyzing-label span {
+      opacity: 0; animation: mdEllipsisDot 1.2s steps(1, end) infinite;
+    }
+    .md-demo-chat-msg-analyzing-label span:nth-child(1) { animation-delay: 0s; }
+    .md-demo-chat-msg-analyzing-label span:nth-child(2) { animation-delay: 0.3s; }
+    .md-demo-chat-msg-analyzing-label span:nth-child(3) { animation-delay: 0.6s; }
+    @keyframes mdEllipsisDot {
+      0%, 20% { opacity: 0; } 30%, 100% { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .md-demo-eq span { animation: none; height: 10px; opacity: 0.8; }
+      .md-demo-chat-msg-analyzing-label span { animation: none; opacity: 1; }
+    }
+    /* marked.parse() output rendered inside the assistant bubble — reset
+       block-level spacing down to something that fits a 340px sidebar
+       bubble rather than the browser's default (large) UA margins. */
+    .md-demo-chat-msg-markdown > *:first-child { margin-top: 0; }
+    .md-demo-chat-msg-markdown > *:last-child { margin-bottom: 0; }
+    .md-demo-chat-msg-markdown p { margin: 0 0 8px; }
+    .md-demo-chat-msg-markdown ul, .md-demo-chat-msg-markdown ol { margin: 0 0 8px; padding-left: 20px; }
+    .md-demo-chat-msg-markdown li { margin-bottom: 3px; }
+    .md-demo-chat-msg-markdown strong { color: #1c1917; }
+    .md-demo-chat-msg-markdown code {
+      font-family: var(--mono); font-size: 12px; background: #f6e6db;
+      padding: 1px 5px; border-radius: 4px;
+    }
+    .md-demo-chat-msg-markdown pre {
+      background: #1c1917; color: #efe9e1; padding: 10px 12px; border-radius: 6px;
+      overflow-x: auto; margin: 0 0 8px;
+    }
+    .md-demo-chat-msg-markdown pre code { background: none; padding: 0; color: inherit; }
+    .md-demo-chat-msg-markdown a { color: #c1622b; text-decoration: underline; }
+    /* Pinned at the bottom of the sidebar regardless of chat-log scroll
+       position — a border instead of a shadow keeps it feeling like part
+       of the same panel rather than a floating bar on top of it. */
+    .md-demo-footer { flex: none; padding: 14px 16px; border-top: 1px solid #e4e0da; background: #faf9f7; }
+    /* 168px nav + 340px chat = 508px reserved before .md-demo-main gets any
+       space at all — below roughly 960px that leaves the middle column too
+       narrow for its own tables (CJK text has no spaces to break on, so an
+       under-width table collapses into a column of single characters
+       instead of overflowing visibly). Stack well before that point, not
+       right at the edge of it. */
+    @media (max-width: 960px) {
+      .md-demo { flex-direction: column; }
+      .md-demo-chat { width: auto; border-left: none; border-top: 1px solid #e4e0da; }
+      .md-demo-nav { width: auto; flex-direction: row; border-right: none; border-bottom: 1px solid #e4e0da; }
+      .md-demo-nav-btn { flex: 1; justify-content: center; }
+    }
+    .md-demo-scenario { border-bottom: 1px dashed #e6e1d3; padding-bottom: 14px; margin-bottom: 14px; }
+    .md-demo-scenario-title { font-size: 12.5px; font-weight: 700; color: #8c8468; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+    .md-demo-scenario-text { font-size: 13.5px; line-height: 1.65; color: #4a4536; margin-bottom: 8px; }
+    .md-demo-scenario-data { font-size: 12.5px; color: #8c8468; font-family: var(--mono); }
+    .md-demo-quick-tests { margin-bottom: 14px; }
+    .md-demo-quick-tests-label { font-size: 12.5px; color: #8c8468; margin-bottom: 8px; }
+    .md-demo-quick-test-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    /* Overrides .btn-ghost's dark-page treatment (near-invisible pale-on-pale
+       otherwise) — this card is a light surface, so its buttons get their
+       own light-surface styling instead of inheriting the dark theme's. */
+    .md-demo-quick-test-btn.btn-ghost {
+      padding: 7px 14px; font-size: 13px;
+      background: #fff; border-color: #e6e1d3; color: #4a4536;
+    }
+    .md-demo-quick-test-btn.btn-ghost:hover { background: #f3efe4; border-color: #d8d0ba; }
+    .md-demo-result { min-height: 60px; margin-bottom: 12px; }
+    .md-demo-placeholder { color: #8c8468; font-size: 13.5px; }
+    .md-demo-result-title { font-size: 12.5px; font-weight: 700; color: #8c8468; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+    .md-demo-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .md-demo-table td { padding: 6px 10px; border-bottom: 1px solid #e6e1d3; }
+    .md-demo-table td:last-child { text-align: right; font-family: var(--mono); color: var(--accent); font-weight: 700; }
+    /* Grid tables (cross-table, correlation matrix) have a header row and a
+       header column, both numeric on the right — the plain table's
+       last-child-is-the-number styling doesn't apply here. */
+    .md-demo-table-grid td:last-child { text-align: center; font-family: var(--mono); color: inherit; font-weight: 400; }
+    .md-demo-table-grid th { padding: 6px 10px; font-size: 12px; color: #8c8468; text-align: center; border-bottom: 1px solid #e6e1d3; }
+    .md-demo-table-grid td:first-child, .md-demo-table-grid th:first-child { text-align: left; font-weight: 700; color: #4a4536; }
+    .md-demo-table-grid td { text-align: center; font-family: var(--mono); }
+    .md-demo-assistant-note { font-size: 13.5px; color: #4a4536; margin-top: 8px; }
+    /* flex-end (not center): as the textarea grows taller across multiple
+       lines, the round send button should stay pinned to its bottom edge
+       rather than drifting to the vertical middle of a now-tall input. */
+    .md-demo-input-row { display: flex; align-items: flex-end; gap: 10px; }
+    .md-demo-input {
+      flex: 1; border: 1px solid #e4e0da; border-radius: 6px; padding: 9px 12px;
+      font-family: var(--sans); font-size: 14px; background: #fff; color: #1c1917;
+      /* overflow-y toggled in JS (see autoGrow in widget.js), not fixed to
+         auto here — a plain `overflow-y: auto` shows a scrollbar even at
+         2-3 lines on some browsers/OSes (Windows' classic scrollbar reserves
+         its own space, which alone can trigger "overflow" by a couple of
+         px), well before content actually exceeds max-height. */
+      resize: none; max-height: 140px; overflow-y: hidden; line-height: 1.4;
+    }
+    .md-demo-input:focus { outline: 2px solid #c1622b; outline-offset: 1px; }
+    /* Icon-only send button (was a text "送出" pill) — round so it reads as
+       a chat-app send action, sized to match the input row's own height
+       rather than stretching to the input's padding/line-height. */
+    .md-demo-send-btn {
+      flex: none; width: 38px; height: 38px; border-radius: 50%; border: none;
+      background: #c1622b; color: #fff; display: grid; place-items: center;
+      cursor: pointer; transition: background 0.15s, transform 0.15s;
+    }
+    .md-demo-send-btn svg { width: 16px; height: 16px; stroke: currentColor; }
+    .md-demo-send-btn:hover:not(:disabled) { background: #a8531f; transform: translateY(-1px); }
+    .md-demo-send-btn:disabled { background: #d2ccc3; cursor: not-allowed; }
+    .md-demo-status { margin-top: 8px; font-size: 12.5px; color: #6b6560; min-height: 1em; }
+
     /* final cta */
     .final { padding: 40px 0 110px; }
     .final-band {
@@ -417,7 +814,6 @@
 
     @media (max-width: 900px) {
       .hero-grid { grid-template-columns: 1fr; gap: 40px; }
-      .how-grid { grid-template-columns: 1fr; }
       .features { grid-template-columns: 1fr 1fr; }
       .foot-grid { grid-template-columns: 1fr 1fr; }
     }
@@ -469,7 +865,6 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         <div class="nav-right">
           <nav class="nav-links">
             <a href="#features">Features</a>
-            <a href="#how">How it works</a>
             <a href="#cases">Examples</a>
             <a href="/docs/">Docs</a>
             <a href="/pricing/">Pricing</a>
@@ -505,7 +900,6 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           </p>
           <div class="hero-cta">
             <a class="btn btn-primary btn-lg" href="#" data-console>Open Console</a>
-            <a class="btn btn-ghost btn-lg" href="#how">See a 3-step example ↓</a>
           </div>
         </div>
 
@@ -586,85 +980,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <div class="feature reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></div>
             <h3>Wires straight into your existing UI</h3>
-            <p>No frontend rewrite needed. Map tools to what's already there, and AI can operate it.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="block how" id="how">
-      <div class="wrap">
-        <div class="sec-head reveal">
-          <div class="sec-tag">Ship in 3 steps</div>
-          <h2>Stand up an AI-powered feature in three steps</h2>
-          <p>Define a capability, push it to the platform, embed it in your front end — click a step on the left to see the actual code for it.</p>
-        </div>
-
-        <div class="how-grid reveal">
-          <div>
-            <div class="steps" id="steps">
-              <button class="step active" data-step="0">
-                <span class="step-num">01</span>
-                <span class="step-txt"><h3>Define a tool</h3><p>Describe a name, description, and parameters (JSON Schema) in one config file. This is the single source of truth.</p></span>
-              </button>
-              <button class="step" data-step="1">
-                <span class="step-num">02</span>
-                <span class="step-txt"><h3>Push to the platform</h3><p>Sign in with the <code style="font-family:var(--mono);color:var(--accent-2)">onagent</code> CLI and upload; or edit directly in the console.</p></span>
-              </button>
-              <button class="step" data-step="2">
-                <span class="step-num">03</span>
-                <span class="step-txt"><h3>Embed the front-end SDK</h3><p>Wire up your own handlers, push page state, and let AI operate your UI with a single sentence.</p></span>
-              </button>
-            </div>
-            <p class="how-note">↳ Once wired up, the AI picks a matching tool for each prompt — the SDK calls your handler and reports the result back to the model.</p>
-          </div>
-
-          <div class="code-panel">
-            <div class="code-top">
-              <div class="code-file"><span class="fdot"></span><span id="fname">tools</span></div>
-              <button class="copy-btn" id="copy">Copy</button>
-            </div>
-            <div class="code-body">
-              <div class="code-pane active" data-pane="0">
-<pre><span class="t-key">appId</span><span class="t-punc">:</span> <span class="t-str">demo-app</span>
-<span class="t-key">tools</span><span class="t-punc">:</span>
-  <span class="t-punc">-</span> <span class="t-key">name</span><span class="t-punc">:</span> <span class="t-str">fill_search_form</span>
-    <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">Fill the on-page search box and submit it.</span>
-    <span class="t-key">parameters</span><span class="t-punc">:</span>
-      <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">object</span>
-      <span class="t-key">required</span><span class="t-punc">:</span> <span class="t-punc">[</span><span class="t-str">query</span><span class="t-punc">]</span>
-      <span class="t-key">properties</span><span class="t-punc">:</span>
-        <span class="t-key">query</span><span class="t-punc">:</span>
-          <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span>
-          <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">The keyword to search for.</span></pre>
-              </div>
-              <div class="code-pane" data-pane="1">
-<pre><span class="t-com"># Sign in (opens a browser to authorize; the URL only carries a one-time code)</span>
-<span class="t-prompt">$</span> onagent login <span class="t-kw">--web</span>
-
-<span class="t-com"># Push your tool definitions</span>
-<span class="t-prompt">$</span> onagent save-tools demo-app tools
-<span class="t-ok">✓</span> Saved 1 tool to <span class="t-str">"demo-app"</span>
-
-<span class="t-com"># List your apps any time</span>
-<span class="t-prompt">$</span> onagent list-apps
-demo-app        1 tool, has key</pre>
-              </div>
-              <div class="code-pane" data-pane="2">
-<pre><span class="t-kw">import</span> <span class="t-punc">{</span> AgentBridge <span class="t-punc">}</span> <span class="t-kw">from</span> <span class="t-str">"@onagent/bridge"</span><span class="t-punc">;</span>
-
-<span class="t-kw">const</span> bridge <span class="t-punc">=</span> <span class="t-kw">new</span> <span class="t-fn">AgentBridge</span><span class="t-punc">({</span>
-  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://onagent.shuttle.tools/ws"</span><span class="t-punc">,</span>
-  <span class="t-key">appId</span><span class="t-punc">:</span> <span class="t-str">"demo-app"</span><span class="t-punc">,</span>
-  <span class="t-key">apiKey</span><span class="t-punc">:</span> <span class="t-str">"YOUR_APP_API_KEY"</span><span class="t-punc">,</span>
-  <span class="t-key">tools</span><span class="t-punc">:</span> <span class="t-punc">{</span>
-    <span class="t-fn">fill_search_form</span><span class="t-punc">:</span> <span class="t-punc">({</span> query <span class="t-punc">})</span> <span class="t-kw">=&gt;</span> <span class="t-fn">setQuery</span><span class="t-punc">(</span>query<span class="t-punc">),</span>
-  <span class="t-punc">},</span>
-<span class="t-punc">});</span>
-
-bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class="t-str">"search for red sneakers"</span><span class="t-punc">);</span>     <span class="t-com">// let AI take action</span></pre>
-              </div>
-            </div>
+            <p>No frontend rewrite needed. Map tools to what's already there, and AI can operate it — works with a pure frontend, no backend changes required.</p>
           </div>
         </div>
       </div>
@@ -693,14 +1009,27 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
             </div>
           </div>
           <div class="case reveal">
-            <span class="case-badge">examples/analysis · Vue 3</span>
-            <h3>Survey analysis assistant</h3>
-            <p>Ask about a topic you want to analyze, and AI picks the relevant questions, then picks the matching analysis method.</p>
+            <span class="case-badge">Live demo below · vanilla JS</span>
+            <h3>Marketing analytics assistant</h3>
+            <p>Describe what you want to know about your campaign data, and AI picks the right variables and analysis method.</p>
             <div class="chat">
-              <span class="bubble-u">I want to see how age relates to satisfaction</span>
-              <span class="bubble-a"><span class="tc">→ select_question(["p2q1", …])
-→ set_analysis_method("crosstab")</span><br />Selected 3 questions, analysis method set to crosstab</span>
+              <span class="bubble-u">Is there a relationship between ad spend, clicks, and revenue?</span>
+              <span class="bubble-a"><span class="tc">→ select_analysis("correlation", ["spend", "clicks", "revenue"])</span><br />Ran a correlation analysis across spend, clicks, and revenue</span>
             </div>
+            <!-- Real, live version of this example, not another mock —
+                 connects to the actual "analysis-app" on production over a
+                 real AgentBridge connection (see src/marketing-demo/). Only
+                 mounted (and its JS bundle only fetched) on first click, so
+                 a visitor who never tries it never pays for it. Opens as a
+                 near-full-page modal overlay (not an in-card accordion —
+                 the case card's own half-width column is too narrow to
+                 give the widget's tables and quick-test buttons real room)
+                 but keeps a margin on every side rather than going edge to
+                 edge, so it still reads as "a panel over the page" rather
+                 than a full takeover. -->
+            <button type="button" class="btn btn-ghost case-try-btn" id="marketing-demo-toggle">
+              Try it live →
+            </button>
           </div>
         </div>
       </div>
@@ -713,7 +1042,6 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
           <p>Create an app, issue an API key — that's it. Local development works with no LLM key at all.</p>
           <div class="final-cta">
             <a class="btn btn-primary btn-lg" href="#" data-console>Open Console</a>
-            <a class="btn btn-ghost btn-lg" href="#how">Revisit the 3 steps</a>
           </div>
         </div>
       </div>
@@ -727,15 +1055,28 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
           <a class="brand" href="#top"><span class="mark">⌘</span>onagent</a>
           <p>Describe front-end capabilities as tools, and let an LLM operate your web page safely in natural language. Built for developers, type-safe throughout.</p>
         </div>
-        <div class="foot-col"><h4>Product</h4><a href="#" data-console>Console</a><a href="#how">How it works</a><a href="#features">Features</a></div>
-        <div class="foot-col"><h4>Resources</h4><a href="#cases">Examples</a><a href="#how">Agent Bridge SDK</a><a href="#how">onagent CLI</a></div>
-        <div class="foot-col"><h4>Get started</h4><a href="#" data-console>Create an app</a><a href="#" data-console>Get an API key</a><a href="#how">Embed the SDK</a></div>
+        <div class="foot-col"><h4>Product</h4><a href="#" data-console>Console</a><a href="#features">Features</a></div>
+        <div class="foot-col"><h4>Resources</h4><a href="#cases">Examples</a><a href="/docs/">Agent Bridge SDK</a><a href="/docs/">onagent CLI</a></div>
+        <div class="foot-col"><h4>Get started</h4><a href="#" data-console>Create an app</a><a href="#" data-console>Get an API key</a><a href="/docs/">Embed the SDK</a></div>
       </div>
       <div class="foot-bottom">
         <span>© 2026 onagent · <a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a></span>
       </div>
     </div>
   </footer>
+
+  <!-- Modal overlay for the marketing-analysis widget — see the "Try it
+       live" button's own comment in the case-study section above for why
+       this is a near-full-page overlay rather than an in-card accordion. -->
+  <div class="md-modal-backdrop" id="md-modal-backdrop">
+    <div class="md-modal-panel" role="dialog" aria-modal="true" aria-label="Marketing analytics assistant — live demo">
+      <div class="md-modal-bar">
+        <span class="md-modal-title">Marketing analytics assistant — live demo</span>
+        <button type="button" class="md-modal-close" id="md-modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="md-modal-body" id="marketing-demo-inner"></div>
+    </div>
+  </div>
 
   <script>
     // Relative, not a hardcoded domain: console is embedded same-origin at
@@ -941,29 +1282,88 @@ bridge.<span class="t-fn">prompt</span><span class="t-punc">(</span><span class=
       })();
     }
 
-    var steps = document.querySelectorAll('.step');
-    var panes = document.querySelectorAll('.code-pane');
-    var fname = document.getElementById('fname');
-    var fnames = ['tools', 'terminal', 'app.tsx'];
-    steps.forEach(function (s) {
-      s.addEventListener('click', function () {
-        var n = +s.dataset.step;
-        steps.forEach(function (x) { x.classList.toggle('active', x === s); });
-        panes.forEach(function (p) { p.classList.toggle('active', +p.dataset.pane === n); });
-        fname.textContent = fnames[n];
-      });
-    });
+  </script>
 
-    var copyBtn = document.getElementById('copy');
-    copyBtn.addEventListener('click', function () {
-      var active = document.querySelector('.code-pane.active pre');
-      if (!active) return;
-      navigator.clipboard.writeText(active.innerText).then(function () {
-        copyBtn.textContent = 'Copied ✓';
-        copyBtn.classList.add('copied');
-        setTimeout(function () { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('copied'); }, 1600);
+  <!-- Lazy-loaded: the widget module (and its @onagent/bridge dependency)
+       is only fetched once someone actually clicks "Try it live" — see
+       src/marketing-demo/widget.js's own header comment for what this
+       connects to and why. -->
+  <script type="module">
+    // Deep-linkable via #try-demo=<id>: sharing this page's URL with that
+    // hash (or just onagent.shuttle.tools/#try-demo=analysis) opens the
+    // matching modal directly on load, and opening/closing it via the UI
+    // keeps the hash in sync (pushState, not replaceState, so the browser
+    // back button closes the modal instead of leaving the site).
+    //
+    // One entry per live-demo case card — adding a second demo (e.g. a
+    // future react-demo replacement) means adding one entry here with its
+    // own id/elements, not duplicating this open/close machinery.
+    var HASH_PREFIX = '#try-demo=';
+    var DEMOS = {
+      analysis: {
+        toggleBtn: document.getElementById('marketing-demo-toggle'),
+        backdrop: document.getElementById('md-modal-backdrop'),
+        closeBtn: document.getElementById('md-modal-close'),
+        inner: document.getElementById('marketing-demo-inner'),
+        mounted: false,
+        load: function (inner) {
+          return import('/src/marketing-demo/widget.js').then(function (mod) {
+            mod.mountMarketingDemo(inner, { lang: 'en' });
+          });
+        },
+      },
+    };
+
+    function openDemo(id, fromHash) {
+      var demo = DEMOS[id];
+      if (!demo || demo.backdrop.classList.contains('is-open')) return;
+      demo.backdrop.classList.add('is-open');
+      document.body.classList.add('md-modal-open');
+      if (!fromHash && window.location.hash !== HASH_PREFIX + id) {
+        history.pushState({ mdDemo: id }, '', HASH_PREFIX + id);
+      }
+      if (!demo.mounted) {
+        demo.mounted = true;
+        demo.load(demo.inner);
+      }
+    }
+    function closeDemo(id, fromHash) {
+      var demo = DEMOS[id];
+      if (!demo || !demo.backdrop.classList.contains('is-open')) return;
+      demo.backdrop.classList.remove('is-open');
+      document.body.classList.remove('md-modal-open');
+      if (!fromHash && window.location.hash === HASH_PREFIX + id) {
+        history.back();
+      }
+    }
+    function demoIdFromHash() {
+      var hash = window.location.hash;
+      if (hash.indexOf(HASH_PREFIX) !== 0) return null;
+      var id = hash.slice(HASH_PREFIX.length);
+      return DEMOS[id] ? id : null;
+    }
+
+    Object.keys(DEMOS).forEach(function (id) {
+      var demo = DEMOS[id];
+      demo.toggleBtn.addEventListener('click', function () { openDemo(id, false); });
+      demo.closeBtn.addEventListener('click', function () { closeDemo(id, false); });
+      demo.backdrop.addEventListener('click', function (e) {
+        if (e.target === demo.backdrop) closeDemo(id, false);
       });
     });
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Escape') return;
+      Object.keys(DEMOS).forEach(function (id) { closeDemo(id, false); });
+    });
+    window.addEventListener('popstate', function () {
+      var activeId = demoIdFromHash();
+      Object.keys(DEMOS).forEach(function (id) {
+        if (id === activeId) openDemo(id, true);
+        else closeDemo(id, true);
+      });
+    });
+    var initialId = demoIdFromHash();
+    if (initialId) openDemo(initialId, true);
   </script>
 </body>
 </html>
