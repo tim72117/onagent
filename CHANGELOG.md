@@ -6,6 +6,36 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.16
+
+No breaking changes — patch release. `analytics.ts`'s exported function
+signatures (`fireRegistrationConversion`, `installClickTracking`) are
+unchanged; only their internal implementation changed.
+
+- Migrate GA4/Ads tracking from hardcoded `gtag.js` calls to a Google Tag
+  Manager container (`GTM-MXMK83XR`). Console and all six landing pages
+  used to load `gtag.js` directly and call `gtag()` with the GA4 property,
+  Ads account, and the registration conversion's tag/label all hardcoded
+  inline — changing any tracking config meant editing and redeploying this
+  repo. Both now load the GTM container instead; `analytics.ts` no longer
+  calls `gtag()` at all — it pushes plain events onto `window.dataLayer`
+  (`sign_up` for a registration, `tool_creation_method_selected:<method>`
+  for the wizard-vs-blank-form click tracking), and the container's own
+  tags/triggers/variables decide which GA4/Ads config actually fires.
+- The container's tags (GA4 config, Ads config, Ads conversion tracking
+  for `sign_up`, GA4 event for `tool_creation_method_selected`) were
+  verified end-to-end via GTM's Preview mode against a local console
+  instance before landing — a real registration correctly fired the Ads
+  conversion tag. This mattered because the two live onagent Search
+  campaigns bid on "Maximize Conversions" / "Target Spend" using this
+  account's primary conversion goals, which include the registration
+  conversion.
+- Add `marketing/gtm-tools/` (a new sibling to `marketing/google-ads-tools/`,
+  both gitignored from this repo) — read-only Tag Manager API query
+  tooling used to inspect and confirm the container's tag/trigger/variable
+  setup during this migration, and to reproduce that inspection if the
+  container needs changing again.
+
 ## v0.2.15
 
 No breaking changes for any external consumer — patch release.
