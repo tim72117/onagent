@@ -10,7 +10,12 @@
 # 的 placeholder index.html(見 web.go 檔頭註解)。
 #
 # 建置(從專案根目錄,需要 BuildKit):
-#   DOCKER_BUILDKIT=1 docker build --secret id=gh_pat,env=GH_PAT -t onagent-server .
+#   DOCKER_BUILDKIT=1 docker build --secret id=gh_pat,env=GH_PAT \
+#     --secret id=landing_analysis_api_key,env=LANDING_ANALYSIS_API_KEY \
+#     -t onagent-server .
+#   landing_analysis_api_key 是選填的(見下方 landing-build 階段) ——
+#   不帶這個 secret 一樣能 build 成功,只是 marketing-demo widget 會停在
+#   「尚未上線」狀態(見 widget.js 的 !API_KEY 檢查)。
 # 本機跑(env 由 --env-file 注入,不會把 .env 烤進映像):
 #   docker run --rm -p 8080:8080 --env-file backend/.env onagent-server
 
@@ -20,7 +25,21 @@ WORKDIR /web
 COPY apps/landing/package.json apps/landing/package-lock.json ./
 RUN npm ci
 COPY apps/landing/ ./
-RUN npm run build
+# marketing-demo widget 的 AgentBridge 連線用 VITE_ANALYSIS_API_KEY(見
+# src/marketing-demo/widget.js)。用 BuildKit secret mount 而非 ARG/ENV,
+# 理由同下面 Go 編譯階段的 gh_pat:ARG/ENV 會把值烤進 image layer
+# history,secret mount 只在這個 RUN 步驟執行期間存在。寫進
+# .env.production.local 而非直接 export 環境變數,因為 Vite 只認
+# VITE_* 開頭的 .env 檔案或實際存在的 process.env 變數,而 RUN 指令的
+# shell export 不會跨 layer 保留給下一個 RUN(npm run build 是同一個
+# RUN 裡執行,寫檔案比 inline export 更不容易被之後改動這個 Dockerfile
+# 的人不小心拆成兩個 RUN 而失效)。
+# 對應的建置指令:DOCKER_BUILDKIT=1 docker build --secret id=landing_analysis_api_key,env=LANDING_ANALYSIS_API_KEY ...
+RUN --mount=type=secret,id=landing_analysis_api_key \
+    if [ -s /run/secrets/landing_analysis_api_key ]; then \
+      echo "VITE_ANALYSIS_API_KEY=$(cat /run/secrets/landing_analysis_api_key)" > .env.production.local; \
+    fi && \
+    npm run build
 
 # ---- 階段 2:build console 前端 ----
 FROM node:22-alpine AS console-build
