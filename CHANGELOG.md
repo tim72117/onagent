@@ -6,6 +6,24 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.18
+
+No breaking changes — patch release. Lockfile-only change; no source
+code or public API affected.
+
+- Fix `apps/landing`'s Docker build failing at the `npm ci` step. The
+  committed `package-lock.json` was generated with npm 11 (local dev),
+  but the Dockerfile's `landing-build` stage runs on `node:22-alpine`
+  (npm 10) — that version mismatch made npm 10 throw internally while
+  resolving `@onagent/bridge`'s entry, surfaced as a misleading "no
+  lockfile found" error even though the file was present and valid.
+  Regenerated inside a `node:22-alpine` container so the committed
+  lockfile matches what the actual build environment can read;
+  `@onagent/bridge` now resolves to its published registry version
+  (0.0.2) instead of a local workspace link. Verified end-to-end in a
+  fresh container: `npm ci` installs cleanly (0 vulnerabilities per
+  `npm audit`) and `npm run build` produces the same output as before.
+
 ## v0.2.17
 
 No breaking changes — patch release. The only new export
