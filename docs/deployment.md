@@ -13,7 +13,9 @@
 ## 架構總覽
 
 - **Dockerfile**（專案根目錄）：多階段 build
-  1. build `apps/landing`（`npm ci && npm run build`）
+  1. build `apps/landing`（`npm ci && npm run build`；選填注入
+     `LANDING_ANALYSIS_API_KEY` secret，讓 marketing-demo widget 連上
+     真實的 AgentBridge，見下方 secrets 清單）
   2. build `apps/console`（`npm ci && npm run build`）
   3. build `apps/admin`（系統管理員後台，`npm ci && npm run build`）
   4. 把三者的 `dist/` 分別複製進 `backend/cmd/server/web/landing/`、
@@ -123,6 +125,12 @@ Actions）：
 - `WIF_SERVICE_ACCOUNT`：有權限 push image / 部署 Cloud Run 的
   service account email
 - `GH_PAT`：同上，用來讓 Docker build 階段抓 `github.com/tim72117/want`
+- `LANDING_ANALYSIS_API_KEY`（選填）：`analysis-app` 的 onagent API
+  key，讓 landing page 的 marketing-demo widget 連上真實的
+  AgentBridge。不設定的話 build 一樣會成功，只是 widget 會停在
+  「尚未上線」狀態（見 `apps/landing/src/marketing-demo/widget.js` 的
+  `!API_KEY` 檢查）。這是瀏覽器端可見的 app key，不是伺服器機密，用
+  `onagent issue-key analysis-app` 取得
 
 WIF 的 provider / service account 需要你自己在 GCP 專案裡建立
 （`gcloud iam workload-identity-pools` 系列指令），本文件不重複展開，
@@ -223,6 +231,7 @@ gcloud beta run domain-mappings describe \
 | `ADDR` | 不需設定 | main.go 預設 `:8080`，符合 Cloud Run 的 `PORT=8080` 慣例，通常不需要覆寫 |
 | `QUOTA_ENABLED` | 不需設定 | main.go 預設 `true`（啟用每月額度限制）；目前部署未覆寫，維持預設 |
 | `GH_PAT` | GitHub Actions repo secret（**不是** GCP Secret Manager） | 只在 Docker build 階段使用（`--secret id=gh_pat`），抓 `github.com/tim72117/want` 私有模組，不會進最終 runtime image |
+| `LANDING_ANALYSIS_API_KEY` | GitHub Actions repo secret（**不是** GCP Secret Manager，選填） | 只在 landing 前端 build 階段使用（`--secret id=landing_analysis_api_key`），寫進 `.env.production.local` 給 Vite 讀取；會被打包進瀏覽器端 JS bundle（刻意如此，是瀏覽器端可見的 app key），不影響後端 runtime image |
 
 ## 常見問題
 

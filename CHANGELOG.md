@@ -6,6 +6,26 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.19
+
+No breaking changes — patch release. Purely additive CD wiring; no
+public API affected.
+
+- Wire an optional `LANDING_ANALYSIS_API_KEY` GitHub Actions secret into
+  the `apps/landing` Docker build stage, so the marketing-demo widget's
+  AgentBridge connection can point at a real, production-issued API key
+  instead of always showing "not live yet". Injected via BuildKit
+  `--secret` (same pattern already used for `GH_PAT`) so the value never
+  lands in the image's layer history; the build stage writes it to
+  `.env.production.local` for Vite to pick up (this is a browser-facing
+  app key, so it's expected to end up embedded in the built JS bundle —
+  the secret mount only keeps it out of layer history along the way).
+  The secret is genuinely optional: a build run without it still
+  succeeds, verified with a `--no-cache` build with no `--secret` flag.
+- Update `docs/deployment.md` to document the new secret (Dockerfile
+  build steps, GitHub Actions secrets list, and the env/secrets
+  reference table) — it previously only mentioned `GH_PAT`.
+
 ## v0.2.18
 
 No breaking changes — patch release. Lockfile-only change; no source
