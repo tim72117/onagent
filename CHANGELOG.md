@@ -6,6 +6,46 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.17
+
+No breaking changes — patch release. The only new export
+(`apps/landing/src/analytics.js`'s `installClickTracking`) is additive;
+nothing existing was removed or renamed.
+
+- Add a live marketing-analysis demo widget (`apps/landing/src/
+  marketing-demo/`) to both landing pages, as a modal off the "Marketing
+  analytics assistant" case card — 6 real analysis methods (frequency,
+  cross-table, correlation, regression, trend, ranking) run against 120
+  rows of mock campaign data, with canvas charts and a real AgentBridge
+  chat connection, not a scripted preview. Bilingual UI (English/
+  Traditional Chinese) via a small `strings.js` lookup table; the
+  underlying dataset values stay plain English on both pages so every
+  table/chart renderer doesn't need a second value-translation layer.
+- Connection config (WS URL / app ID / API key) now comes from
+  `VITE_ANALYSIS_WS_URL`/`VITE_ANALYSIS_APP_ID`/`VITE_ANALYSIS_API_KEY`
+  (see `apps/landing/.env.example`) instead of being hardcoded, so local
+  dev and production each point at their own backend without editing the
+  widget's source.
+- Add declarative click tracking for the landing site
+  (`apps/landing/src/analytics.js`'s `installClickTracking`) — an
+  element marked `data-track="event[:value]"` fires a GA4 event through
+  one delegated listener, mirroring the pattern already used in
+  `apps/console`.
+- Fix three `analysis.js` bugs: `trend()` compared against stale
+  hardcoded month keys that no longer matched the dataset's month
+  values (always returned an empty series); `correlation()`/
+  `regression()` fabricated a zero correlation/R² when the AI picked a
+  non-numeric variable for a numeric-only slot, indistinguishable from
+  a genuine zero result; `ranking()` could throw on a non-numeric
+  metric variable instead of failing gracefully. All three now return
+  an honest `error` field the widget renders as a plain message.
+- A failed prompt now surfaces as a chat-log bubble with a retry
+  button, instead of a line of text under the input box that's easy to
+  miss; chat history (messages and result cards) now persists to
+  `localStorage` and replays on reload.
+- Delete `examples/analysis` (the old Vue 3 survey-analysis demo this
+  new widget replaces).
+
 ## v0.2.16
 
 No breaking changes — patch release. `analytics.ts`'s exported function
