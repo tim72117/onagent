@@ -4,15 +4,21 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- Google tag (gtag.js) — same tag as apps/console/index.html, records
-       page views on the landing site itself (previously untracked). -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18416841975"></script>
+  <!-- Google Tag Manager: loads the onagent container (GTM-MXMK83XR),
+       which owns the GA4 tag, the Ads tag, and the Ads registration
+       conversion tag — see marketing/gtm-tools/README.md to inspect or
+       change it. Same container as apps/console/index.html. -->
   <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', 'AW-18416841975');
-    gtag('config', 'G-MP4CK0P8JF');
+    (function (w, d, s, l, i) {
+      w[l] = w[l] || [];
+      w[l].push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
+      var f = d.getElementsByTagName(s)[0],
+        j = d.createElement(s),
+        dl = l != 'dataLayer' ? '&l=' + l : '';
+      j.async = true;
+      j.src = 'https://www.googletagmanager.com/gtm.js?id=' + i + dl;
+      f.parentNode.insertBefore(j, f);
+    })(window, document, 'script', 'dataLayer', 'GTM-MXMK83XR');
   </script>
 
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -446,6 +452,10 @@
     }
   </style>
 </head>
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-MXMK83XR"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
 <body>
   <div class="bg-fx"></div>
   <div class="bg-grid"></div>

@@ -5,28 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Console — onagent</title>
 
-    <!-- Google tag (gtag.js): loads once per page, site-wide, recording a
-         page_view on every load — the registration conversion event fires
-         separately from application code (see src/analytics.ts). Skipped
-         entirely when VITE_DISABLE_ANALYTICS=true (see .env.example) so
-         local testing never sends page views either, not just conversions.
+    <!-- Google Tag Manager: loads the onagent container (GTM-MXMK83XR),
+         which owns the GA4 tag, the Ads tag, and the Ads registration
+         conversion tag — none of that config lives in this repo anymore,
+         see marketing/gtm-tools/README.md to inspect or change it.
+         Skipped entirely when VITE_DISABLE_ANALYTICS=true (see
+         .env.example) so local testing never sends page views or events.
          type="module" so Vite processes import.meta.env here like any
          other module — a plain inline script wouldn't get it rewritten. -->
     <script type="module">
       if (import.meta.env.VITE_DISABLE_ANALYTICS !== 'true') {
+        window.dataLayer = window.dataLayer || []
+        window.dataLayer.push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' })
         const s = document.createElement('script')
         s.async = true
-        s.src = 'https://www.googletagmanager.com/gtag/js?id=AW-18416841975'
+        s.src = 'https://www.googletagmanager.com/gtm.js?id=GTM-MXMK83XR'
         document.head.appendChild(s)
-        window.dataLayer = window.dataLayer || []
-        window.gtag = function () { window.dataLayer.push(arguments) }
-        window.gtag('js', new Date())
-        window.gtag('config', 'AW-18416841975')
-        window.gtag('config', 'G-MP4CK0P8JF')
       }
     </script>
   </head>
   <body>
+    <!-- Google Tag Manager (noscript) -->
+    <noscript>
+      <iframe
+        src="https://www.googletagmanager.com/ns.html?id=GTM-MXMK83XR"
+        height="0"
+        width="0"
+        style="display: none; visibility: hidden"
+      ></iframe>
+    </noscript>
+    <!-- End Google Tag Manager (noscript) -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

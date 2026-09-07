@@ -1,9 +1,19 @@
-// gtag is loaded by the base tag in index.html (site-wide, on every page) —
-// not imported, just declared here so TypeScript knows it exists. Firing it
-// is exactly this — a plain window global call — not something that can be
-// expressed as a static HTML tag, since it has to happen at the moment a
-// registration actually succeeds, not on every page load.
-declare function gtag(...args: unknown[]): void
+// The GTM container loaded by index.html (GTM-MXMK83XR) owns which GA4/Ads
+// tags actually fire for which dataLayer event — this file only pushes
+// events onto window.dataLayer, never calls gtag() directly. See
+// marketing/gtm-tools/README.md to inspect or change the container's tags,
+// triggers, and variables.
+declare global {
+  interface Window {
+    dataLayer?: unknown[]
+  }
+}
+
+function pushToDataLayer(event: Record<string, unknown>) {
+  if (import.meta.env.VITE_DISABLE_ANALYTICS === 'true') return
+  window.dataLayer = window.dataLayer || []
+  window.dataLayer.push(event)
+}
 
 // Fires once per real new registration. Two call sites, for the two ways an
 // account gets created:
@@ -18,11 +28,11 @@ declare function gtag(...args: unknown[]): void
 // Fires by default — set VITE_DISABLE_ANALYTICS=true in .env.local while
 // testing registrations locally so they don't inflate the real GA4/Ads
 // conversion counts. Unset (or anything other than "true") means "send."
+// The GTM container's "Ads Conversion - 註冊" trigger fires on this exact
+// event name — renaming it here without updating that trigger silently
+// breaks the conversion.
 export function fireRegistrationConversion() {
-  if (typeof gtag !== 'function') return // gtag.js failed to load — don't throw over an ads pixel
-  if (import.meta.env.VITE_DISABLE_ANALYTICS === 'true') return
-  gtag('event', 'sign_up')
-  gtag('event', 'conversion', { send_to: 'AW-18416841975/eynPCLjd_OocEPfp6s1E' })
+  pushToDataLayer({ event: 'sign_up' })
 }
 
 // --- declarative click tracking ------------------------------------------
@@ -46,19 +56,22 @@ export function fireRegistrationConversion() {
 // still belongs in a one-off fire*() call.
 
 // data-track's value is "eventName" or "eventName:value" — the part after
-// the colon (if present) becomes { value } on the GA4 event so a handful of
-// fixed variants of the same event (e.g. which of two buttons was clicked)
-// don't need one event name each. Delegated on document so it keeps working
-// for elements that mount after this listener is attached — no per-element
-// wiring required.
+// the colon (if present) becomes { value } on the dataLayer push so a
+// handful of fixed variants of the same event (e.g. which of two buttons
+// was clicked) don't need one event name each. Delegated on document so it
+// keeps working for elements that mount after this listener is attached —
+// no per-element wiring required. The GTM container reads this event's
+// name via a Custom Event trigger and its value via a "DL - method"-style
+// Data Layer Variable (see e.g. "Custom Event - tool_creation_method_selected"
+// / "DL - method" for the tool_creation_method_selected wiring) — renaming
+// the event or the "value" key here without updating those breaks the tag
+// silently, same as fireRegistrationConversion's "sign_up" above.
 function handleTrackedClick(e: MouseEvent) {
   const el = (e.target as Element | null)?.closest('[data-track]')
   if (!el) return
   const [eventName, value] = (el.getAttribute('data-track') ?? '').split(':')
   if (!eventName) return
-  if (typeof gtag !== 'function') return
-  if (import.meta.env.VITE_DISABLE_ANALYTICS === 'true') return
-  gtag('event', eventName, value ? { value } : undefined)
+  pushToDataLayer(value ? { event: eventName, value } : { event: eventName })
 }
 
 // Idempotent — safe to call more than once (e.g. React StrictMode's double

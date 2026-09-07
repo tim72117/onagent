@@ -1,79 +1,92 @@
 import { fireEvent } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { installClickTracking } from './analytics'
+import { fireRegistrationConversion, installClickTracking } from './analytics'
 
-describe('installClickTracking', () => {
-  let gtagCalls: unknown[][]
-
+describe('analytics', () => {
   beforeEach(() => {
-    gtagCalls = []
     // .env.local sets VITE_DISABLE_ANALYTICS=true for local dev (so running
-    // the app locally doesn't pollute real GA4 data) — vitest picks that up
-    // too, so it has to be overridden here for tests that want to observe
-    // a real (fake) gtag call; the "does not fire when ... is true" test
-    // below re-stubs it back to 'true' to exercise that path deliberately.
+    // the app locally doesn't pollute real GA4/GTM data) — vitest picks
+    // that up too, so it has to be overridden here for tests that want to
+    // observe a real dataLayer push; the "does not push ... is true" tests
+    // below re-stub it back to 'true' to exercise that path deliberately.
     vi.stubEnv('VITE_DISABLE_ANALYTICS', 'false')
-    ;(window as unknown as { gtag: (...args: unknown[]) => void }).gtag = (...args: unknown[]) => {
-      gtagCalls.push(args)
-    }
+    window.dataLayer = []
     installClickTracking()
   })
 
   afterEach(() => {
     document.body.innerHTML = ''
-    delete (window as unknown as { gtag?: unknown }).gtag
+    delete window.dataLayer
     vi.unstubAllEnvs()
   })
 
-  it('fires a GA4 event with the value from a "name:value" data-track attribute', () => {
-    const button = document.createElement('button')
-    button.setAttribute('data-track', 'tool_creation_method_selected:wizard')
-    document.body.appendChild(button)
+  describe('fireRegistrationConversion', () => {
+    it('pushes a sign_up event onto dataLayer', () => {
+      fireRegistrationConversion()
 
-    fireEvent.click(button)
+      expect(window.dataLayer).toEqual([{ event: 'sign_up' }])
+    })
 
-    expect(gtagCalls).toEqual([['event', 'tool_creation_method_selected', { value: 'wizard' }]])
+    it('does not push when VITE_DISABLE_ANALYTICS is "true"', () => {
+      vi.stubEnv('VITE_DISABLE_ANALYTICS', 'true')
+
+      fireRegistrationConversion()
+
+      expect(window.dataLayer).toEqual([])
+    })
   })
 
-  it('fires with no params for a data-track attribute with no ":value" suffix', () => {
-    const button = document.createElement('button')
-    button.setAttribute('data-track', 'some_event')
-    document.body.appendChild(button)
+  describe('installClickTracking', () => {
+    it('pushes a dataLayer event with the value from a "name:value" data-track attribute', () => {
+      const button = document.createElement('button')
+      button.setAttribute('data-track', 'tool_creation_method_selected:wizard')
+      document.body.appendChild(button)
 
-    fireEvent.click(button)
+      fireEvent.click(button)
 
-    expect(gtagCalls).toEqual([['event', 'some_event', undefined]])
-  })
+      expect(window.dataLayer).toEqual([{ event: 'tool_creation_method_selected', value: 'wizard' }])
+    })
 
-  it('finds the nearest data-track ancestor when the click lands on a child element', () => {
-    const button = document.createElement('button')
-    button.setAttribute('data-track', 'tool_creation_method_selected:blank')
-    const icon = document.createElement('span')
-    button.appendChild(icon)
-    document.body.appendChild(button)
+    it('pushes with no value key for a data-track attribute with no ":value" suffix', () => {
+      const button = document.createElement('button')
+      button.setAttribute('data-track', 'some_event')
+      document.body.appendChild(button)
 
-    fireEvent.click(icon)
+      fireEvent.click(button)
 
-    expect(gtagCalls).toEqual([['event', 'tool_creation_method_selected', { value: 'blank' }]])
-  })
+      expect(window.dataLayer).toEqual([{ event: 'some_event' }])
+    })
 
-  it('does nothing for a click with no data-track ancestor', () => {
-    const button = document.createElement('button')
-    document.body.appendChild(button)
+    it('finds the nearest data-track ancestor when the click lands on a child element', () => {
+      const button = document.createElement('button')
+      button.setAttribute('data-track', 'tool_creation_method_selected:blank')
+      const icon = document.createElement('span')
+      button.appendChild(icon)
+      document.body.appendChild(button)
 
-    fireEvent.click(button)
+      fireEvent.click(icon)
 
-    expect(gtagCalls).toEqual([])
-  })
+      expect(window.dataLayer).toEqual([{ event: 'tool_creation_method_selected', value: 'blank' }])
+    })
 
-  it('does not fire when VITE_DISABLE_ANALYTICS is "true"', () => {
-    vi.stubEnv('VITE_DISABLE_ANALYTICS', 'true')
-    const button = document.createElement('button')
-    button.setAttribute('data-track', 'tool_creation_method_selected:wizard')
-    document.body.appendChild(button)
+    it('does nothing for a click with no data-track ancestor', () => {
+      const button = document.createElement('button')
+      document.body.appendChild(button)
 
-    fireEvent.click(button)
+      fireEvent.click(button)
 
-    expect(gtagCalls).toEqual([])
+      expect(window.dataLayer).toEqual([])
+    })
+
+    it('does not push when VITE_DISABLE_ANALYTICS is "true"', () => {
+      vi.stubEnv('VITE_DISABLE_ANALYTICS', 'true')
+      const button = document.createElement('button')
+      button.setAttribute('data-track', 'tool_creation_method_selected:wizard')
+      document.body.appendChild(button)
+
+      fireEvent.click(button)
+
+      expect(window.dataLayer).toEqual([])
+    })
   })
 })
