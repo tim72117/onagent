@@ -1,0 +1,30 @@
+.form {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* SheetHeader.module.css's own .header uses a negative margin (-16px) to
+   bleed to the sheet's edges, assuming a parent with 16px padding to
+   offset it — true for every partial-height sheet (BottomSheet.module.css's
+   .panel has that padding), but .panel.fullscreen only pads for the
+   safe-area insets (top/left/right), not this sheet's own 16px content
+   margin — so that same negative margin still pulled the header past the
+   sheet's actual edge and clipped the Save button off-screen. Padding it
+   back in cancels the negative margin exactly. */
+.header {
+  flex: none;
+  padding: 16px 16px 0;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px;
+  /* .panel.fullscreen (BottomSheet.module.css) covers top/left/right
+     safe-area but deliberately leaves the bottom to whichever content
+     sits at the bottom edge — here, that's this scrollable body. */
+  padding-bottom: calc(16px + var(--safe-bottom));
+}

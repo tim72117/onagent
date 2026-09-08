@@ -1,20 +1,13 @@
 import { useState } from 'react'
 import type { App } from './schema'
-import { toLLMToolsJSON, toTypeScript, toYAML } from './codegen'
+import { toYAML } from './codegen'
+import styles from './PreviewPanel.module.css'
 
-type Tab = 'yaml' | 'json' | 'ts'
-
-const TABS: { id: Tab; label: string; hint: string }[] = [
-  { id: 'yaml', label: 'YAML', hint: 'equivalent to what Save persists for this app (stored in the database, not a file on disk)' },
-  { id: 'json', label: 'LLM tool JSON', hint: 'shape returned by GET /apps/{appId}/tools.json' },
-  { id: 'ts', label: 'TypeScript', hint: 'shape returned by GET /apps/{appId}/tools.ts' },
-]
+const HINT = 'equivalent to what Save persists for this app (stored in the database, not a file on disk)'
 
 export function PreviewPanel({ app }: { app: App }) {
-  const [tab, setTab] = useState<Tab>('yaml')
   const [copied, setCopied] = useState(false)
-
-  const content = tab === 'yaml' ? toYAML(app) : tab === 'json' ? toLLMToolsJSON(app) : toTypeScript(app)
+  const content = toYAML(app)
 
   async function copy() {
     await navigator.clipboard.writeText(content)
@@ -23,24 +16,15 @@ export function PreviewPanel({ app }: { app: App }) {
   }
 
   return (
-    <div className="preview-panel">
-      <div className="preview-tabs">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={tab === t.id ? 'tab-btn active' : 'tab-btn'}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-        <button type="button" className="copy-btn" onClick={copy}>
+    <div className={styles.previewPanel}>
+      <div className={styles.previewTabs}>
+        <span className={styles.tabBtn}>YAML</span>
+        <button type="button" className={styles.copyBtn} onClick={copy}>
           {copied ? 'Copied' : 'Copy'}
         </button>
       </div>
-      <div className="preview-hint">{TABS.find((t) => t.id === tab)!.hint}</div>
-      <pre className="preview-code">
+      <div className={styles.previewHint}>{HINT}</div>
+      <pre className={styles.previewCode}>
         <code>{content}</code>
       </pre>
     </div>

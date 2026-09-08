@@ -6,15 +6,19 @@
 
 ---
 
-## 最新掃描：2026-09-04
+## 最新掃描：2026-09-09
 
-> 方法：針對「Playground 改用共用 `ws.Session`」這次重構做的針對性複核（非全面重掃），比對 `docs/audit-security.md`/`docs/audit-stability.md`/本檔案既有條目與這次改動範圍的關聯。
+> 方法：3 路並行掃描——(1) console 前端這次未提交的手機版重構（邏輯不一致＋過時註解）、(2) backend 邏輯不一致（排除已記錄條目）、(3) 專案級文件（README/CHANGELOG/apps 說明/`.env.example`/skill 文件）跟實際程式碼現況比對。全部發現皆已人工複核程式碼驗證，非直接採信 agent 結論。
 
-### 🟡 `playgroundResolver.ResolveApp` 與 `withOwnedApp` 是兩份手動同步的授權邏輯（新發現）
-- **位置**：`backend/internal/console/playground.go`（`playgroundResolver.ResolveApp`）＋ `backend/internal/console/console.go`（`withOwnedApp`）
-- **問題**：Playground 改用共用 `ws.Session` 後，`ws.AppResolver` 介面的簽名（`func(r *http.Request) (...)`）跟既有 `withOwnedApp`（`http.HandlerFunc` wrapper）的簽名不相容，`playgroundResolver.ResolveApp` 因此**重新刻了一份**跟 `withOwnedApp` 邏輯上等價的 session 驗證＋ownership 檢查＋404-not-403 隔離，而不是呼叫 `withOwnedApp` 本身。程式碼註解已自陳這個取捨：「the two must be kept in sync by hand if either changes」。
-- **後果**：`withOwnedApp` 之後若修改（例如調整 404/403 的判斷條件、換一種 ownership 查詢方式），`playgroundResolver.ResolveApp` 不會自動跟進，兩處可能悄悄產生行為差異——輕則造成不一致的錯誤訊息，重則其中一處的存取控制漏檢查（洩漏 app 是否存在，或誤放行未擁有的 app）。跟 A5（`RegisterAppRole` 手動維護 invariant）是同一類「型別系統不強制多處同步」的架構債模式，但這裡涉及的是存取控制邏輯，風險層級略高。
-- **修法**：把 ownership／404-not-403 判斷抽成一個不依賴 `http.HandlerFunc` 簽名的共用函式（例如 `func ownedAppOrNotFound(apps *toolschema.Registry, userID int64, appID string) (ok bool)`），讓 `withOwnedApp` 跟 `playgroundResolver.ResolveApp` 都呼叫它，而不是各自重寫判斷邏輯。
+### 🟠 `ToolNameSheet.tsx`/`ToolDescriptionSheet.tsx`：可儲存判斷用 trim 後字串，實際送出未 trim，導致帶尾隨空白的工具名稱能通過「可儲存」檢查（新發現）
+- **位置**：`apps/console/src/ToolNameSheet.tsx:30,38`、`apps/console/src/ToolDescriptionSheet.tsx:27,35`；驗證端 `apps/console/src/validate.ts:24`（`TOOL_NAME_RE.test(tool.name)`，未 trim）
+- **問題**：`saveDisabled={draft.trim() === name}` 用**修剪後**的字串判斷 Save 按鈕是否可按，但 `onSave(draft)` 送出的是**未修剪**的原始 `draft`。使用者在工具名稱後多打一個空格（如 `"my_tool "`）時，`draft.trim() === name` 為 false，Save 被啟用；存檔後 `tool.name` 帶著尾隨空白，之後在 `validate.ts:24` 的 `TOOL_NAME_RE.test(tool.name)`（同樣未 trim）判定為不合法名稱格式，跳出驗證錯誤——使用者剛按下 Save 就看到報錯，但介面上看不出是尾隨空白造成的。桌面版 `ToolForm.tsx` 沒有這個問題，因為它是逐鍵直接 `onChange`，沒有「本地草稿 + trim 比較 + 未 trim 送出」這層落差，是手機重構新引入的行為。
+- **修法**：`onSave` 送出前統一 trim（`onSave(draft.trim())`），讓比較與送出用同一個字串；或 `saveDisabled` 改用未 trim 的字串比較，讓兩者的正規化程度一致（前者較合理，因為工具名稱本來就不該允許前後空白）。
+
+### 🟡 `quota.Record` 的 doc comment 自相矛盾——前段仍宣稱靠 `eventID` 去重、`ON CONFLICT` 讓重試安全，後段（同一段註解）已改口說明去重機制已移除（新發現）
+- **位置**：`backend/internal/quota/quota.go:135-137`（矛盾的前段）vs `:151-166`（正確反映現況的後段）vs `:177-182`（實際 SQL，確認無 `ON CONFLICT`）
+- **問題**：第 135-137 行寫「Record appends one usage event for appID, keyed by eventID for idempotency (...) — the ON CONFLICT below makes the insert a no-op the second time」；但第 151 行起明確說「eventID is stored for audit/debugging only — it is NOT used to deduplicate anymore」，並詳述改掉的原因（`apps/console` Playground 的 `requestId="0"` 在跨頁面重載時退化成不可靠的去重鍵，曾造成真實 prompt 被誤判為重試而漏記）。實際 SQL（177-182 行）也已確認沒有 `ON CONFLICT` 子句。這是同一段 doc comment 裡新舊事實並存、前段沒有跟著後面的修訂清乾淨——字面上第一段仍會誤導讀者以為重試安全、不會重複計費，但代碼與後段都指出現在**會**重複計費（且是刻意接受的權衡，見後段對 Stripe 上線後要重新評估的說明）。
+- **修法**：刪除或改寫第 135-137 行，讓函式開頭第一段就直接反映「不再去重、eventID 僅供稽核」的現況，避免只讀開頭兩行的讀者被誤導。
 
 ---
 
@@ -164,6 +168,8 @@
 - **admin 後台「Users」清單在 `QUOTA_ENABLED=false` 時完全壞掉**（2026-08-16 修復並實測確認）：`backend/internal/quota/admin.go` 的 `CountUsers`/`ListUsers` 只要 `quota.Service` 是 `nil`（停用配額服務時）就直接回傳 `"quota: service is disabled"` 錯誤，`adminconsole.go` 把這個 500 原樣丟給前端，前端吞掉顯示成「No users yet」。已修復為：`main.go` 讓 admin 後台拿自己獨立、恆常建構的 `quota.Service`（`quota.New(database)`），與 `/ws`/`/console` 用來做額度**執行**的可為 nil 的 `quotaSvc` 分開。實測：`QUOTA_ENABLED=false` 下註冊 2 個帳號，`/admin/api/users` 正確回傳 `total:2` 與完整資料。
 - **console 登入頁密碼欄位 placeholder 是字面上的 `••••••••`**（2026-08-16 修復並截圖確認）：`apps/console/src/Login.tsx` 空白密碼欄位視覺上看起來像已填密碼，易誤導使用者。已改成 `Enter your password`。
 - **A2. Playground 仍是同步阻塞呼叫**（2026-09-04 修復並複核確認）：`backend/internal/console/playground.go` 原本在同一個 `conn.ReadMessage()` 迴圈裡直接同步呼叫 `h.Inference.Complete`，沒有像 `ws/session.go` 用 `go` 關鍵字分派。根本解法不是「補上這一個 goroutine」，而是整個刪除 Playground 自己重寫的獨立 WebSocket 協定，改為共用 `internal/ws.Session`——`playground.go` 現在透過新增的 `ws.AppResolver` 介面（`playgroundResolver`）把認證方式（console session cookie + ownership）接進 `ws.NewSession(...)`，之後的 prompt 處理走的就是 `ws.Session.handlePrompt` 既有的 `go s.handlePrompt(ctx, ...)` 非同步分派，兩處架構自然一致，不再是兩份需要手動同步的程式碼。順帶修復了 Playground 從未呼叫 `inference.RegisterAsker` 導致 `ToolKindAction`/`ToolKindQuery` 工具必然失敗（"no connected page for session..."）的獨立缺陷（這個缺陷本身未曾被稽核記錄過，僅在此併記）。複核：`go build`/`go vet`/`go test`（含新增的 `handler_test.go`/`handler_integration_test.go`/`playground_integration_test.go`）全數通過，並用真實 WebSocket client 手動驗證過 hello/ack 握手正確共用 `ws.Session`。
+- **`playgroundResolver.ResolveApp` 與 `withOwnedApp` 的手動同步授權邏輯**（2026-09-09 複核確認已修復，修復本身未記錄確切 commit 時間，推測隨後續重構一併完成）：原本兩處各自重寫等價的 ownership／404-not-403 判斷，程式碼註解曾自陳「the two must be kept in sync by hand」。現況：`backend/internal/console/console.go:279-286` 已抽出共用函式 `ownedAppOrNotFound(apps appOwnerLookup, userID int64, appID string) bool`，`withOwnedApp` 與 `backend/internal/console/playground.go:115` 的 `playgroundResolver.ResolveApp` 都直接呼叫它（後者第 80-83 行的註解已更新為「the ownership check itself is shared... so this and withOwnedApp can't drift apart」，與程式碼一致）。複核：讀原始碼確認呼叫點與共用函式簽名相符，非僅命名巧合。
+- **手機版重構留下的 3 處過時註解**（2026-09-09 發現，v0.3.0 打 tag 前修復並確認）：`apps/console/src/AppList.tsx:4` 的「mobile MobileSidebar drawer」已改成「mobile AppPickerSheet」；`apps/console/src/SheetHeader.tsx:3-11` 已從舉例清單改成泛化描述（不再窮舉呼叫端，避免新增 sheet 時又漏更新）；`apps/console/src/useSheet.ts:3-8` 補上遺漏的 `ToolEditSheet.tsx` 四次呼叫（name/description/parameters/returns）。複核：修正後三處註解與 grep 出的實際呼叫點一致。
 
 ---
 

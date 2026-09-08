@@ -1,0 +1,34 @@
+.form {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  flex: none;
+  padding: 16px 16px 0;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  /* .panel.fullscreen (BottomSheet.module.css) covers top/left/right
+     safe-area but deliberately leaves the bottom to whichever content
+     sits at the bottom edge — here, that's this scrollable body. */
+  padding-bottom: calc(16px + var(--safe-bottom));
+}
+
+.nameInput {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.descriptionInput {
+  width: 100%;
+  min-height: 160px;
+}

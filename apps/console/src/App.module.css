@@ -1,0 +1,145 @@
+/* ---------------------------------------------------------------------- */
+/* Workspace                                                                */
+/* ---------------------------------------------------------------------- */
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* MobileTopBar.tsx/MobileBottomBar.tsx are fixed-position bars above and
+   below this — without reserving their height, this content would render
+   underneath them instead of between them. --mobile-topbar-h/
+   --mobile-bottombar-h (style.css) are each bar's own real on-screen
+   height, safe-area inset already included — reusing those tokens here
+   (rather than restating "80px + env(...)" independently) is what keeps
+   this calc from silently drifting out of sync with the bars' actual CSS. */
+@media (max-width: 860px) {
+  .workspace {
+    height: calc(100dvh - var(--mobile-topbar-h) - var(--mobile-bottombar-h));
+    margin-top: var(--mobile-topbar-h);
+  }
+}
+
+.workspaceHeader {
+  padding: 20px 28px 16px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.workspaceHeading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.badge {
+  font-family: var(--font-display);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-wash);
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+
+.badgeDirty {
+  color: var(--danger);
+  background: var(--danger-wash);
+}
+
+/* This "no app selected" screen renders whenever draft is null and
+   neither Settings nor App settings is open — most commonly, genuinely
+   zero apps exist yet (a mobile visitor with at least one app usually has
+   one auto-selected via selectAppSettings/selectApp, but that's not
+   guaranteed the moment the console loads before any selection has
+   happened). App.tsx renders mobile-appropriate copy and omits the
+   "+ New app" button itself below 860px (it would duplicate
+   MobileNav.tsx's always-visible FAB) — this class only supplies layout,
+   not a display:none, so a mobile visitor with zero apps still sees an
+   explanation instead of a blank screen with just the FAB. */
+.workspaceEmpty {
+  padding: 48px 28px;
+}
+
+.workspaceBody {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.85fr);
+}
+
+@media (max-width: 1100px) {
+  .workspaceBody {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    overflow-y: auto;
+  }
+}
+
+.editorPane {
+  padding: 24px 28px 40px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+}
+
+.previewPane {
+  padding: 24px 24px 24px 0;
+  overflow: hidden;
+  display: flex;
+}
+
+@media (max-width: 1100px) {
+  .editorPane {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .previewPane {
+    padding: 0 24px 24px;
+  }
+}
+
+.workspaceBodySingle {
+  grid-template-columns: 1fr;
+}
+
+.editorPaneWide {
+  border-right: none;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Empty state                                                              */
+/* ---------------------------------------------------------------------- */
+
+.emptyState {
+  max-width: 40ch;
+  padding-top: 40px;
+}
+
+.emptyStateTitle {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 6px;
+}
+
+.emptyStateBody {
+  color: var(--ink-dim);
+  margin: 0 0 16px;
+  line-height: 1.6;
+}
+
+.emptyStateActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}

@@ -1,0 +1,68 @@
+/* ---------------------------------------------------------------------- */
+/* Preview panel                                                            */
+/* ---------------------------------------------------------------------- */
+
+.previewPanel {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+
+.previewTabs {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding: 0 6px;
+  flex: none;
+}
+
+.tabBtn {
+  display: inline-block;
+  color: var(--accent);
+  padding: 10px 12px;
+  font-size: 12.5px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  border-bottom: 2px solid var(--accent);
+  margin-bottom: -1px;
+}
+
+.copyBtn {
+  margin-left: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--ink-dim);
+  padding: 4px 10px;
+  margin-bottom: 0;
+}
+
+.copyBtn:hover {
+  background: var(--border);
+  color: var(--ink);
+}
+
+.previewHint {
+  padding: 8px 14px;
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.previewCode {
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}

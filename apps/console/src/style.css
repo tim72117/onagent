@@ -27,6 +27,40 @@
   --radius-sm: 4px;
   --radius-md: 6px;
   --shadow-panel: 0 1px 2px rgba(28, 25, 23, 0.04), 0 1px 8px rgba(28, 25, 23, 0.03);
+  /* Directional (upward-cast) — distinct from --shadow-panel's ambient,
+     directionless shadow. Used by BottomSheet.module.css's .panel, which
+     rises from the bottom edge and needs a shadow that reads that way;
+     not a candidate for reusing --shadow-panel since that token is
+     intentionally direction-agnostic for regular cards/panels. */
+  --shadow-sheet: 0 -12px 32px -12px rgba(28, 25, 23, 0.35);
+
+  /* iOS safe-area insets (notch/Dynamic Island, Home Indicator, rounded
+     side edges) — 0 on any device/browser without them, and 0 on iOS too
+     unless index.html's viewport meta has viewport-fit=cover (it does).
+     Centralized here, not inlined as env(...) at each call site, so every
+     mobile-only fixed element (MobileTopBar/MobileBottomBar/BottomSheet/
+     fullscreen sheet headers) references the same four values instead of
+     each writing its own env() fallback — one token to audit, not a
+     search across files. Not theme-scoped (unlike the color tokens
+     above): these come from the device/browser, not from light/dark mode. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  /* Total on-screen height of MobileTopBar.tsx/MobileBottomBar.tsx,
+     inset included — the single source of truth every mobile layout
+     calc() (App.module.css's .workspace, MobileNav.module.css's .fab)
+     should reference instead of re-deriving "80px + inset" or
+     "52px + inset" itself. The bare 80px/52px are each bar's own fixed
+     content height (MobileTopBar: 44px primary row + 36px secondary row;
+     MobileBottomBar: its one row) — see those components' own CSS for
+     where those numbers come from; env(--safe-top) only matters for the
+     top bar (it sits at the very top of the viewport), safe-bottom only
+     for the bottom bar, by construction of which edge each one is
+     fixed to. */
+  --mobile-topbar-h: calc(80px + var(--safe-top));
+  --mobile-bottombar-h: calc(52px + var(--safe-bottom));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -45,6 +79,7 @@
     --danger: #e08074;
     --danger-wash: #3a201b;
     --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.24);
+    --shadow-sheet: 0 -12px 32px -12px rgba(0, 0, 0, 0.5);
   }
 }
 
@@ -63,6 +98,7 @@
   --danger: #e08074;
   --danger-wash: #3a201b;
   --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 16px rgba(0, 0, 0, 0.24);
+  --shadow-sheet: 0 -12px 32px -12px rgba(0, 0, 0, 0.5);
 }
 
 :root[data-theme='light'] {
@@ -80,6 +116,7 @@
   --danger: #b3382c;
   --danger-wash: #f7e4e0;
   --shadow-panel: 0 1px 2px rgba(28, 25, 23, 0.04), 0 1px 8px rgba(28, 25, 23, 0.03);
+  --shadow-sheet: 0 -12px 32px -12px rgba(28, 25, 23, 0.35);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -105,7 +142,12 @@ body {
 }
 
 #root {
-  height: 100vh;
+  /* dvh (not vh) accounts for mobile browser chrome (address bar) showing
+     or hiding — vh is pinned to the largest possible viewport, so on a
+     phone with the address bar visible, height:100vh overshoots the
+     actual visible area and can push content (or the touch-scroll
+     boundary) past what's reachable. */
+  height: 100dvh;
 }
 
 button:focus-visible,
@@ -117,48 +159,55 @@ select:focus-visible {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .sidebar-item,
   button {
     transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
   }
 }
 
 /* ---------------------------------------------------------------------- */
-/* Shell: sidebar + workspace                                               */
+/* Sidebar                                                                  */
 /* ---------------------------------------------------------------------- */
-
-.shell {
-  display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
-  height: 100vh;
-}
-
-@media (max-width: 860px) {
-  .shell {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-    height: auto;
-  }
-}
-
-/* --- sidebar --- */
+/* The grid shell itself (.shell) now lives in AppShell.module.css — it
+   had exactly one caller (App.tsx) and gained a typed, scoped seam by
+   moving there. What's left here is sidebar-family markup shared across
+   more than one component (Sidebar.tsx + LoginCard.tsx, or the sidebar
+   sub-components + Playground.tsx — see each rule's own comment). */
 
 .sidebar {
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  height: 100%;
   padding: 16px 12px;
   overflow-y: auto;
 }
 
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px 20px;
+/* Must come AFTER .sidebar's own base rule above (same specificity —
+   source order decides the winner) — MobileNav.tsx provides its own
+   drawer-based navigation below this width, so the desktop sidebar column
+   goes away entirely rather than showing alongside it. Placing this
+   before the base rule (as an earlier version of this file did) made the
+   base rule always win regardless of viewport width, leaving the desktop
+   sidebar visibly stacked above the workspace on mobile. */
+@media (max-width: 860px) {
+  .sidebar {
+    display: none;
+  }
 }
 
+/* .sidebar-mark is shared by Sidebar.tsx's own brand block and
+   LoginCard.tsx's welcome header (see LoginCard.tsx) — two genuine call
+   sites, not worth a shared module for, so it's kept global rather than
+   duplicated. Everything else that used to live in this section
+   (.sidebar-brand*, .sidebar-section*, .sidebar-item*, .sidebar-list,
+   .status-dot, .sidebar-icon-btn — shared by 3+ of AppList.tsx/
+   AgentNav.tsx/ToolList.tsx — now live in SidebarNav.module.css;
+   .sidebar-footer/.sidebar-text-btn/.sidebar-account-btn/
+   .sidebar-account-email, used only by SidebarFooter.tsx, now live in
+   SidebarFooter.module.css; .sidebar-section-grow/.sidebar-item-tool, used
+   only by ToolList.tsx, now live in ToolList.module.css) is component-only
+   and has moved into the relevant module. */
 .sidebar-mark {
   display: inline-flex;
   align-items: center;
@@ -172,314 +221,25 @@ select:focus-visible {
   font-family: var(--font-display);
 }
 
-.sidebar-brand-name {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 13px;
-  letter-spacing: 0.01em;
-}
-
-.sidebar-section {
-  margin-bottom: 20px;
-}
-
-.sidebar-section-grow {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.sidebar-section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 8px 6px;
-  font-family: var(--font-display);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
-
-.sidebar-icon-btn {
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--ink-dim);
-  font-size: 13px;
-  line-height: 1;
-  padding: 0;
-  cursor: pointer;
-}
-
-.sidebar-icon-btn:hover {
-  background: var(--border);
-  color: var(--ink);
-}
-
-.sidebar-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  overflow-y: auto;
-}
-
-.sidebar-item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  border: none;
-  background: transparent;
-  color: var(--ink-dim);
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.sidebar-item-tool {
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  padding-left: 16px;
-}
-
-.sidebar-item-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-item-label em {
-  color: var(--ink-faint);
-  font-style: normal;
-}
-
-.sidebar-item:hover {
-  background: var(--border);
-  color: var(--ink);
-}
-
-.sidebar-item.active {
-  background: var(--accent-wash);
-  color: var(--accent);
-  font-weight: 600;
-}
-
+/* .sidebar-empty is shared by AppList.tsx/ToolList.tsx (sidebar-family
+   empty states) and Playground.tsx (its own empty state, combined with a
+   module class) — kept global rather than duplicated across those files'
+   modules, same convention as .thought-* below. */
 .sidebar-empty {
   padding: 6px 8px;
   color: var(--ink-faint);
   font-size: 12.5px;
 }
 
-.status-dot {
-  flex: none;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.status-dot.warn {
-  background: var(--accent);
-}
-
-.status-dot.error {
-  background: var(--danger);
-}
-
-.status-dot.ok {
-  background: var(--accent);
-  opacity: 0.55;
-}
-
-.sidebar-footer {
-  margin-top: auto;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.sidebar-text-btn {
-  align-self: flex-start;
-  border: none;
-  background: transparent;
-  font: inherit;
-  font-size: 12.5px;
-  padding: 2px 8px;
-  cursor: pointer;
-  color: var(--ink-dim);
-}
-
-.sidebar-text-btn.danger {
-  color: var(--danger);
-}
-
-.sidebar-text-btn:hover {
-  text-decoration: underline;
-}
-
-.sidebar-quota {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0 8px;
-}
-
-.sidebar-quota-plan {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: var(--ink-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.sidebar-quota-usage {
-  font-size: 12px;
-  color: var(--ink-faint);
-  font-variant-numeric: tabular-nums;
-}
-
-.sidebar-account {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.sidebar-account-email {
-  font-size: 12px;
-  color: var(--ink-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-account .sidebar-text-btn {
-  flex: none;
-}
-
-.sidebar-hint {
-  padding: 0 8px;
-  margin: 0;
-  color: var(--ink-faint);
-  font-size: 11.5px;
-  line-height: 1.6;
-}
-
-.sidebar-hint code {
-  font-family: var(--font-mono);
-  font-size: 11px;
-}
-
 /* ---------------------------------------------------------------------- */
-/* Workspace                                                                */
+/* Workspace shared bits                                                    */
 /* ---------------------------------------------------------------------- */
 
-.workspace {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.workspace-header {
-  padding: 20px 28px 16px;
-  border-bottom: 1px solid var(--border);
-  flex: none;
-}
-
-.workspace-heading {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-
-.appid-heading {
-  font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ink);
-  margin: 0;
-}
-
-.workspace-sub {
-  color: var(--ink-faint);
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-}
-
-.workspace-actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.badge {
-  font-family: var(--font-display);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--accent);
-  background: var(--accent-wash);
-  border-radius: 999px;
-  padding: 2px 9px;
-}
-
-.badge-dirty {
-  color: var(--danger);
-  background: var(--danger-wash);
-}
-
-.origin-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.origin-label {
-  margin: 0;
-  flex: none;
-  white-space: nowrap;
-}
-
-.origin-input {
-  flex: 0 1 360px;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-}
-
-.origin-row .text-btn {
-  flex: none;
-}
-
-.origin-row .text-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.origin-warning {
-  color: var(--danger);
-  font-size: 12px;
-  flex: 1;
-  min-width: 0;
-}
+/* .thought-* is shared by App.tsx's ThoughtEditorFallback, ThoughtEditor.tsx,
+   and Playground.tsx (its intro copy reuses .thought-copy) — kept global
+   rather than duplicated across those files' modules. Everything else that
+   used to live in this section (.workspace*, .badge*, .origin-*, .empty-state*)
+   is App.tsx-only and now lives in App.module.css. */
 
 .thought-editor {
   max-width: 720px;
@@ -500,6 +260,22 @@ select:focus-visible {
   font-size: 12.5px;
   line-height: 1.6;
   margin: 0 0 14px;
+}
+
+/* The heading half of the intro copy, split from the detail line right
+   below it — bolder/darker to read as a label, tight margin since the
+   detail line (plain .thought-copy) follows immediately after. */
+.thought-copy-heading {
+  color: var(--ink);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* Sits right after .thought-textarea, no divider between them — just the
+   second half of the intro copy split across the editor (see
+   ThoughtEditor.tsx's own comment on why). */
+.thought-copy-below {
+  margin: 10px 0 0;
 }
 
 /* .thought-textarea is Tiptap's EditorContent wrapper (a contenteditable
@@ -589,9 +365,33 @@ select:focus-visible {
 }
 
 .thought-default {
-  margin-top: 18px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
+  margin-top: 10px;
+}
+
+/* Inline inside .thought-copy-below's <p> (right after "...shown below."),
+   not block-level — inline-grid + vertical-align keeps it centered on the
+   surrounding text's baseline instead of sitting a few pixels off from it
+   the way a plain inline-block circle tends to. */
+.thought-default-toggle {
+  display: inline-grid;
+  place-items: center;
+  vertical-align: middle;
+  width: 16px;
+  height: 16px;
+  margin-bottom: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.thought-default-toggle:hover {
+  color: var(--ink);
+  border-color: var(--ink-faint);
 }
 
 .thought-default-text {
@@ -602,10 +402,7 @@ select:focus-visible {
   font-style: italic;
 }
 
-.workspace-empty {
-  padding: 48px 28px;
-}
-
+/* .connecting is shared by App.tsx and CliAuthPage.tsx's own loading state. */
 .connecting {
   height: 100vh;
   display: flex;
@@ -613,204 +410,6 @@ select:focus-visible {
   justify-content: center;
   color: var(--ink-dim);
   font-family: var(--font-display);
-}
-
-.workspace-body {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.85fr);
-}
-
-@media (max-width: 1100px) {
-  .workspace-body {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto;
-    overflow-y: auto;
-  }
-}
-
-.editor-pane {
-  padding: 24px 28px 40px;
-  overflow-y: auto;
-  border-right: 1px solid var(--border);
-}
-
-.preview-pane {
-  padding: 24px 24px 24px 0;
-  overflow: hidden;
-  display: flex;
-}
-
-@media (max-width: 1100px) {
-  .editor-pane {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-  .preview-pane {
-    padding: 0 24px 24px;
-  }
-}
-
-.workspace-body-single {
-  grid-template-columns: 1fr;
-}
-
-.editor-pane-wide {
-  border-right: none;
-  max-width: 720px;
-  width: 100%;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-}
-
-/* ---------------------------------------------------------------------- */
-/* Playground                                                               */
-/* ---------------------------------------------------------------------- */
-
-.playground {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.playground-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.playground-status {
-  font-size: 11px;
-  font-family: var(--font-display);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: 999px;
-  color: var(--ink-faint);
-  background: var(--sidebar-bg);
-}
-
-.playground-status-open {
-  color: var(--accent);
-  background: var(--accent-wash);
-}
-
-.playground-status-closed {
-  color: var(--danger);
-  background: var(--danger-wash);
-}
-
-.playground-transcript {
-  flex: 1;
-  min-height: 240px;
-  margin-top: 12px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-raised);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.playground-empty {
-  margin: auto;
-  text-align: center;
-}
-
-.playground-msg {
-  max-width: 85%;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.playground-msg-user {
-  align-self: flex-end;
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-
-.playground-msg-assistant {
-  align-self: flex-start;
-  background: var(--sidebar-bg);
-  color: var(--ink);
-}
-
-.playground-msg-tool_call {
-  align-self: flex-start;
-  background: var(--bg-raised);
-  border: 1px dashed var(--border-strong);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--ink-dim);
-}
-
-.playground-msg-error {
-  align-self: flex-start;
-  background: var(--danger-wash);
-  color: var(--danger);
-}
-
-.playground-msg-pending {
-  align-self: flex-start;
-  color: var(--ink-faint);
-  font-size: 12.5px;
-  font-style: italic;
-}
-
-.playground-msg-label {
-  display: block;
-  font-family: var(--font-display);
-  font-size: 10px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  opacity: 0.7;
-  margin-bottom: 3px;
-}
-
-.playground-input-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.playground-input {
-  flex: 1;
-}
-
-/* ---------------------------------------------------------------------- */
-/* Empty state                                                              */
-/* ---------------------------------------------------------------------- */
-
-.empty-state {
-  max-width: 40ch;
-  padding-top: 40px;
-}
-
-.empty-state-title {
-  font-family: var(--font-display);
-  font-size: 15px;
-  font-weight: 600;
-  margin: 0 0 6px;
-}
-
-.empty-state-body {
-  color: var(--ink-dim);
-  margin: 0 0 16px;
-  line-height: 1.6;
-}
-
-.empty-state-actions {
-  display: flex;
-  align-items: center;
-  gap: 14px;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -975,184 +574,28 @@ textarea {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Tool form                                                                */
+/* Tool form shared bits                                                    */
 /* ---------------------------------------------------------------------- */
 
-.tool-form {
-  max-width: 640px;
-}
-
-.tool-form-header {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.tool-name-field {
-  flex: 1;
-}
-
-.tool-name-input {
-  width: 100%;
-  font-family: var(--font-mono);
-  font-weight: 600;
-  font-size: 15px;
-}
-
+/* .tool-description-input is shared by ToolForm.tsx and ToolWizard.tsx's
+   Description step — kept global rather than duplicated across their two
+   modules. Everything else that used to live in this section (.tool-form,
+   .tool-form-header, .tool-name-field, .tool-name-input) is ToolForm.tsx-only
+   and now lives in ToolForm.module.css. */
 .tool-description-input {
   width: 100%;
   min-height: 72px;
 }
 
 /* ---------------------------------------------------------------------- */
-/* Preview panel                                                            */
+/* Login shared bits                                                        */
 /* ---------------------------------------------------------------------- */
 
-.preview-panel {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-raised);
-  box-shadow: var(--shadow-panel);
-  overflow: hidden;
-}
-
-.preview-tabs {
-  display: flex;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-  padding: 0 6px;
-  flex: none;
-}
-
-.tab-btn {
-  border: none;
-  background: transparent;
-  color: var(--ink-dim);
-  padding: 10px 12px;
-  font-size: 12.5px;
-  font-family: var(--font-display);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-}
-
-.tab-btn:hover {
-  color: var(--ink);
-}
-
-.tab-btn.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
-}
-
-.copy-btn {
-  margin-left: auto;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  color: var(--ink-dim);
-  padding: 4px 10px;
-  margin-bottom: 0;
-}
-
-.copy-btn:hover {
-  background: var(--border);
-  color: var(--ink);
-}
-
-.preview-hint {
-  padding: 8px 14px;
-  font-size: 11.5px;
-  color: var(--ink-faint);
-  border-bottom: 1px solid var(--border);
-  flex: none;
-}
-
-.preview-code {
-  margin: 0;
-  padding: 16px;
-  overflow: auto;
-  flex: 1;
-  min-height: 0;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.6;
-  font-variant-numeric: tabular-nums;
-}
-
-/* ---------------------------------------------------------------------- */
-/* Login                                                                    */
-/* ---------------------------------------------------------------------- */
-
-.login-screen {
-  height: 100vh;
-  display: flex;
-  /* .login-welcome and .login-card are now two independent direct
-     children (see LoginCard.tsx) — flex's default row would sit them
-     side by side instead of stacked. */
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-
-/* A small hero above the card, not the card's first row — see
-   LoginCard.tsx's comment for why the greeting and the operation
-   (fields/buttons) are kept visually separate. */
-.login-welcome {
-  width: 100%;
-  max-width: 380px;
-  text-align: center;
-  margin-bottom: 20px;
-}
-
-.login-welcome-logo {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 14px;
-  letter-spacing: 0.01em;
-  color: var(--ink);
-  text-decoration: none;
-  transition: opacity 0.15s ease;
-}
-
-.login-welcome-logo:hover {
-  opacity: 0.75;
-}
-
-.login-welcome-title {
-  margin: 0 0 6px;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  color: var(--ink);
-}
-
-.login-welcome-subtitle {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--ink-dim);
-}
-
-.login-card {
-  width: 100%;
-  max-width: 380px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-raised);
-  box-shadow: var(--shadow-panel);
-  padding: 28px;
-}
+/* .login-copy/.login-error/.login-submit/.login-switch are shared by
+   Login.tsx and CliAuthPage.tsx — kept global rather than duplicated across
+   their two modules. The card shell itself (.login-screen, .login-welcome
+   and its children, .login-card) is LoginCard.tsx-only and now lives in
+   LoginCard.module.css. */
 
 .login-copy {
   color: var(--ink-dim);
@@ -1206,8 +649,12 @@ button.primary:disabled {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Key modal                                                                */
+/* Modal shell                                                              */
 /* ---------------------------------------------------------------------- */
+
+/* Shared by KeyModal/AddAppModal/ConfirmModal/ToolWizard — kept global
+   rather than duplicated across their four modules. KeyModal's own
+   .key-row/.key-value now live in KeyModal.module.css. */
 
 .modal-overlay {
   position: fixed;
@@ -1217,7 +664,14 @@ button.primary:disabled {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  z-index: 10;
+  /* Must outrank BottomSheet.module.css's .panel (z-index: 31) — a
+     ConfirmModal can open while a full-screen sheet is still mounted
+     underneath it (e.g. ToolEditSheet.tsx's Delete tool button calls
+     App.tsx's removeTool(), which shows a ConfirmModal via
+     pendingConfirm before the sheet itself closes). At the old z-index:10
+     the modal rendered fully hidden behind the sheet — invisible and
+     unclickable, an unrecoverable dead end for that flow. */
+  z-index: 40;
 }
 
 .modal {
@@ -1243,27 +697,6 @@ button.primary:disabled {
   margin: 0 0 14px;
 }
 
-
-.key-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-
-.key-value {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  background: var(--sidebar-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  overflow-x: auto;
-  white-space: nowrap;
-}
-
 .modal-hint {
   color: var(--ink-faint);
   font-size: 11.5px;
@@ -1284,77 +717,4 @@ button.primary:disabled {
 
 .modal-input {
   width: 100%;
-}
-
-/* ---------------------------------------------------------------------- */
-/* Toasts                                                                   */
-/* ---------------------------------------------------------------------- */
-
-.toast-stack {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 8px;
-  z-index: 100;
-  max-width: min(420px, calc(100vw - 40px));
-}
-
-.toast {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 11px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-strong);
-  background: var(--bg-raised);
-  box-shadow: var(--shadow-panel);
-  font-size: 12.5px;
-  line-height: 1.5;
-  animation: toast-in 160ms ease-out;
-}
-
-@keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.toast-error {
-  border-color: color-mix(in srgb, var(--danger) 45%, var(--border-strong));
-  background: var(--danger-wash);
-  color: var(--danger);
-}
-
-.toast-info {
-  border-color: var(--border-strong);
-  color: var(--ink);
-}
-
-.toast-message {
-  flex: 1;
-  min-width: 0;
-  word-break: break-word;
-}
-
-.toast-dismiss {
-  flex: none;
-  border: none;
-  background: transparent;
-  color: inherit;
-  opacity: 0.6;
-  font-size: 15px;
-  line-height: 1;
-  padding: 0;
-  cursor: pointer;
-}
-
-.toast-dismiss:hover {
-  opacity: 1;
 }

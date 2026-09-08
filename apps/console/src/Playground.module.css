@@ -1,3 +1,123 @@
+/* ---------------------------------------------------------------------- */
+/* Playground                                                               */
+/* ---------------------------------------------------------------------- */
+
+.playground {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.playgroundHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.playgroundStatus {
+  font-size: 11px;
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--ink-faint);
+  background: var(--sidebar-bg);
+}
+
+.playgroundStatusOpen {
+  color: var(--accent);
+  background: var(--accent-wash);
+}
+
+.playgroundStatusClosed {
+  color: var(--danger);
+  background: var(--danger-wash);
+}
+
+.playgroundTranscript {
+  flex: 1;
+  min-height: 240px;
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.playgroundEmpty {
+  margin: auto;
+  text-align: center;
+}
+
+.playgroundMsg {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.playgroundMsgUser {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.playgroundMsgAssistant {
+  align-self: flex-start;
+  background: var(--sidebar-bg);
+  color: var(--ink);
+}
+
+.playgroundMsgTool_call {
+  align-self: flex-start;
+  background: var(--bg-raised);
+  border: 1px dashed var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.playgroundMsgError {
+  align-self: flex-start;
+  background: var(--danger-wash);
+  color: var(--danger);
+}
+
+.playgroundMsgPending {
+  align-self: flex-start;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  font-style: italic;
+}
+
+.playgroundMsgLabel {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  margin-bottom: 3px;
+}
+
+.playgroundInputRow {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.playgroundInput {
+  flex: 1;
+}
+
 /* Two-column layout below the header/copy: template mock UI (see
    playgroundMocks/) sits in a left rail next to the transcript, rather
    than above it, so it stays visible alongside the conversation instead

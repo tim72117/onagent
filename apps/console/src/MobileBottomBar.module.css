@@ -1,0 +1,44 @@
+.bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  /* box-sizing:border-box (global reset) means padding eats into a fixed
+     height — plain `height: 52px` here left only ~18px of actual button
+     room on phones with a home indicator (~34px safe-area-inset-bottom).
+     Adding the inset on top of 52px instead keeps the 52px as the content
+     area's real height, with the safe area as pure extra space below it.
+     This total must match --mobile-bottombar-h (style.css) — that token
+     is the single source of truth other files' layout math (App.module.css,
+     MobileNav.module.css's .fab) reads instead of re-deriving "52px +
+     inset" themselves, so a change to either number here has to be mirrored
+     there too. */
+  height: var(--mobile-bottombar-h);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+
+.playgroundBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.playgroundBtn:hover {
+  background: var(--border);
+}

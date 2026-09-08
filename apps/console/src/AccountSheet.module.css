@@ -1,0 +1,47 @@
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.email {
+  font-size: 13px;
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 4px;
+}
+.planName {
+  font-weight: 600;
+  font-size: 14px;
+}
+.planUsage {
+  font-size: 12.5px;
+  color: var(--ink-dim);
+}
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 12px 4px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  border-top: 1px solid var(--border);
+}
+.actionRow.danger {
+  color: var(--danger);
+}

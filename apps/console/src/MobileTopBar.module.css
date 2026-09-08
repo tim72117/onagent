@@ -1,0 +1,106 @@
+.bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--bg);
+  /* Notch/Dynamic Island clearance — without it this bar's content sits
+     right under the status bar, either clipped by the device's rounded
+     top corners or visually crowding it. left/right padding covers the
+     rounded side edges too (only actually nonzero in landscape on
+     current devices, but harmless at 0 in portrait). --mobile-topbar-h
+     (style.css) already bakes --safe-top into this bar's total height,
+     so App.module.css's layout math doesn't need a separate adjustment
+     for this padding — it's accounted for once, here. */
+  padding-top: var(--safe-top);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 8px;
+}
+
+.rowSecondary {
+  justify-content: flex-end;
+  height: 36px;
+  padding: 0 6px;
+}
+
+.appPickerBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink);
+  padding: 0 10px;
+  height: 40px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background-color 120ms ease;
+}
+
+.appPickerBtn:active {
+  background: var(--border);
+}
+
+.appPickerLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appPickerLabel.placeholder {
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+
+.chevron {
+  flex: none;
+  stroke: currentColor;
+}
+
+.avatarBtn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.avatarBtn:active {
+  background: var(--border);
+}
+
+.appSettingsBtn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.appSettingsBtn:active {
+  background: var(--border);
+  color: var(--ink);
+}

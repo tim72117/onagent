@@ -1,0 +1,70 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(28, 25, 23, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+}
+.backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.panel {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 31;
+  background: var(--bg-raised);
+  border-radius: 16px 16px 0 0;
+  box-shadow: var(--shadow-sheet);
+  transform: translateY(100%);
+  transition: transform 220ms ease;
+  padding: 16px calc(16px + var(--safe-right)) max(16px, var(--safe-bottom)) calc(16px + var(--safe-left));
+  /* A guardrail, not a per-content fit: without it, a sheet whose content
+     grows past the viewport (a long form, a validation error list) would
+     just overflow off-screen with no way to reach the rest — AppPickerSheet
+     is the only caller that happens to add its own max-height/overflow-y
+     (on an inner .list, not .panel), every other sheet here relied on
+     content never being tall enough by accident, not by design. */
+  max-height: 85dvh;
+  overflow-y: auto;
+}
+.panel.open {
+  transform: translateY(0);
+}
+
+/* Covers the full viewport instead of stopping partway up it — used by
+   PlaygroundSheet.tsx, whose content (a live WebSocket chat) needs real
+   screen real estate rather than the partial-height treatment every other
+   sheet in this app uses. */
+.panel.fullscreen {
+  inset: 0;
+  border-radius: 0;
+  /* Unlike the partial-height .panel above (rises from the bottom edge,
+     never reaches the notch/Dynamic Island), inset:0 means this panel
+     extends to the very top and sides of the viewport too — padding-top/
+     left/right here, not 0, so callers' own .header (PlaygroundSheet.tsx/
+     ThoughtEditSheet.tsx/ToolEditSheet.tsx/ToolFieldSheet.module.css)
+     don't each need to duplicate that clearance themselves. Bottom stays
+     unpadded here — each of those same .body elements already scrolls
+     its own content and is better positioned to decide whether its last
+     item needs safe-bottom clearance than this shell is. */
+  padding: var(--safe-top) var(--safe-right) 0 var(--safe-left);
+  display: flex;
+  flex-direction: column;
+  /* Overrides .panel's own 85dvh/auto guardrail above — a fullscreen
+     sheet already covers the entire viewport via inset:0, and its content
+     (PlaygroundSheet.tsx) manages its own internal scrolling rather than
+     scrolling the sheet shell itself. */
+  max-height: none;
+  overflow-y: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .panel {
+    transition: none;
+  }
+}

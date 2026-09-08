@@ -1,6 +1,42 @@
 /* ToolWizard-only styles — the shared .modal/.field/.checkbox-row shell
    these compose with stays in style.css since KeyModal/AddAppModal/
-   ConfirmModal all reuse that same shell. */
+   ConfirmModal all reuse that same shell.
+
+   ToolWizard is now always mounted (see App.tsx and ToolWizard.tsx's own
+   comment) instead of conditionally rendered, so .overlay/.panel below
+   need their own open/closed visibility instead of relying on mount/
+   unmount — but only on the mobile fullscreen-sheet variant further down,
+   which actually animates. On desktop the .modal-overlay/.modal look is
+   unchanged from before (just hidden outright via display:none when
+   !open, since there's nothing to animate there — same as this component
+   behaved when it was conditionally rendered). */
+.overlay {
+  display: none;
+}
+.overlayOpen {
+  display: flex;
+}
+
+/* Desktop title — shown only there; the mobile fullscreen variant uses
+   SheetHeader (.mobileHeader) instead, matching every other mobile sheet
+   in this app (ThoughtEditSheet.tsx, ToolEditSheet.tsx, PlaygroundSheet.tsx). */
+.mobileHeader {
+  display: none;
+}
+
+.desktopTitle {
+  display: block;
+}
+
+.body {
+  /* No layout role at desktop widths — plain block flow, same as when
+     this content sat directly in .modal with no wrapper at all. */
+}
+
+.actions {
+  /* No override at desktop widths — .modal-actions from style.css already
+     applies unchanged. */
+}
 
 /* Step indicator row — a plain label trail, not clickable (steps only move
    via Next/Back so earlier answers stay validated). */
@@ -104,4 +140,116 @@
 .templateCustomizeCallout code {
   font-family: var(--font-mono);
   font-size: 11px;
+}
+
+/* Mobile: ToolWizard becomes a full-screen bottom sheet (same visual
+   language as BottomSheet.module.css's own .backdrop/.panel.fullscreen —
+   not the BottomSheet component itself, since making one component serve
+   both a centered desktop modal and a full-screen mobile sheet would need
+   more prop plumbing than just branching this component's own CSS by
+   media query, and every other piece of this app's responsive layout
+   (Sidebar.tsx, MobileTopBar, etc.) already works this same way: one DOM
+   structure, CSS decides which parts show and how). */
+@media (max-width: 860px) {
+  .overlay {
+    /* Always in the DOM now (this component is always mounted — see the
+       comment above); toggle backdrop visibility on `open` instead of
+       display:none/flex so the transform/opacity transition on .panel
+       below actually has something to animate against, matching
+       BottomSheet.module.css's own .backdrop.open pattern. */
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background: rgba(28, 25, 23, 0.45);
+    opacity: 0;
+    pointer-events: none;
+    align-items: unset;
+    justify-content: unset;
+    padding: 0;
+    transition: opacity 220ms ease;
+  }
+
+  .overlayOpen {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .panel {
+    position: fixed;
+    inset: 0;
+    z-index: 31;
+    width: auto;
+    max-width: none;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    padding: var(--safe-top) var(--safe-right) 0 var(--safe-left);
+    display: flex;
+    flex-direction: column;
+    transform: translateY(100%);
+    transition: transform 220ms ease;
+    overflow-y: visible;
+  }
+
+  .panelOpen {
+    transform: translateY(0);
+  }
+
+  .mobileHeader {
+    display: block;
+    flex: none;
+    padding: 16px 16px 0;
+  }
+
+  .desktopTitle {
+    display: none;
+  }
+
+  .body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .actions {
+    flex: none;
+    padding: 12px 16px calc(12px + var(--safe-bottom));
+    border-top: 1px solid var(--border);
+  }
+
+  /* Single column — the two-column card grid reads cramped once the
+     viewport is phone-width (each card's label + hint + icon needs more
+     than half the width to avoid wrapping awkwardly). */
+  .templateGrid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Five step names in one row get tight on a phone-width panel; drop the
+     label text and keep just the numbered progress trail so the row
+     doesn't wrap or truncate. */
+  .wizardSteps {
+    counter-reset: step-counter;
+  }
+
+  .wizardStep {
+    counter-increment: step-counter;
+    font-size: 0;
+    padding: 6px 0 4px;
+  }
+
+  .wizardStep::before {
+    content: counter(step-counter);
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 860px) and (prefers-reduced-motion: reduce) {
+  .overlay,
+  .panel {
+    transition: none;
+  }
 }

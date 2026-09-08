@@ -1,0 +1,16 @@
+.body {
+  padding-top: 4px;
+}
+
+/* Deliberately larger padding than the global `input, textarea, select`
+   rule (style.css, padding: 7px 9px) — a mobile-only sheet whose single
+   field is the whole screen's content, sized for a touch target rather
+   than matching the denser desktop form inputs it inherits border/
+   border-radius/focus styling from. Not a drifted duplicate to reconcile
+   back to the global value. */
+.input {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 12px 14px;
+}

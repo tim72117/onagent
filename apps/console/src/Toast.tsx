@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import styles from './Toast.module.css'
 
 interface ToastItem {
   id: number
@@ -36,14 +37,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [dismiss],
   )
 
+  // toast-${kind} used to be plain string concatenation against a global
+  // class — CSS Modules classnames aren't predictable that way, so this
+  // becomes an explicit lookup instead.
+  const kindClass: Record<ToastItem['kind'], string> = {
+    error: styles.toastError,
+    info: styles.toastInfo,
+  }
+
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="toast-stack" role="status" aria-live="polite">
+      <div className={styles.toastStack} role="status" aria-live="polite">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast toast-${t.kind}`}>
-            <span className="toast-message">{t.message}</span>
-            <button type="button" className="toast-dismiss" onClick={() => dismiss(t.id)} aria-label="Dismiss">
+          <div key={t.id} className={`${styles.toast} ${kindClass[t.kind]}`}>
+            <span className={styles.toastMessage}>{t.message}</span>
+            <button type="button" className={styles.toastDismiss} onClick={() => dismiss(t.id)} aria-label="Dismiss">
               ×
             </button>
           </div>

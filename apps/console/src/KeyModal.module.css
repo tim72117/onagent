@@ -1,0 +1,23 @@
+/* KeyModal-only styles — the shared .modal/.modal-overlay/.modal-title/
+   .modal-copy/.modal-actions shell these compose with stays in style.css
+   since AddAppModal/ConfirmModal/ToolWizard all reuse that same shell. */
+
+.keyRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.keyValue {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: var(--sidebar-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  overflow-x: auto;
+  white-space: nowrap;
+}

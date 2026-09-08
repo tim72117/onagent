@@ -1,0 +1,49 @@
+.shell {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  height: 100dvh;
+}
+
+/* A real grid item (not display:contents) — MobileNav + Sidebar are two
+   DOM siblings, and without this wrapper each would become its own
+   implicit grid row instead of sharing one, letting `main`'s row
+   position fall out of DOM/content order rather than the layout below.
+   min-height:0 lets it collapse to nothing when both children are either
+   position:fixed (MobileNav's contents) or display:none (desktop
+   Sidebar, hidden below 860px) — it must never force .shell's single
+   mobile row taller than the viewport. On desktop, height:100% makes it
+   (and Sidebar inside it, via Sidebar's own height:100%) stretch to fill
+   the grid row, so SidebarFooter.tsx's avatar — the last flex child in a
+   flex-direction:column nav — actually lands at the bottom of the
+   viewport instead of sitting right under whatever content happens to be
+   above it. */
+.sidebarSlot {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* height stays 100dvh (not auto) here too, with overflow:hidden — so
+   even if some child unexpectedly grows taller than the viewport, .shell
+   itself clips rather than growing into a page-level scroller. Scrolling
+   is meant to be handled entirely inside .workspace/MobileWorkspaceCards'
+   own .root (overflow-y:auto), not by the page — a page-level scroll here
+   would fight (or fully swallow) touch input aimed at that inner
+   scroller.
+   grid-template-rows is explicit here (0 auto-fr), not left as two
+   implicit auto tracks — an implicit auto track's minimum size follows
+   the item's min-content, which measured ~26px for .sidebarSlot even
+   though every actual child inside it is 0-height or position:fixed (an
+   empty grid item can still report a non-zero intrinsic minimum). That
+   pushed .workspace down by 26px below MobileTopBar.tsx's fixed bar,
+   showing up as an unexplained gap above the first mobile card. Pinning
+   the row to a literal 0 sidesteps the min-content measurement (and its
+   built-in "row" the browser was reserving) entirely. */
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 0 1fr;
+    height: 100dvh;
+    overflow: hidden;
+  }
+}

@@ -1,0 +1,51 @@
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -16px -16px 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.closeBtn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  flex: none;
+}
+
+.closeBtn:hover {
+  background: var(--border);
+}
+
+.title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saveBtn {
+  flex: none;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 14px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.saveBtn:disabled {
+  color: var(--ink-faint);
+  cursor: default;
+}

@@ -1,0 +1,44 @@
+.root {
+  max-width: 480px;
+  padding: 32px;
+}
+
+.heading {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 20px;
+}
+
+.planCard {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  background: var(--bg-raised);
+}
+
+.planName {
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.planUsage {
+  font-size: 13px;
+  color: var(--ink-dim);
+  margin-bottom: 2px;
+}
+
+.planReset {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+
+.empty {
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.signOut {
+  display: block;
+  margin-top: 24px;
+}

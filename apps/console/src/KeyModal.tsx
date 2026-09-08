@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { IssuedKey } from './api'
+import styles from './KeyModal.module.css'
 
 // KeyModal shows a freshly-issued API key. The backend stores only the
 // key's hash, so this modal is the single opportunity to copy the plaintext
@@ -21,8 +22,8 @@ export function KeyModal({ issued, onClose }: { issued: IssuedKey; onClose: () =
           Copy it now — the backend keeps only a hash, so this key is <strong>shown once</strong>{' '}
           and can't be recovered. Issuing a new key later replaces this one.
         </p>
-        <div className="key-row">
-          <code className="key-value">{issued.apiKey}</code>
+        <div className={styles.keyRow}>
+          <code className={styles.keyValue}>{issued.apiKey}</code>
           <button type="button" className="text-btn" onClick={copy}>
             {copied ? 'Copied' : 'Copy'}
           </button>

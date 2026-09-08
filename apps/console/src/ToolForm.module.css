@@ -1,6 +1,39 @@
+/* ---------------------------------------------------------------------- */
+/* Tool form                                                                */
+/* ---------------------------------------------------------------------- */
+
+.toolForm {
+  max-width: 640px;
+}
+
+.toolFormHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.toolNameField {
+  flex: 1;
+}
+
+.toolNameInput {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 15px;
+}
+
 .sourceTemplate {
   display: inline-block;
   margin-top: 6px;
   font-size: 11px;
   color: var(--ink-faint);
+}
+
+/* Same pattern as AppSettingsView.module.css/AppSettingsList.module.css's
+   own .dangerZone — plain spacing, no divider line. */
+.dangerZone {
+  margin-top: 32px;
 }

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import styles from './LoginCard.module.css'
 
 // Shared shell for every full-screen login-adjacent state: Login.tsx's own
 // sign-in/register form and CliAuthPage.tsx's loading/approve/error/success
@@ -22,22 +23,22 @@ export function LoginCard({
   children?: ReactNode
 }) {
   return (
-    <div className="login-screen">
+    <div className={styles.loginScreen}>
       {title && (
-        <div className="login-welcome">
+        <div className={styles.loginWelcome}>
           {/* Plain <a>, not client-side routing — the console SPA is mounted
               at /app, so leaving it entirely means a full navigation. */}
-          <a className="login-welcome-logo" href="/" aria-label="onagent">
+          <a className={styles.loginWelcomeLogo} href="/" aria-label="onagent">
             <span className="sidebar-mark" aria-hidden="true">
               ⌘
             </span>
             <span>onagent</span>
           </a>
-          <h1 className="login-welcome-title">{title}</h1>
-          {subtitle && <p className="login-welcome-subtitle">{subtitle}</p>}
+          <h1 className={styles.loginWelcomeTitle}>{title}</h1>
+          {subtitle && <p className={styles.loginWelcomeSubtitle}>{subtitle}</p>}
         </div>
       )}
-      <div className="login-card">{children}</div>
+      <div className={styles.loginCard}>{children}</div>
     </div>
   )
 }

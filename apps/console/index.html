@@ -2,7 +2,13 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover is required for env(safe-area-inset-*) to
+         resolve to anything other than 0 on iOS — without it Safari
+         letterboxes the page around notches/the home indicator instead
+         of extending under them, so every safe-area calc() in this app's
+         mobile CSS (MobileTopBar/MobileBottomBar/BottomSheet/App.module.css)
+         was previously a no-op. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Console — onagent</title>
 
     <!-- Google Tag Manager: loads the onagent container (GTM-MXMK83XR),

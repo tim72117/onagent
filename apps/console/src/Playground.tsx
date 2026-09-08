@@ -280,11 +280,28 @@ export function Playground({ appId, tools }: { appId: string; tools: Tool[] }) {
 
   const connected = state === 'open' && ready
 
+  // playground-status-${state} and playground-msg-${role} used to be plain
+  // string concatenation against global classes — CSS Modules classnames
+  // aren't predictable that way, so both become explicit lookups instead.
+  const statusModifierClass: Record<ConnectionState, string> = {
+    connecting: '',
+    open: styles.playgroundStatusOpen,
+    closed: styles.playgroundStatusClosed,
+  }
+
+  const msgRoleClass: Record<ChatMessage['role'], string> = {
+    user: styles.playgroundMsgUser,
+    assistant: styles.playgroundMsgAssistant,
+    tool_call: styles.playgroundMsgTool_call,
+    tool_query: '',
+    error: styles.playgroundMsgError,
+  }
+
   return (
-    <div className="playground">
-      <div className="playground-header">
+    <div className={styles.playground}>
+      <div className={styles.playgroundHeader}>
         <span className="micro-label">Playground</span>
-        <span className={`playground-status playground-status-${state}`}>
+        <span className={`${styles.playgroundStatus} ${statusModifierClass[state]}`}>
           {state === 'connecting' || (state === 'open' && !ready)
             ? 'Connecting…'
             : state === 'open'
@@ -310,25 +327,25 @@ export function Playground({ appId, tools }: { appId: string; tools: Tool[] }) {
         )}
 
         <div className={styles.main}>
-          <div className="playground-transcript" ref={transcriptRef}>
+          <div className={styles.playgroundTranscript} ref={transcriptRef}>
             {messages.length === 0 && (
-              <p className="sidebar-empty playground-empty">Send a prompt to see how the agent responds.</p>
+              <p className={`sidebar-empty ${styles.playgroundEmpty}`}>Send a prompt to see how the agent responds.</p>
             )}
             {messages.map((m) => (
-              <div key={m.id} className={`playground-msg playground-msg-${m.role}`}>
+              <div key={m.id} className={`${styles.playgroundMsg} ${msgRoleClass[m.role]}`}>
                 {(m.role === 'tool_call' || m.role === 'tool_query') && (
-                  <span className="playground-msg-label">{m.role === 'tool_call' ? 'tool call' : 'tool query'}</span>
+                  <span className={styles.playgroundMsgLabel}>{m.role === 'tool_call' ? 'tool call' : 'tool query'}</span>
                 )}
-                {m.role === 'error' && <span className="playground-msg-label">error</span>}
+                {m.role === 'error' && <span className={styles.playgroundMsgLabel}>error</span>}
                 <span className="playground-msg-text">{m.text}</span>
               </div>
             ))}
-            {sending && <div className="playground-msg playground-msg-pending">Thinking…</div>}
+            {sending && <div className={`${styles.playgroundMsg} ${styles.playgroundMsgPending}`}>Thinking…</div>}
           </div>
 
-          <form className="playground-input-row" onSubmit={sendPrompt}>
+          <form className={styles.playgroundInputRow} onSubmit={sendPrompt}>
             <input
-              className="playground-input"
+              className={styles.playgroundInput}
               placeholder={connected ? 'Type a prompt…' : 'Connecting…'}
               value={input}
               onChange={(e) => setInput(e.target.value)}

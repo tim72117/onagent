@@ -1,0 +1,40 @@
+.root {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  .root {
+    display: block;
+  }
+}
+
+.fab {
+  position: fixed;
+  right: calc(16px + var(--safe-right));
+  /* Previously `calc(52px + 16px)`, on the theory that MobileBottomBar.tsx
+     already reserves the safe-area inset for itself so adding it again
+     here would double-count it — that reasoning doesn't hold: this fab is
+     positioned relative to the viewport's own edge, not nested inside the
+     bottom bar, so it needs the inset added on its own account too. Without
+     it, this button sat calc(52px+16px) above the viewport bottom while
+     the bar itself (--mobile-bottombar-h = 52px + --safe-bottom) was taller
+     than that on any device with a home indicator (~34px inset) — an 18px
+     overlap between the two. */
+  bottom: calc(var(--mobile-bottombar-h) + 16px);
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+  font-size: 26px;
+  line-height: 1;
+  box-shadow: 0 6px 20px -4px rgba(28, 25, 23, 0.45);
+}
+.fab:hover {
+  filter: brightness(1.05);
+}

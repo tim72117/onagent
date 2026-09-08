@@ -9,12 +9,19 @@ import { KeyModal } from './KeyModal'
 import { AddAppModal } from './AddAppModal'
 import { ConfirmModal } from './ConfirmModal'
 import { Sidebar } from './Sidebar'
+import { MobileNav } from './MobileNav'
+import { SettingsView } from './SettingsView'
+import { AppSettingsView } from './AppSettingsView'
+import { AppSettingsList } from './AppSettingsList'
+import { AppShell } from './AppShell'
 import { ToolForm } from './ToolForm'
+import { MobileWorkspaceCards } from './MobileWorkspaceCards'
 import { ToolWizard } from './ToolWizard'
 import { Playground } from './Playground'
 import { PreviewPanel } from './PreviewPanel'
 import { validateApp } from './validate'
 import { useToast } from './Toast'
+import styles from './App.module.css'
 
 // Lazy: Tiptap + its markdown extension add ~145kB gzip to whatever bundle
 // imports them (see docs/thought-markdown-editor-design.md) — not worth
@@ -22,31 +29,78 @@ import { useToast } from './Toast'
 // panel. Split into its own chunk, fetched only the first time it renders.
 const ThoughtEditor = lazy(() => import('./ThoughtEditor').then((m) => ({ default: m.ThoughtEditor })))
 
-// Matches ThoughtEditor's own markup shape (.thought-editor/.thought-header/
-// .thought-copy/.thought-textarea) so the real component's chunk finishing
-// its fetch doesn't cause a layout shift — see PostToolUse review finding on
-// the bare <div className="empty-state" /> this replaced.
+// Matches ThoughtEditor's own markup shape (.thought-copy/.thought-textarea)
+// so the real component's chunk finishing its fetch doesn't cause a layout
+// shift — see PostToolUse review finding on the bare
+// <div className="empty-state" /> this replaced. Just the editor's own
+// content, same as ThoughtEditor itself — the <form>/header/Save button
+// wrapping it below (in the agentSelected branch) render immediately
+// either way, so there's no fallback needed for those.
 function ThoughtEditorFallback() {
   return (
-    <div className="thought-editor">
-      <div className="thought-header">
-        <span className="micro-label">Agent thought</span>
-        <button type="button" className="primary" disabled>
-          Save
-        </button>
-      </div>
+    <>
       <p className="thought-copy">
         Custom system prompt for the LLM that selects this app's tools — tone, domain knowledge,
         or rules specific to this app. Leave empty to use the platform default shown below.
       </p>
       <div className="thought-textarea" aria-hidden="true" />
-    </div>
+    </>
   )
 }
 
 type AuthState = 'checking' | 'anonymous' | 'authenticated'
 
+// A single discriminated union replaces what used to be five independent
+// booleans (activeToolIndex/agentSelected/playgroundSelected/
+// settingsSelected/appSettingsSelected) — those were mutually exclusive by
+// convention only, with every select* function responsible for manually
+// clearing the other four. That's pure hand-discipline: miss one line and
+// two views can end up true at once, with the render ternaries' ordering
+// silently deciding which one wins. null means "no sub-view" (the
+// workspace's own empty-state / no-tool-selected fallback).
+type View = { kind: 'tool'; index: number } | { kind: 'agent' } | { kind: 'playground' } | { kind: 'settings' } | { kind: 'appSettings' } | null
+
+// Whether each view kind has a mobile entry point of its own — used below
+// to clear a view on resize-to-mobile only when it doesn't. This used to
+// be a single hardcoded `v.kind === 'settings'` check with a comment
+// explaining that 'appSettings' was fine to leave alone only because it
+// happens to have a gear icon in MobileTopBar.tsx — true, but nothing
+// enforced it: a future view kind added without updating that check would
+// silently reproduce the exact "resized to mobile, now stuck with no way
+// back" bug this effect exists to prevent, and TypeScript would have no
+// way to flag the gap. Record<View['kind'], boolean> makes the compiler
+// reject this file the moment a new kind is added to View without an
+// entry here.
+const VIEW_HAS_MOBILE_ENTRY_POINT: Record<NonNullable<View>['kind'], boolean> = {
+  tool: true, // MobileWorkspaceCards.tsx's Tools card
+  agent: true, // MobileWorkspaceCards.tsx's Agent thought card
+  playground: true, // MobileBottomBar.tsx's Playground button
+  settings: false, // no mobile entry point — see the effect below
+  appSettings: true, // MobileTopBar.tsx's gear icon
+}
+
+// Only place in this file that needs a JS-level mobile/desktop signal
+// (everywhere else uses pure CSS media queries, see e.g. AppShell.module.css
+// and MobileNav.module.css) — App settings genuinely renders two different
+// components below 860px (AppSettingsList.tsx, a native-settings-style list
+// + edit sheets) vs above it (AppSettingsView.tsx, a flat form), not the
+// same markup restyled, so a CSS-only display:none toggle would mean
+// mounting and driving both components' state at once for no reason.
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 860px)').matches)
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 860px)')
+    function onChange(e: MediaQueryListEvent | MediaQueryList) {
+      setIsMobile(e.matches)
+    }
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
+  return isMobile
+}
+
 export default function App() {
+  const isMobile = useIsMobile()
   // The session lives in an httpOnly cookie the backend sets — JS can't
   // read it directly, so on mount we ask the backend who (if anyone) it
   // belongs to instead of trusting any client-side flag.
@@ -65,9 +119,27 @@ export default function App() {
   // never go live on keystroke.
   const [draft, setDraft] = useState<AppSchema | null>(null)
   const [dirty, setDirty] = useState(false)
-  const [activeToolIndex, setActiveToolIndex] = useState<number | null>(null)
-  const [agentSelected, setAgentSelected] = useState(false)
-  const [playgroundSelected, setPlaygroundSelected] = useState(false)
+  const [view, setView] = useState<View>(null)
+
+  // Any view without a mobile entry point of its own (currently just
+  // 'settings', reached via the desktop-only SidebarFooter.tsx avatar
+  // button) has no CSS-driven way back once the window resizes below the
+  // 860px breakpoint — the control that set it is gone, but the view
+  // state it set persists, leaving the workspace stuck showing a screen
+  // nothing on the mobile UI can navigate away from. Clearing those views
+  // here, gated on the same breakpoint the CSS uses (via isMobile, from the
+  // one matchMedia subscription in useIsMobile — this used to subscribe a
+  // second time on its own, which meant the 860px literal had to be kept in
+  // sync by hand in two places in this same file) and driven by the
+  // exhaustive VIEW_HAS_MOBILE_ENTRY_POINT table above (not a one-off
+  // per-kind check), keeps this state in sync with which UI is visible —
+  // and keeps doing so automatically for any view kind added later.
+  useEffect(() => {
+    if (isMobile) {
+      setView((v) => (v && !VIEW_HAS_MOBILE_ENTRY_POINT[v.kind] ? null : v))
+    }
+  }, [isMobile])
+
   const [issuedKey, setIssuedKey] = useState<IssuedKey | null>(null)
   const [showAddApp, setShowAddApp] = useState(false)
   const [showToolWizard, setShowToolWizard] = useState(false)
@@ -98,9 +170,7 @@ export default function App() {
     setQuota(null)
     setDraft(null)
     setDirty(false)
-    setActiveToolIndex(null)
-    setAgentSelected(false)
-    setPlaygroundSelected(false)
+    setView(null)
     setLoginError(message)
   }, [])
 
@@ -119,6 +189,37 @@ export default function App() {
       showToast(err instanceof Error ? err.message : String(err), 'error')
     },
     [logout, showToast],
+  )
+
+  // Collapses the setBusy(true)/try/await/catch/finally setBusy(false)
+  // skeleton that saveDraft, addToolFromWizard, removeTool, saveOrigin,
+  // saveThought, and issueKey/revokeKey's onConfirm all repeated verbatim
+  // — differing only in which busy setter they used and what ran on
+  // success. reportError is closed over rather than a parameter since
+  // every call site here wants identical error handling; onSuccess is the
+  // only per-call variation (e.g. saveDraft's setDirty(false), or
+  // addToolFromWizard's view/dirty updates that must happen before the
+  // request, not after — those still sit outside runAction, which only
+  // wraps the request itself).
+  // Returns whether fn succeeded, so callers that need to react to the
+  // outcome (e.g. AppSettingsList.tsx only closing OriginEditSheet after a
+  // confirmed save, not immediately on click) can await it instead of
+  // assuming success the instant the action is fired.
+  const runAction = useCallback(
+    async (setBusyState: (busy: boolean) => void, fn: () => Promise<void>, onSuccess?: () => void) => {
+      setBusyState(true)
+      try {
+        await fn()
+        onSuccess?.()
+        return true
+      } catch (err) {
+        reportError(err)
+        return false
+      } finally {
+        setBusyState(false)
+      }
+    },
+    [reportError],
   )
 
   const refreshSummaries = useCallback(async () => {
@@ -227,15 +328,17 @@ export default function App() {
     })
   }
 
-  function selectApp(appId: string) {
+  // afterSelect: runs after the app finishes loading, instead of the usual
+  // "leave Settings/App settings, land in the workspace" default —
+  // selectAppSettings uses this to pick a default app and land back in
+  // App settings, not the workspace (see its own comment).
+  function selectApp(appId: string, afterSelect: () => void = () => setView(null)) {
     withDiscardConfirm(async () => {
       try {
         const app = await api.getApp(appId)
         setDraft({ appId: app.appId, tools: app.tools ?? [] })
         setDirty(false)
-        setActiveToolIndex(null)
-        setAgentSelected(false)
-        setPlaygroundSelected(false)
+        afterSelect()
       } catch (err) {
         reportError(err)
       }
@@ -253,9 +356,7 @@ export default function App() {
       const app = await api.getApp(appId)
       setDraft({ appId: app.appId, tools: app.tools ?? [] })
       setDirty(false)
-      setActiveToolIndex(null)
-      setAgentSelected(false)
-      setPlaygroundSelected(false)
+      setView(null)
       setShowAddApp(false)
     } catch (err) {
       reportError(err)
@@ -274,9 +375,7 @@ export default function App() {
           await refreshSummaries()
           setDraft(null)
           setDirty(false)
-          setActiveToolIndex(null)
-          setAgentSelected(false)
-          setPlaygroundSelected(false)
+          setView(null)
         } catch (err) {
           reportError(err)
         }
@@ -284,19 +383,34 @@ export default function App() {
     })
   }
 
-  async function saveDraft() {
+  function saveDraft() {
     if (!draft) return
-    setBusy(true)
-    try {
-      await api.saveTools(draft.appId, draft.tools)
-      setDirty(false)
-      await refreshSummaries()
-    } catch (err) {
-      reportError(err)
-    } finally {
-      setBusy(false)
-    }
+    runAction(
+      setBusy,
+      async () => {
+        await api.saveTools(draft.appId, draft.tools)
+        await refreshSummaries()
+      },
+      () => setDirty(false),
+    )
   }
+
+  // Replaces the workspace header's manual Save button — autosaves
+  // draft.tools 1.2s after the last edit, same as saveDraft's own guard
+  // (canSave, below) required before: dirty, no validation issues, and
+  // not already mid-save. Debounced (not saved on every keystroke) so
+  // rapid edits (e.g. typing a tool name) don't fire a request per
+  // character. saveDraft itself already no-ops if draft becomes null
+  // before the timer fires (e.g. the visitor switched apps), so no extra
+  // guard is needed here for that race.
+  useEffect(() => {
+    if (!dirty || issues.length > 0 || busy) return
+    const timer = setTimeout(() => {
+      saveDraft()
+    }, 1200)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- saveDraft closes over draft/dirty itself; re-running this effect on every draft change (not just dirty/issues/busy) would reset the debounce timer on every keystroke instead of only after typing pauses.
+  }, [dirty, issues.length, busy])
 
   function issueKey() {
     if (!draft) return
@@ -321,32 +435,25 @@ export default function App() {
     }
   }
 
-  async function saveOrigin(e: React.FormEvent) {
+  // Returns whether the save succeeded — AppSettingsList.tsx's mobile sheet
+  // awaits this to decide whether it's safe to close (see runAction's own
+  // comment on why this can't just assume success).
+  function saveOrigin(e: React.FormEvent): Promise<boolean> {
     e.preventDefault()
-    if (!draft) return
-    setOriginBusy(true)
-    try {
+    if (!draft) return Promise.resolve(false)
+    return runAction(setOriginBusy, async () => {
       await api.setOrigin(draft.appId, originDraft.trim())
       await refreshSummaries()
-    } catch (err) {
-      reportError(err)
-    } finally {
-      setOriginBusy(false)
-    }
+    })
   }
 
-  async function saveThought(e: React.FormEvent) {
+  function saveThought(e: React.FormEvent) {
     e.preventDefault()
     if (!draft) return
-    setThoughtBusy(true)
-    try {
+    runAction(setThoughtBusy, async () => {
       await api.setThought(draft.appId, thoughtDraft.trim())
       await refreshSummaries()
-    } catch (err) {
-      reportError(err)
-    } finally {
-      setThoughtBusy(false)
-    }
+    })
   }
 
   function revokeKey() {
@@ -374,9 +481,7 @@ export default function App() {
   function appendTool(tool: Tool) {
     if (!draft) return
     updateDraft({ ...draft, tools: [...draft.tools, tool] })
-    setActiveToolIndex(draft.tools.length)
-    setAgentSelected(false)
-    setPlaygroundSelected(false)
+    setView({ kind: 'tool', index: draft.tools.length })
   }
 
   function addTool() {
@@ -391,24 +496,20 @@ export default function App() {
   // persisted. Computes the new tools list explicitly (not via draft.tools
   // after updateDraft) since setDraft's update wouldn't be visible yet in
   // this same function body.
-  async function addToolFromWizard(tool: Tool) {
+  function addToolFromWizard(tool: Tool) {
     setShowToolWizard(false)
     if (!draft) return
     const tools = [...draft.tools, tool]
     updateDraft({ ...draft, tools })
-    setActiveToolIndex(tools.length - 1)
-    setAgentSelected(false)
-    setPlaygroundSelected(false)
-    setBusy(true)
-    try {
-      await api.saveTools(draft.appId, tools)
-      setDirty(false)
-      await refreshSummaries()
-    } catch (err) {
-      reportError(err)
-    } finally {
-      setBusy(false)
-    }
+    setView({ kind: 'tool', index: tools.length - 1 })
+    runAction(
+      setBusy,
+      async () => {
+        await api.saveTools(draft.appId, tools)
+        await refreshSummaries()
+      },
+      () => setDirty(false),
+    )
   }
 
   function updateTool(index: number, next: Tool) {
@@ -430,20 +531,18 @@ export default function App() {
     setPendingConfirm({
       message: `Delete "${toolName}"? This can't be undone.`,
       confirmLabel: 'Delete',
-      onConfirm: async () => {
+      onConfirm: () => {
         const tools = draft.tools.filter((_, i) => i !== index)
         updateDraft({ ...draft, tools })
-        setActiveToolIndex(null)
-        setBusy(true)
-        try {
-          await api.saveTools(appId, tools)
-          setDirty(false)
-          await refreshSummaries()
-        } catch (err) {
-          reportError(err)
-        } finally {
-          setBusy(false)
-        }
+        setView(null)
+        runAction(
+          setBusy,
+          async () => {
+            await api.saveTools(appId, tools)
+            await refreshSummaries()
+          },
+          () => setDirty(false),
+        )
       },
     })
   }
@@ -476,27 +575,40 @@ export default function App() {
   }
 
   function selectTool(index: number) {
-    refreshDraftForSwitch(() => {
-      setActiveToolIndex(index)
-      setAgentSelected(false)
-      setPlaygroundSelected(false)
-    })
+    refreshDraftForSwitch(() => setView({ kind: 'tool', index }))
   }
 
   function selectAgent() {
-    refreshDraftForSwitch(() => {
-      setActiveToolIndex(null)
-      setAgentSelected(true)
-      setPlaygroundSelected(false)
-    })
+    refreshDraftForSwitch(() => setView({ kind: 'agent' }))
   }
 
   function selectPlayground() {
-    refreshDraftForSwitch(() => {
-      setActiveToolIndex(null)
-      setAgentSelected(false)
-      setPlaygroundSelected(true)
-    })
+    refreshDraftForSwitch(() => setView({ kind: 'playground' }))
+  }
+
+  // Account-level (plan/usage/sign-out) — not an app sub-view.
+  // refreshDraftForSwitch already no-ops the discard-confirm/refetch dance
+  // when there's no draft (see its own comment), which is exactly the
+  // "works with or without an app selected" behavior this needs.
+  function selectSettings() {
+    refreshDraftForSwitch(() => setView({ kind: 'settings' }))
+  }
+
+  // Unlike account Settings, App settings (key/origin) needs SOME app to
+  // operate on — if none is selected yet, default to the first one in the
+  // list rather than rendering an empty view; a no-op if there are no
+  // apps at all (Sidebar.tsx doesn't render this nav item in that case
+  // anyway — see its own comment). selectApp already resets view via its
+  // default afterSelect (see selectApp's own comment) — that's fine here
+  // since this whole function immediately re-sets it to 'appSettings'
+  // right after.
+  function selectAppSettings() {
+    if (!draft) {
+      if (!summaries || summaries.length === 0) return
+      selectApp(summaries[0].appId, () => setView({ kind: 'appSettings' }))
+      return
+    }
+    refreshDraftForSwitch(() => setView({ kind: 'appSettings' }))
   }
 
   async function doLogout() {
@@ -529,79 +641,113 @@ export default function App() {
     return <div className="connecting">Connecting…</div>
   }
 
+  const activeToolIndex = view?.kind === 'tool' ? view.index : null
   const selectedTool = draft && activeToolIndex !== null ? draft.tools[activeToolIndex] : null
+  const agentSelected = view?.kind === 'agent'
+  const playgroundSelected = view?.kind === 'playground'
+  const settingsSelected = view?.kind === 'settings'
+  const appSettingsSelected = view?.kind === 'appSettings'
   const appLevelIssues = issues.filter((i) => i.toolIndex === null)
-  const canSave = dirty && issues.length === 0 && !busy
 
   return (
-    <div className="shell">
-      <Sidebar
-        userEmail={user.email}
-        quota={quota}
-        summaries={summaries}
-        activeAppId={draft?.appId ?? null}
-        onSelectApp={selectApp}
-        onAddApp={addApp}
-        tools={draft?.tools ?? null}
-        activeToolIndex={activeToolIndex}
-        agentSelected={agentSelected}
-        playgroundSelected={playgroundSelected}
-        issuesByTool={issuesByTool}
-        onSelectTool={selectTool}
-        onSelectAgent={selectAgent}
-        onSelectPlayground={selectPlayground}
-        onAddTool={addTool}
-        onAddToolWizard={() => setShowToolWizard(true)}
-        onDeleteApp={deleteApp}
-        onLogout={doLogout}
-      />
-
-      <main className="workspace">
-        {draft ? (
+    <AppShell
+      sidebar={
+        <>
+          <MobileNav
+            userEmail={user.email}
+            quota={quota}
+            summaries={summaries}
+            activeAppId={draft?.appId ?? null}
+            tools={draft?.tools ?? null}
+            onSelectApp={selectApp}
+            onAddApp={addApp}
+            onLogout={doLogout}
+            onSelectAppSettings={selectAppSettings}
+          />
+          <Sidebar
+            userEmail={user.email}
+            summaries={summaries}
+            activeAppId={draft?.appId ?? null}
+            onSelectApp={selectApp}
+            onAddApp={addApp}
+            tools={draft?.tools ?? null}
+            activeToolIndex={activeToolIndex}
+            agentSelected={agentSelected}
+            playgroundSelected={playgroundSelected}
+            settingsSelected={settingsSelected}
+            appSettingsSelected={appSettingsSelected}
+            issuesByTool={issuesByTool}
+            onSelectTool={selectTool}
+            onSelectAgent={selectAgent}
+            onSelectPlayground={selectPlayground}
+            onSelectSettings={selectSettings}
+            onSelectAppSettings={selectAppSettings}
+            onAddTool={addTool}
+            onAddToolWizard={() => setShowToolWizard(true)}
+          />
+        </>
+      }
+      main={
+        <main className={styles.workspace}>
+        {settingsSelected ? (
+          <SettingsView quota={quota} onLogout={doLogout} />
+        ) : appSettingsSelected && draft ? (
+          isMobile ? (
+            <AppSettingsList
+              appId={draft.appId}
+              onBack={() => setView(null)}
+              hasKey={activeSummary?.hasKey ?? false}
+              onIssueKey={issueKey}
+              onRevokeKey={revokeKey}
+              allowedOrigin={activeSummary?.allowedOrigin ?? null}
+              originDraft={originDraft}
+              onOriginDraftChange={setOriginDraft}
+              originBusy={originBusy}
+              onSaveOrigin={saveOrigin}
+              onDeleteApp={deleteApp}
+            />
+          ) : (
+            <AppSettingsView
+              appId={draft.appId}
+              hasKey={activeSummary?.hasKey ?? false}
+              onIssueKey={issueKey}
+              onRevokeKey={revokeKey}
+              allowedOrigin={activeSummary?.allowedOrigin ?? null}
+              originDraft={originDraft}
+              onOriginDraftChange={setOriginDraft}
+              originBusy={originBusy}
+              onSaveOrigin={saveOrigin}
+              onDeleteApp={deleteApp}
+            />
+          )
+        ) : draft ? (
+          isMobile ? (
+            <MobileWorkspaceCards
+              draft={draft}
+              dirty={dirty}
+              busy={busy}
+              appLevelIssues={appLevelIssues}
+              issuesByTool={issuesByTool}
+              thoughtDraft={thoughtDraft}
+              thoughtBusy={thoughtBusy}
+              thoughtDirty={thoughtDraft.trim() !== (activeSummary?.thought ?? '')}
+              onThoughtChange={setThoughtDraft}
+              onSaveThought={saveThought}
+              onChangeTool={updateTool}
+              onRemoveTool={removeTool}
+              onAddTool={addTool}
+              onAddToolWizard={() => setShowToolWizard(true)}
+            />
+          ) : (
           <>
-            <header className="workspace-header">
-              <div className="workspace-heading">
-                <h1 className="appid-heading">{draft.appId}</h1>
-                <span className="workspace-sub">
-                  {draft.tools.length} {draft.tools.length === 1 ? 'tool' : 'tools'}
-                </span>
-                {activeSummary?.hasKey && <span className="badge">key issued</span>}
-                {dirty && <span className="badge badge-dirty">unsaved</span>}
-                <div className="workspace-actions">
-                  <button type="button" className="text-btn" onClick={issueKey}>
-                    {activeSummary?.hasKey ? 'Rotate key' : 'Issue key'}
-                  </button>
-                  {activeSummary?.hasKey && (
-                    <button type="button" className="text-btn danger" onClick={revokeKey}>
-                      Revoke key
-                    </button>
-                  )}
-                  <button type="button" className="primary" onClick={saveDraft} disabled={!canSave}>
-                    {busy ? 'Saving…' : 'Save'}
-                  </button>
-                </div>
-              </div>
-              <form className="origin-row" onSubmit={saveOrigin}>
-                <span className="micro-label origin-label">Allowed origin</span>
-                <input
-                  className="origin-input"
-                  placeholder="https://your-site.example.com"
-                  value={originDraft}
-                  onChange={(e) => setOriginDraft(e.target.value)}
-                />
-                <button
-                  type="submit"
-                  className="text-btn"
-                  disabled={originBusy || originDraft.trim() === (activeSummary?.allowedOrigin ?? '')}
-                >
-                  {originBusy ? 'Saving…' : 'Save origin'}
-                </button>
-                {!activeSummary?.allowedOrigin && (
-                  <span className="origin-warning">
-                    No origin set — every connection for this app is blocked until one is saved.
+            <header className={styles.workspaceHeader}>
+              <div className={styles.workspaceHeading}>
+                {(dirty || busy) && (
+                  <span className={`${styles.badge} ${styles.badgeDirty}`}>
+                    {busy ? 'Saving…' : 'Unsaved changes'}
                   </span>
                 )}
-              </form>
+              </div>
 
               {appLevelIssues.length > 0 && (
                 <ul className="issue-list issue-list-inline">
@@ -613,25 +759,30 @@ export default function App() {
             </header>
 
             {playgroundSelected ? (
-              <div className="workspace-body workspace-body-single">
-                <section className="editor-pane editor-pane-wide">
+              <div className={`${styles.workspaceBody} ${styles.workspaceBodySingle}`}>
+                <section className={`${styles.editorPane} ${styles.editorPaneWide}`}>
                   <Playground appId={draft.appId} tools={draft.tools} />
                 </section>
               </div>
             ) : (
-              <div className="workspace-body">
-                <section className="editor-pane">
+              <div className={styles.workspaceBody}>
+                <section className={styles.editorPane}>
                   {agentSelected ? (
-                    <Suspense fallback={<ThoughtEditorFallback />}>
-                      <ThoughtEditor
-                        value={thoughtDraft}
-                        defaultPreview={DEFAULT_THOUGHT}
-                        busy={thoughtBusy}
-                        dirty={thoughtDraft.trim() !== (activeSummary?.thought ?? '')}
-                        onChange={setThoughtDraft}
-                        onSave={saveThought}
-                      />
-                    </Suspense>
+                    <form className="thought-editor" onSubmit={saveThought}>
+                      <div className="thought-header">
+                        <span className="micro-label">Agent thought</span>
+                        <button
+                          type="submit"
+                          className="primary"
+                          disabled={thoughtBusy || thoughtDraft.trim() === (activeSummary?.thought ?? '')}
+                        >
+                          {thoughtBusy ? 'Saving…' : 'Save'}
+                        </button>
+                      </div>
+                      <Suspense fallback={<ThoughtEditorFallback />}>
+                        <ThoughtEditor value={thoughtDraft} defaultPreview={DEFAULT_THOUGHT} onChange={setThoughtDraft} />
+                      </Suspense>
+                    </form>
                   ) : selectedTool ? (
                     <ToolForm
                       key={activeToolIndex}
@@ -641,12 +792,12 @@ export default function App() {
                       onRemove={() => removeTool(activeToolIndex!)}
                     />
                   ) : (
-                    <div className="empty-state">
-                      <p className="empty-state-title">No tool selected</p>
-                      <p className="empty-state-body">
+                    <div className={styles.emptyState}>
+                      <p className={styles.emptyStateTitle}>No tool selected</p>
+                      <p className={styles.emptyStateBody}>
                         Choose a tool from the sidebar, or add a new one to define its parameters.
                       </p>
-                      <div className="empty-state-actions">
+                      <div className={styles.emptyStateActions}>
                         <button
                           type="button"
                           className="primary"
@@ -668,34 +819,45 @@ export default function App() {
                   )}
                 </section>
 
-                <section className="preview-pane">
+                <section className={styles.previewPane}>
                   <PreviewPanel app={draft} />
                 </section>
               </div>
             )}
           </>
+          )
         ) : (
-          <div className="empty-state workspace-empty">
-            <p className="empty-state-title">No app selected</p>
-            <p className="empty-state-body">
-              Pick an app from the sidebar to edit its tools, or create a new one.
+          <div className={`${styles.emptyState} ${styles.workspaceEmpty}`}>
+            <p className={styles.emptyStateTitle}>No app selected</p>
+            <p className={styles.emptyStateBody}>
+              {isMobile
+                ? 'Tap the + button to create your first app.'
+                : 'Pick an app from the sidebar to edit its tools, or create a new one.'}
             </p>
-            <button type="button" className="primary" onClick={addApp}>
-              + New app
-            </button>
+            {/* Omitted on mobile, not the whole empty state (an earlier
+                version hid .workspaceEmpty outright below 860px) — a
+                visitor with zero apps at all saw nothing but the FAB
+                itself then, with no copy explaining what it does. This
+                button would just duplicate MobileNav.tsx's always-visible
+                FAB, which is still the sole "new app" entry point there. */}
+            {!isMobile && (
+              <button type="button" className="primary" onClick={addApp}>
+                + New app
+              </button>
+            )}
           </div>
         )}
-      </main>
-
+        </main>
+      }
+    >
       {issuedKey && <KeyModal issued={issuedKey} onClose={() => setIssuedKey(null)} />}
       {showAddApp && <AddAppModal onSubmit={createApp} onClose={() => setShowAddApp(false)} />}
-      {showToolWizard && (
-        <ToolWizard
-          existingNames={draft?.tools.map((t) => t.name) ?? []}
-          onCreate={addToolFromWizard}
-          onClose={() => setShowToolWizard(false)}
-        />
-      )}
+      <ToolWizard
+        open={showToolWizard}
+        existingNames={draft?.tools.map((t) => t.name) ?? []}
+        onCreate={addToolFromWizard}
+        onClose={() => setShowToolWizard(false)}
+      />
       {pendingConfirm && (
         <ConfirmModal
           message={pendingConfirm.message}
@@ -709,6 +871,6 @@ export default function App() {
           onCancel={() => setPendingConfirm(null)}
         />
       )}
-    </div>
+    </AppShell>
   )
 }

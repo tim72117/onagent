@@ -1,0 +1,18 @@
+.sectionActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sectionGrow {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.itemTool {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  padding-left: 16px;
+}

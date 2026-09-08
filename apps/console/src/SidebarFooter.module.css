@@ -1,0 +1,38 @@
+.footer {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.accountBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+}
+
+.accountBtn:hover {
+  background: var(--border);
+}
+
+.accountBtn.active {
+  background: var(--accent-wash);
+}
+
+.accountEmail {
+  font-size: 12px;
+  color: var(--ink-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

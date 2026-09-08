@@ -1,0 +1,22 @@
+/* See ThoughtEditSheet.module.css's own comment — SheetHeader's negative
+   margin assumes a parent with 16px padding to offset it, which
+   .panel.fullscreen doesn't have. Not visually obvious here only because
+   this sheet has no Save button to clip. */
+.header {
+  flex: none;
+  padding: 16px 16px 0;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* .panel.fullscreen (BottomSheet.module.css) deliberately doesn't pad
+     for --safe-bottom itself — leaves that decision to whichever content
+     actually sits at the bottom edge. Here, Playground.tsx's own message
+     input row is that content (via its own internal layout), so it's
+     given clearance here rather than in BottomSheet.module.css. */
+  padding-bottom: var(--safe-bottom);
+}

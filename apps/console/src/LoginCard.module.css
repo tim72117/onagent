@@ -1,0 +1,68 @@
+/* ---------------------------------------------------------------------- */
+/* Login shell (LoginCard.tsx only — login-error/login-copy/login-submit/  */
+/* login-switch are shared with CliAuthPage.tsx and stay global in         */
+/* style.css)                                                              */
+/* ---------------------------------------------------------------------- */
+
+.loginScreen {
+  height: 100vh;
+  display: flex;
+  /* .loginWelcome and .loginCard are two independent direct children —
+     flex's default row would sit them side by side instead of stacked. */
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* A small hero above the card, not the card's first row — the greeting and
+   the operation (fields/buttons) are kept visually separate. */
+.loginWelcome {
+  width: 100%;
+  max-width: 380px;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.loginWelcomeLogo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  text-decoration: none;
+  transition: opacity 0.15s ease;
+}
+
+.loginWelcomeLogo:hover {
+  opacity: 0.75;
+}
+
+.loginWelcomeTitle {
+  margin: 0 0 6px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.loginWelcomeSubtitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+}
+
+.loginCard {
+  width: 100%;
+  max-width: 380px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-panel);
+  padding: 28px;
+}

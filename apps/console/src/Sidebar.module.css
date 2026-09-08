@@ -1,5 +1,13 @@
-.sectionActions {
+.brand {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+  padding: 4px 8px 20px;
+}
+
+.brandName {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.01em;
 }

@@ -6,6 +6,111 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.3.0
+
+Breaking change — minor bump. Console (`apps/console`) gains a full mobile
+layout for the first time; the only user-visible removal is the PreviewPanel
+JSON/TypeScript preview tabs (see below). No breaking changes to any
+programmatic interface (no other package or test imports the removed
+`codegen.ts` exports or the changed `Sidebar`/`ThoughtEditor` component
+props).
+
+- **New mobile layout end-to-end** — this console had no mobile-specific
+  interaction layer before. Adds a fixed top bar (app picker + account
+  avatar, `MobileTopBar.tsx`) and bottom bar (Playground entry,
+  `MobileBottomBar.tsx`), a card-stack workspace (`MobileWorkspaceCards.tsx`,
+  Agent Thought + Tools as tappable summary cards instead of the desktop's
+  sidebar-driven navigation), and a full-screen bottom-sheet component
+  family for every edit surface: `BottomSheet.tsx`/`SheetHeader.tsx` (the
+  shared shell) plus `AccountSheet`, `AppPickerSheet`, `KeyEditSheet`,
+  `OriginEditSheet`, `ThoughtEditSheet`, `ToolEditSheet` (itself a
+  settings-style list opening `ToolNameSheet`/`ToolDescriptionSheet`/
+  `ToolParametersSheet`/`ToolReturnsSheet`), and `PlaygroundSheet`. Editing
+  sheets disable backdrop-tap-to-close so a stray tap can't discard an
+  in-progress edit. `ToolWizard.tsx` (the guided tool-creation flow) is
+  full-screen on mobile and a centered dialog on desktop from one shared
+  DOM structure, CSS-only.
+- **Account Settings and per-app settings split into two distinct concepts**
+  — previously conflated. Account-level plan/usage/sign-out now lives in
+  `SettingsView.tsx` (desktop) reached via the sidebar avatar; per-app
+  key/origin/delete now has its own nav entry, rendered as a flat form on
+  desktop (`AppSettingsView.tsx`) and a native-list-style screen with edit
+  sheets on mobile (`AppSettingsList.tsx`).
+- **Removed the PreviewPanel "LLM tool JSON" and "TypeScript" preview
+  tabs** — `PreviewPanel.tsx` now shows YAML only. These let a developer
+  copy the generated JSON-schema or TypeScript-types shape for a tool
+  straight from the console UI; that capability is gone. `codegen.ts`'s
+  corresponding `toLLMTools`/`toLLMToolsJSON`/`LLMTool`/`toTypeScript`/
+  `writeInterface`/`tsType`/`pascalCase` were removed as dead code once
+  nothing called them.
+- **Workspace autosave replaces the manual Save button** — tool edits
+  (`draft.tools`) now save 1.2s after the last edit instead of requiring an
+  explicit click; the workspace header shows only an "Unsaved changes" /
+  "Saving…" badge now (app name, tool count, and the key-issued badge were
+  also dropped from that header as visual clutter once Save's button moved
+  out).
+- **Desktop `Sidebar.tsx` split into focused sub-components** — `AppList`,
+  `AgentNav`, `ToolList`, `SidebarFooter`, sharing `SidebarNav.module.css`;
+  `Sidebar.tsx` itself is now an assembly shell. `SidebarFooter`'s avatar
+  now correctly pins to the bottom of the viewport (a `height` chain gap
+  through `AppShell`'s new sidebar grid column previously left it sitting
+  right under whatever content was above it instead).
+- **`ThoughtEditor.tsx` reduced to just its editor content** — no longer
+  renders its own `<form>`/header/Save button (removed `busy`/`dirty`/
+  `onSave` props); callers (`App.tsx` desktop, `ThoughtEditSheet.tsx`
+  mobile) now each wrap it with their own header/Save, which was needed to
+  stop a nested `<form>` (invalid HTML) once the mobile sheet needed its
+  own submit handling.
+- **`App.tsx`'s five independent view booleans merged into one
+  discriminated union** (`activeToolIndex`/`agentSelected`/
+  `playgroundSelected`/`settingsSelected`/`appSettingsSelected` → a single
+  `View` state) — those were mutually exclusive by hand-discipline only,
+  with every view-switching function responsible for clearing the other
+  four; a new `VIEW_HAS_MOBILE_ENTRY_POINT` exhaustive lookup table (keyed
+  by `View`'s own kind) replaces a one-off hardcoded check for which views
+  need clearing on resize-to-mobile, so the compiler now flags a future
+  view kind added without updating it.
+- **`runAction` helper collapses eight copies of the same
+  `setBusy(true)/try/await/catch/finally` skeleton** across `saveDraft`,
+  `addToolFromWizard`, `removeTool`, `saveOrigin`, `saveThought`; a new
+  `useSheet()` hook does the same for what had been seven independent
+  `useState(false)` + two-closure pairs behind every sheet's open/close
+  toggle.
+- Fixed several real bugs surfaced while building the above:
+  - `ConfirmModal`'s `z-index: 10` sat below any open bottom sheet
+    (`z-index: 31`) — a confirm dialog opened from inside a sheet (e.g.
+    deleting a tool from `ToolEditSheet`) rendered fully hidden and
+    unclickable. Raised to `z-index: 40`.
+  - `index.html`'s viewport meta was missing `viewport-fit=cover`, which
+    silently made every `env(safe-area-inset-*)` in this app's mobile CSS
+    resolve to `0` on iOS — the floating "new app" button and the bottom
+    bar's safe-area padding had never actually been doing anything. Fixed,
+    and centralized the insets into shared tokens
+    (`--safe-top`/`--safe-bottom`/`--safe-left`/`--safe-right`,
+    `--mobile-topbar-h`/`--mobile-bottombar-h` in `style.css`) so the fixed
+    top/bottom bar heights aren't restated as magic numbers in four
+    different files.
+  - The floating "new app" button's position didn't account for
+    `--mobile-bottombar-h` including the safe-area inset — on a phone with
+    a home indicator it overlapped the bottom bar by as much as that
+    inset.
+  - `OriginEditSheet`'s save closed the sheet unconditionally right after
+    firing the request, so a failed save looked identical to a successful
+    one; `onSaveOrigin` now returns whether it actually succeeded and the
+    sheet only closes on `true`.
+  - `ToolNameSheet`/`ToolDescriptionSheet` compared a trimmed draft against
+    the saved value to enable Save, but submitted the untrimmed draft — a
+    trailing space enabled Save yet still failed the backend's name
+    validation right after. Both now submit the trimmed value.
+  - `#root`'s height switched from `100vh` to `100dvh`, avoiding the
+    mismatch between the two on mobile browsers whose address bar can
+    show/hide.
+- `ToolForm.tsx`'s "Delete tool" button moved from the header to a
+  bottom danger zone (matching `AppSettingsView.tsx`'s own).
+- Several more components migrated from global class names to CSS Modules
+  (`KeyModal`, `LoginCard`, `Playground`, `Toast`, `ToolForm`), with
+  `style.css` shrinking accordingly.
+
 ## v0.2.21
 
 No breaking changes — patch release. Landing-page UI and internal

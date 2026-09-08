@@ -23,15 +23,15 @@ export function ToolForm({
   const lockedParamNames = tool.sourceTemplate ? (MOCK_LOCKED_PARAM_NAMES[tool.sourceTemplate] ?? []) : []
 
   return (
-    <div className="tool-form">
-      <div className="tool-form-header">
-        <div className="tool-name-field">
+    <div className={styles.toolForm}>
+      <div className={styles.toolFormHeader}>
+        <div className={styles.toolNameField}>
           <label className="micro-label" htmlFor="tool-name">
             Name
           </label>
           <input
             id="tool-name"
-            className="tool-name-input"
+            className={styles.toolNameInput}
             placeholder="tool_name"
             value={tool.name}
             onChange={(e) => onChange({ ...tool, name: e.target.value })}
@@ -42,9 +42,6 @@ export function ToolForm({
             </span>
           )}
         </div>
-        <button type="button" className="text-btn danger" onClick={onRemove}>
-          Delete tool
-        </button>
       </div>
 
       {issues.length > 0 && (
@@ -85,7 +82,7 @@ export function ToolForm({
               onChange({ ...tool, returns: e.target.checked ? emptyObjectSchema() : undefined })
             }
           />
-          Declare a returns shape (for TypeScript codegen)
+          Declare a returns shape
         </label>
         {tool.returns && (
           <SchemaEditor
@@ -93,6 +90,12 @@ export function ToolForm({
             onChange={(next) => onChange({ ...tool, returns: next })}
           />
         )}
+      </div>
+
+      <div className={styles.dangerZone}>
+        <button type="button" className="text-btn danger" onClick={onRemove}>
+          Delete tool
+        </button>
       </div>
     </div>
   )

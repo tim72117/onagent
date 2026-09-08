@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ParameterSchema, Tool } from './schema'
 import { emptyObjectSchema, emptyTool, TOOL_NAME_RE } from './schema'
 import { SchemaEditor } from './SchemaEditor'
 import { MOCK_LOCKED_PARAM_NAMES } from './playgroundMocks'
+import { SheetHeader } from './SheetHeader'
 import styles from './ToolWizard.module.css'
 
 const STEPS = ['Template', 'Name', 'Description', 'Parameters', 'Returns'] as const
@@ -275,10 +276,20 @@ export const TEMPLATES: Template[] = [
 // unfamiliar with JSON Schema benefits most from being asked one thing at
 // a time instead of facing the whole form at once.
 export function ToolWizard({
+  open,
   existingNames,
   onCreate,
   onClose,
 }: {
+  // Mirrors every other sheet's open/onClose shape (BottomSheet.tsx) —
+  // this wizard is now always mounted (see App.tsx) rather than
+  // conditionally rendered, so the mobile fullscreen sheet variant below
+  // can animate its close transition instead of just vanishing. The
+  // desktop .modal-overlay variant doesn't animate either way, so `open`
+  // simply gates whether it renders at all there (see the `if (!open)`
+  // early-return path is intentionally NOT taken — CSS hides it instead,
+  // see ToolWizard.module.css's .overlay rules).
+  open: boolean
   // Names of tools already on this app (see App.tsx's draft.tools) — the
   // wizard builds its Tool in local state before it's ever added to that
   // array, so without this it can't tell a name collision from a valid new
@@ -291,6 +302,20 @@ export function ToolWizard({
   const [stepIndex, setStepIndex] = useState(0)
   const [tool, setTool] = useState<Tool>(emptyTool())
   const [template, setTemplate] = useState<Template | null>(null)
+
+  // Always mounted now (App.tsx renders this unconditionally so the mobile
+  // fullscreen sheet gets a close animation instead of just unmounting —
+  // see BottomSheet.tsx's own comment on the same tradeoff). That means
+  // local state no longer resets for free on remount, so reset it
+  // explicitly each time the wizard opens — otherwise a second "New tool"
+  // click would resume mid-way through the previous attempt.
+  useEffect(() => {
+    if (!open) return
+    setStepIndex(0)
+    setTool(emptyTool())
+    setTemplate(null)
+  }, [open])
+
   // Parameters is left out entirely for a template that's deliberately
   // built to take none (see Template.noParameters) — nothing to fill in
   // there, so it isn't a step to click through.
@@ -323,12 +348,27 @@ export function ToolWizard({
     if (stepIndex > 0) setStepIndex(stepIndex - 1)
   }
 
+  const titleText = `New tool — step ${stepIndex + 1} of ${visibleSteps.length}`
+
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="New tool (guided)">
-      <div className="modal">
-        <h2 className="modal-title">
-          New tool — step {stepIndex + 1} of {visibleSteps.length}
-        </h2>
+    <div
+      className={`modal-overlay ${styles.overlay} ${open ? styles.overlayOpen : ''}`}
+      role="dialog"
+      aria-modal="true"
+      aria-label="New tool (guided)"
+    >
+      {/* No backdrop-click-to-close here, matching every other
+          modal-overlay caller (KeyModal/AddAppModal/ConfirmModal all lack
+          one too) — unchanged on desktop, and on the mobile fullscreen
+          sheet variant a stray tap discarding a multi-step edit in
+          progress would be worse than requiring the explicit close (✕)
+          button (same reasoning as BottomSheet's disableBackdropClose). */}
+      <div className={`modal ${styles.panel} ${open ? styles.panelOpen : ''}`}>
+        <div className={styles.mobileHeader}>
+          <SheetHeader title={titleText} onClose={onClose} />
+        </div>
+        <h2 className={`modal-title ${styles.desktopTitle}`}>{titleText}</h2>
+        <div className={styles.body}>
         <div className={styles.wizardSteps} aria-hidden="true">
           {visibleSteps.map((s, i) => (
             <span
@@ -463,15 +503,16 @@ export function ToolWizard({
                   setTool({ ...tool, returns: e.target.checked ? emptyObjectSchema() : undefined })
                 }
               />
-              Declare a returns shape (for TypeScript codegen)
+              Declare a returns shape
             </label>
             {tool.returns && (
               <SchemaEditor schema={tool.returns} onChange={(next) => setTool({ ...tool, returns: next })} />
             )}
           </div>
         )}
+        </div>
 
-        <div className="modal-actions">
+        <div className={`modal-actions ${styles.actions}`}>
           <button type="button" className="text-btn" onClick={onClose}>
             Cancel
           </button>

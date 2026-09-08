@@ -1,0 +1,56 @@
+.root {
+  max-width: 560px;
+  padding: 32px;
+}
+
+.heading {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 20px;
+}
+
+.keyRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.keyLabel {
+  font-size: 13px;
+  color: var(--ink-dim);
+  flex: 1;
+  min-width: 0;
+}
+
+.originRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.originInput {
+  flex: 1 1 280px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.originRow :global(.text-btn) {
+  flex: none;
+}
+
+.originRow :global(.text-btn):disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.originWarning {
+  color: var(--danger);
+  font-size: 12px;
+  flex-basis: 100%;
+}
+
+.dangerZone {
+  margin-top: 32px;
+}

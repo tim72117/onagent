@@ -1,0 +1,112 @@
+.root {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* No overflow:hidden here (an earlier version had one, meant only to clip
+   the rounded corners) — a card has no fixed/max height, so anything
+   taller than the viewport (e.g. many tools) was being clipped away
+   silently by the card itself instead of overflowing into .root, which
+   left .root's own scrollHeight == clientHeight (nothing to scroll, as
+   far as .root could tell) even though real content existed just past
+   the visible edge. Rounded corners still read fine without clipping
+   since children don't paint outside the border-radius in practice here
+   (no full-bleed images/backgrounds inside a card). */
+/* Shared by both a <button> (the tappable Agent thought summary card) and
+   a plain <div> (the Tools card, not itself clickable — only its rows
+   are) — the button-reset properties below are no-ops on the div. */
+.card {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cardSummary {
+  padding: 0 16px 16px;
+  color: var(--ink-dim);
+  font-size: 13px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.dirtyDot {
+  flex: none;
+  margin-left: auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.toolRow:not(:first-child) {
+  border-top: 1px solid var(--border);
+}
+
+.toolRowLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+
+.errorDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.chevron {
+  flex: none;
+  stroke: var(--ink-faint);
+}
+
+.addRow {
+  display: flex;
+  gap: 8px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}

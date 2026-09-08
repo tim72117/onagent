@@ -1,0 +1,12 @@
+.avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-weight: 600;
+  text-transform: uppercase;
+  user-select: none;
+}

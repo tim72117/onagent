@@ -1,11 +1,15 @@
 import type { Tool } from './schema'
-import type { AppSummary, Quota } from './api'
+import type { AppSummary } from './api'
 import type { ValidationIssue } from './validate'
+import { AppList } from './AppList'
+import { AgentNav } from './AgentNav'
+import { ToolList } from './ToolList'
+import { SidebarFooter } from './SidebarFooter'
 import styles from './Sidebar.module.css'
+import navStyles from './SidebarNav.module.css'
 
 export function Sidebar({
   userEmail,
-  quota,
   summaries,
   activeAppId,
   onSelectApp,
@@ -14,17 +18,18 @@ export function Sidebar({
   activeToolIndex,
   agentSelected,
   playgroundSelected,
+  settingsSelected,
+  appSettingsSelected,
   issuesByTool,
   onSelectTool,
   onSelectAgent,
   onSelectPlayground,
+  onSelectSettings,
+  onSelectAppSettings,
   onAddTool,
   onAddToolWizard,
-  onDeleteApp,
-  onLogout,
 }: {
   userEmail: string
-  quota: Quota | null // null while loading or if the fetch failed; quota.enabled === false when this deployment runs with QUOTA_ENABLED=false — both render as nothing, not a placeholder
   summaries: AppSummary[]
   activeAppId: string | null
   onSelectApp: (appId: string) => void
@@ -33,159 +38,72 @@ export function Sidebar({
   activeToolIndex: number | null
   agentSelected: boolean
   playgroundSelected: boolean
+  settingsSelected: boolean
+  appSettingsSelected: boolean
   issuesByTool: Map<number, ValidationIssue[]>
   onSelectTool: (index: number) => void
   onSelectAgent: () => void
   onSelectPlayground: () => void
+  onSelectSettings: () => void
+  onSelectAppSettings: () => void
   onAddTool: () => void
   onAddToolWizard: () => void
-  onDeleteApp: () => void
-  onLogout: () => void
 }) {
   return (
     <nav className="sidebar">
-      <div className="sidebar-brand">
+      <div className={styles.brand}>
         <span className="sidebar-mark" aria-hidden="true">
           ⌘
         </span>
-        <span className="sidebar-brand-name">Console</span>
+        <span className={styles.brandName}>Console</span>
       </div>
 
-      <div className="sidebar-section">
-        <div className="sidebar-section-head">
-          <span>Apps</span>
-          <button type="button" className="sidebar-icon-btn" onClick={onAddApp} aria-label="New app">
-            +
-          </button>
-        </div>
-        <ul className="sidebar-list">
-          {summaries.map((s) => (
-            <li key={s.appId}>
-              <button
-                type="button"
-                className={`sidebar-item${s.appId === activeAppId ? ' active' : ''}`}
-                onClick={() => onSelectApp(s.appId)}
-              >
-                <span className="sidebar-item-label">{s.appId}</span>
-                {s.hasKey && !s.allowedOrigin && (
-                  <span className="status-dot error" title="Key issued but no origin set — all connections blocked" />
-                )}
-                {s.hasKey && s.allowedOrigin && (
-                  <span className="status-dot ok" title={`Accepting connections from ${s.allowedOrigin}`} />
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-        {summaries.length === 0 && <p className="sidebar-empty">No apps yet</p>}
-      </div>
+      <AppList summaries={summaries} activeAppId={activeAppId} onSelectApp={onSelectApp} onAddApp={onAddApp} />
 
       {tools !== null && (
-        <div className="sidebar-section">
-          <div className="sidebar-section-head">
-            <span>Agent</span>
-          </div>
-          <ul className="sidebar-list">
+        <AgentNav
+          agentSelected={agentSelected}
+          playgroundSelected={playgroundSelected}
+          onSelectAgent={onSelectAgent}
+          onSelectPlayground={onSelectPlayground}
+        />
+      )}
+
+      {tools !== null && (
+        <ToolList
+          tools={tools}
+          activeToolIndex={activeToolIndex}
+          issuesByTool={issuesByTool}
+          onSelectTool={onSelectTool}
+          onAddTool={onAddTool}
+          onAddToolWizard={onAddToolWizard}
+        />
+      )}
+
+      {/* Per-app connection settings (key/origin) — a distinct concept
+          from the account Settings reached via the avatar below (see
+          AppSettingsView.tsx's own comment), only shown once at least one
+          app exists (activeAppId or a non-empty summaries list — this
+          nav item stays visible even if the currently open view is Agent/
+          Playground/a tool, not just when an app is actively selected,
+          since onSelectAppSettings itself picks a default app if needed). */}
+      {(activeAppId || summaries.length > 0) && (
+        <div className={navStyles.section}>
+          <ul className={navStyles.list}>
             <li>
               <button
                 type="button"
-                className={`sidebar-item${agentSelected ? ' active' : ''}`}
-                onClick={onSelectAgent}
+                className={`${navStyles.item}${appSettingsSelected ? ' ' + navStyles.active : ''}`}
+                onClick={onSelectAppSettings}
               >
-                <span className="sidebar-item-label">Thought</span>
-              </button>
-            </li>
-            <li>
-              <button
-                type="button"
-                className={`sidebar-item${playgroundSelected ? ' active' : ''}`}
-                onClick={onSelectPlayground}
-              >
-                <span className="sidebar-item-label">Playground</span>
+                <span className={navStyles.itemLabel}>App settings</span>
               </button>
             </li>
           </ul>
         </div>
       )}
 
-      {tools !== null && (
-        <div className="sidebar-section sidebar-section-grow">
-          <div className="sidebar-section-head">
-            <span>Tools</span>
-            <span className={styles.sectionActions}>
-              <button
-                type="button"
-                className="sidebar-icon-btn"
-                onClick={onAddToolWizard}
-                aria-label="New tool, guided"
-                title="New tool, guided"
-                data-track="tool_creation_method_selected:wizard"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="13" height="13">
-                  <path d="M12 4v4M12 16v4M4 12h4M16 12h4" />
-                  <path d="M8 8l1.5 1.5M14.5 14.5L16 16M16 8l-1.5 1.5M9.5 14.5L8 16" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                className="sidebar-icon-btn"
-                onClick={onAddTool}
-                aria-label="New tool"
-                data-track="tool_creation_method_selected:blank"
-              >
-                +
-              </button>
-            </span>
-          </div>
-          {tools.length === 0 ? (
-            <p className="sidebar-empty">No tools yet</p>
-          ) : (
-            <ul className="sidebar-list">
-              {tools.map((tool, i) => {
-                const issueCount = issuesByTool.get(i)?.length ?? 0
-                return (
-                  <li key={i}>
-                    <button
-                      type="button"
-                      className={`sidebar-item sidebar-item-tool${i === activeToolIndex ? ' active' : ''}`}
-                      onClick={() => onSelectTool(i)}
-                    >
-                      <span className="sidebar-item-label">
-                        {tool.name || <em>unnamed_tool</em>}
-                      </span>
-                      {issueCount > 0 && (
-                        <span className="status-dot error" title={`${issueCount} issue(s)`} />
-                      )}
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </div>
-      )}
-
-      <div className="sidebar-footer">
-        {activeAppId && (
-          <button type="button" className="sidebar-text-btn danger" onClick={onDeleteApp}>
-            Delete "{activeAppId}"
-          </button>
-        )}
-        {quota?.enabled && (
-          <div className="sidebar-quota" title={`Resets ${new Date(quota.periodEnd!).toLocaleDateString()}`}>
-            <span className="sidebar-quota-plan">{quota.planName} plan</span>
-            <span className="sidebar-quota-usage">
-              {quota.used} / {quota.limit} requests used this month
-            </span>
-          </div>
-        )}
-        <div className="sidebar-account">
-          <span className="sidebar-account-email">{userEmail}</span>
-          <button type="button" className="sidebar-text-btn" onClick={onLogout}>
-            Sign out
-          </button>
-        </div>
-      </div>
+      <SidebarFooter userEmail={userEmail} settingsSelected={settingsSelected} onSelectSettings={onSelectSettings} />
     </nav>
   )
 }

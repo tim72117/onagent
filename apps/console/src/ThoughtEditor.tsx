@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Markdown } from '@tiptap/markdown'
@@ -19,21 +19,26 @@ applyMarkdownEscapeFix()
 // rendered view (bold text looks bold as you type) instead of on raw `**`
 // syntax. @tiptap/markdown's Editor.getMarkdown()/contentType: 'markdown'
 // handle the two-way conversion.
+//
+// Deliberately just the editor's content (intro copy + textarea + default
+// preview) — no <form>, no title, no Save button. It used to render all of
+// those itself, but ThoughtEditSheet.tsx (the mobile full-screen sheet)
+// needed its own <form>/SheetHeader wrapping the same editor, and nesting
+// one <form> inside another is invalid HTML (the browser silently drops
+// the inner tag, leaving submit behavior ambiguous) — hence pulling the
+// chrome out to each caller. App.tsx's desktop branch wraps this in its
+// own <form onSubmit={onSave}> with a matching header/Save button;
+// ThoughtEditSheet.tsx does the same with SheetHeader.
 export function ThoughtEditor({
   value,
   defaultPreview,
-  busy,
-  dirty,
   onChange,
-  onSave,
 }: {
   value: string
   defaultPreview: string
-  busy: boolean
-  dirty: boolean
   onChange: (next: string) => void
-  onSave: (e: React.FormEvent) => void
 }) {
+  const [defaultExpanded, setDefaultExpanded] = useState(false)
   const editor = useEditor({
     extensions: [StarterKit, Markdown, Placeholder.configure({ placeholder: defaultPreview })],
     content: value,
@@ -61,24 +66,28 @@ export function ThoughtEditor({
   }, [value, editor])
 
   return (
-    <form className="thought-editor" onSubmit={onSave}>
-      <div className="thought-header">
-        <span className="micro-label">Agent thought</span>
-        <button type="submit" className="primary" disabled={busy || !dirty}>
-          {busy ? 'Saving…' : 'Save'}
-        </button>
-      </div>
-      <p className="thought-copy">
-        Custom system prompt for the LLM that selects this app's tools — tone, domain knowledge,
-        or rules specific to this app. Leave empty to use the platform default shown below.
-      </p>
+    <>
+      <p className="thought-copy thought-copy-heading">Custom system prompt for the LLM that selects this app's tools</p>
+      <p className="thought-copy">Tone, domain knowledge, or rules specific to this app.</p>
       <EditorContent editor={editor} className="thought-textarea" />
-      {!value && (
+      <p className="thought-copy thought-copy-below">
+        Leave empty to use the platform default shown below.{' '}
+        <button
+          type="button"
+          className="thought-default-toggle"
+          onClick={() => setDefaultExpanded((v) => !v)}
+          aria-expanded={defaultExpanded}
+          aria-label={defaultExpanded ? 'Hide platform default text' : 'Show platform default text'}
+        >
+          ?
+        </button>
+      </p>
+      {!value && defaultExpanded && (
         <div className="thought-default">
-          <span className="micro-label">Platform default (currently in effect)</span>
+          <span className="micro-label">Platform default</span>
           <p className="thought-default-text">{defaultPreview}</p>
         </div>
       )}
-    </form>
+    </>
   )
 }
