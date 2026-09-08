@@ -59,7 +59,21 @@ export function ThoughtEditor({
   // external change and force an unnecessary setContent/cursor reset right
   // after every successful Save.
   useEffect(() => {
-    if (!editor) return
+    // isDestroyed guards a real crash, not a defensive nicety: switching
+    // apps updates `value` (via App.tsx's activeSummary-driven
+    // setThoughtDraft) around the same time this component can be
+    // unmounting/remounting (e.g. the mobile/desktop branch swap, or
+    // ThoughtEditSheet closing) — if that `value` change's effect runs
+    // after @tiptap/react's own cleanup has already called
+    // editor.destroy() on this instance but before React finishes
+    // tearing down, `editor` here is still a truthy, non-null reference
+    // (destroy() nulls out its internal commandManager, not the object
+    // itself), so the `!editor` check above doesn't catch it. Calling
+    // .commands.setContent() on a destroyed editor throws (destroyed
+    // Editor's commandManager is null), which — uncaught, deep inside a
+    // Tiptap-internal call stack — crashes past this component's own
+    // error boundary reach and unmounts the whole React tree.
+    if (!editor || editor.isDestroyed) return
     if (editor.getMarkdown().trim() !== value.trim()) {
       editor.commands.setContent(value, { contentType: 'markdown' })
     }

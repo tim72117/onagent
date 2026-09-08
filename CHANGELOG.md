@@ -6,6 +6,35 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.3.1
+
+No breaking changes — patch release. Follow-up fixes to the mobile
+console layout added in v0.3.0.
+
+- Fix a real crash: switching apps could throw
+  `TypeError: null is not an object (evaluating
+  'this.commandManager.commands')` deep inside Tiptap and unmount the
+  entire React tree (`#root` going blank). `ThoughtEditor.tsx`'s
+  content-sync effect updates the Tiptap editor whenever its `value` prop
+  changes; switching apps updates that value around the same time this
+  component can be unmounting/remounting (the mobile/desktop branch swap,
+  or `ThoughtEditSheet` closing), and if the effect ran after
+  `@tiptap/react`'s own cleanup had already called `editor.destroy()` on
+  that instance, calling `.commands.setContent()` on it threw — `destroy()`
+  nulls out the editor's internal `commandManager` but the `editor`
+  reference itself stays truthy, so the effect's existing `!editor` guard
+  didn't catch it. Now also checks `editor.isDestroyed`.
+- `AppPickerSheet.tsx`'s app list rows were sized for a dense,
+  mouse-driven desktop sidebar (`padding: 6px 8px`, `font-size: 13px` —
+  under a real touch target) despite being this app's sole touch entry
+  point for switching apps on mobile. `AppList.tsx` gained an optional
+  `rowClassName` prop so this sheet can size up its own rows without
+  affecting the shared component's desktop-sidebar/`AgentNav`/`ToolList`
+  callers.
+- `MobileWorkspaceCards.module.css`'s Agent Thought summary card gained a
+  bit more bottom padding around its (line-clamped) preview text so a
+  full two lines doesn't read as crowding the card's bottom edge.
+
 ## v0.3.0
 
 Breaking change — minor bump. Console (`apps/console`) gains a full mobile

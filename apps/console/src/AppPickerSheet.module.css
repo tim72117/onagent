@@ -2,3 +2,24 @@
   max-height: 60vh;
   overflow-y: auto;
 }
+
+/* AppList.tsx's rows (SidebarNav.module.css's .item, padding: 6px 8px,
+   font-size: 13px) are sized for a dense, mouse-driven desktop sidebar —
+   under a real touch target. Reusing that component here for its list
+   logic/markup is right (no reason to duplicate it just for sizing), but
+   this sheet is the sole touch entry point for switching apps on mobile,
+   so its rows need bigger tap targets. Passed into AppList.tsx as
+   `rowClassName` (appended alongside its own .item, not replacing it) —
+   a `:global()` rule here can't reach .item directly, since CSS Modules
+   hashes SidebarNav.module.css's class names too; there's no unhashed
+   `.item` selector to match against from a different module.
+   Same specificity as .item (both a single class selector), so which one
+   wins is purely source order: this module is imported after AppList.tsx
+   (and therefore after SidebarNav.module.css) in AppPickerSheet.tsx, so
+   its rule lands later in the bundled stylesheet and overrides .item's
+   padding/font-size without needing !important. */
+.row {
+  padding: 14px 12px;
+  font-size: 15px;
+  border-radius: var(--radius-md);
+}

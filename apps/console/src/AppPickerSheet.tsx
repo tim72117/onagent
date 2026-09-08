@@ -26,6 +26,7 @@ export function AppPickerSheet({
         <AppList
           summaries={summaries}
           activeAppId={activeAppId}
+          rowClassName={styles.row}
           onSelectApp={(id) => {
             onSelectApp(id)
             onClose()

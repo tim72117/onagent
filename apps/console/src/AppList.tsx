@@ -11,6 +11,7 @@ export function AppList({
   activeAppId,
   onSelectApp,
   onAddApp,
+  rowClassName,
 }: {
   summaries: AppSummary[]
   activeAppId: string | null
@@ -19,6 +20,17 @@ export function AppList({
   // "new app" entry point is the floating action button in MobileNav.tsx,
   // always visible regardless of whether the drawer is open.
   onAddApp?: () => void
+  // Extra class appended to each row button — AppPickerSheet.tsx passes
+  // its own module's class here to size up SidebarNav.module.css's dense,
+  // mouse-driven .item (padding: 6px 8px, font-size: 13px) into a real
+  // touch target for its mobile-only sheet, without touching the shared
+  // class other callers (desktop Sidebar) still use as-is. A `:global()`
+  // rule in AppPickerSheet.module.css can't reach .item — CSS Modules
+  // hashes SidebarNav.module.css's own class names, so there's no
+  // unhashed `.item` selector for `:global()` to match against; passing
+  // the caller's already-hashed class in is the only way to layer styles
+  // from a different module onto this shared markup.
+  rowClassName?: string
 }) {
   return (
     <div className={styles.section}>
@@ -35,7 +47,7 @@ export function AppList({
           <li key={s.appId}>
             <button
               type="button"
-              className={`${styles.item}${s.appId === activeAppId ? ' ' + styles.active : ''}`}
+              className={`${styles.item}${rowClassName ? ' ' + rowClassName : ''}${s.appId === activeAppId ? ' ' + styles.active : ''}`}
               onClick={() => onSelectApp(s.appId)}
             >
               <span className={styles.itemLabel}>{s.appId}</span>
