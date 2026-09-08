@@ -499,6 +499,13 @@ bridge.prompt(text) // called when the user submits a question`,
 
   root.innerHTML = `
     <div class="md-demo">
+      <!-- Desktop keeps the full sidebar nav (all three tabs). On mobile
+         this nav plays no role at all — hidden entirely (see index.html's
+         @media max-width:720px) — since Data/Code are reached via direct
+         buttons there instead (Data under the scenario blurb, Code next to
+         the modal's own outer close button via mountMarketingDemo's
+         returned openCode()), and Analysis is reached via a result card's
+         "show result" button, not browsed to directly. -->
       <nav class="md-demo-nav" id="md-demo-nav">
         <button type="button" class="md-demo-nav-btn is-active" data-view="analysis">
           <svg viewBox="0 0 24 24"><path d="M4 19V9M12 19V5M20 19v-7"/></svg>${s.navAnalysis}
@@ -510,17 +517,14 @@ bridge.prompt(text) // called when the user submits a question`,
           <svg viewBox="0 0 24 24"><path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg>${s.navCode}
         </button>
       </nav>
-      <div class="md-demo-main">
+      <div class="md-demo-nav-sheet-backdrop" id="md-demo-nav-sheet-backdrop"></div>
+      <div class="md-demo-main" id="md-demo-main">
+        <!-- Mobile-only rough prototype: closes the content sheet
+           (Analysis/Data/Code — see .md-demo-main's bottom-sheet CSS) back
+           down to the chat panel. Hidden on desktop, where .md-demo-main is
+           just a normal column, not a sheet. -->
+        <button type="button" class="md-demo-main-sheet-close" id="md-demo-main-sheet-close" aria-label="${lang === 'zh' ? '關閉' : 'Close'}">✕</button>
         <div class="md-demo-view" id="md-demo-view-analysis">
-          <div class="md-demo-scenario">
-            <p class="md-demo-scenario-title">${s.scenarioTitle}</p>
-            <p class="md-demo-scenario-text">${s.scenarioText}</p>
-            <p class="md-demo-scenario-data">${s.scenarioData}</p>
-          </div>
-          <div class="md-demo-quick-tests" id="md-demo-quick-tests">
-            <p class="md-demo-quick-tests-label">${s.quickTestsLabel}</p>
-            <div class="md-demo-quick-test-btns" id="md-demo-quick-test-btns"></div>
-          </div>
           <div class="md-demo-result" id="md-demo-result">
             <p class="md-demo-placeholder">${s.resultPlaceholder}</p>
           </div>
@@ -529,7 +533,23 @@ bridge.prompt(text) // called when the user submits a question`,
         <div class="md-demo-view" id="md-demo-view-code" hidden></div>
       </div>
       <div class="md-demo-chat" id="md-demo-chat">
+        <!-- The scenario blurb and the quick-test questions are just the
+           first entries in the chat log now (desktop and mobile alike) —
+           plain content within the conversation's own scroll, not a
+           separate fixed block above it, so they scroll away with
+           everything else instead of needing their own layout treatment. -->
         <div class="md-demo-chat-log" id="md-demo-chat-log">
+          <div class="md-demo-chat-scenario">
+            <p class="md-demo-scenario-title">${s.scenarioTitle}</p>
+            <p class="md-demo-scenario-text">${s.scenarioText}</p>
+            <button type="button" class="md-demo-scenario-data-btn" id="md-demo-scenario-data-btn">
+              <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>${s.navData}
+            </button>
+          </div>
+          <div class="md-demo-quick-tests" id="md-demo-quick-tests">
+            <p class="md-demo-quick-tests-label">${s.quickTestsLabel}</p>
+            <div class="md-demo-quick-test-btns" id="md-demo-quick-test-btns"></div>
+          </div>
           <p class="md-demo-chat-hint">${s.chatHint}</p>
         </div>
         <div class="md-demo-footer" id="md-demo-footer">
@@ -547,21 +567,45 @@ bridge.prompt(text) // called when the user submits a question`,
 
   const navEl = root.querySelector('#md-demo-nav')
   const chatEl = root.querySelector('#md-demo-chat')
+  const navSheetBackdrop = root.querySelector('#md-demo-nav-sheet-backdrop')
+
+  const mainEl = root.querySelector('#md-demo-main')
+  const mainSheetCloseBtn = root.querySelector('#md-demo-main-sheet-close')
+
+  // Mobile-only: the content sheet (Analysis/Data/Code) shares its backdrop
+  // with the sidebar nav's desktop styling being irrelevant there — see
+  // each element's own comment for why mobile reaches Data/Code via direct
+  // buttons instead of picking a tab from #md-demo-nav.
+  function closeMainSheet() {
+    mainEl.classList.remove('is-sheet-open')
+    navSheetBackdrop.classList.remove('is-open')
+  }
+  function openMainSheet() {
+    mainEl.classList.add('is-sheet-open')
+    navSheetBackdrop.classList.add('is-open')
+  }
+  navSheetBackdrop.addEventListener('click', closeMainSheet)
+  mainSheetCloseBtn.addEventListener('click', closeMainSheet)
   const views = {
     analysis: root.querySelector('#md-demo-view-analysis'),
     data: root.querySelector('#md-demo-view-data'),
     code: root.querySelector('#md-demo-view-code'),
   }
   function switchView(id) {
-    navEl.querySelectorAll('.md-demo-nav-btn').forEach((b) => b.classList.toggle('is-active', b.dataset.view === id))
+    const activeBtn = [...navEl.querySelectorAll('.md-demo-nav-btn')].find((b) => b.dataset.view === id)
+    navEl.querySelectorAll('.md-demo-nav-btn').forEach((b) => b.classList.toggle('is-active', b === activeBtn))
     Object.entries(views).forEach(([key, el]) => (el.hidden = key !== id))
     // Data/Code are reference views, not part of the conversation — only
     // the Analysis view needs the chat sidebar alongside it.
     chatEl.hidden = id !== 'analysis'
+    // Mobile-only — a harmless no-op on desktop, where .md-demo-main is
+    // just a normal column, not a sheet.
+    openMainSheet()
   }
   navEl.querySelectorAll('.md-demo-nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => switchView(btn.dataset.view))
   })
+  root.querySelector('#md-demo-scenario-data-btn').addEventListener('click', () => switchView('data'))
   renderDataView(views.data, dataset)
   renderCodeView(views.code)
 
@@ -883,4 +927,13 @@ bridge.prompt(text) // called when the user submits a question`,
       submitInput()
     }
   })
+
+  // Small public API for the outer static page (index.html/zh-tw/index.html
+  // — outside this mounted root) to reach in: the mobile Code button lives
+  // next to the modal's own outer close button, not inside this widget's
+  // own markup, so there's no in-root element for it to wire a click to
+  // directly.
+  return {
+    openCode: () => switchView('code'),
+  }
 }

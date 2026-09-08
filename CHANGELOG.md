@@ -6,6 +6,36 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.20
+
+No breaking changes — patch release. Landing-page UI only; no public API
+affected.
+
+- Add a first-pass mobile layout for the marketing-demo widget (the
+  "Marketing analytics assistant" case card's live demo), modeled on a
+  bottom-sheet pattern: at ≤720px, the chat panel becomes the permanent
+  full-screen surface (scenario blurb and quick-test questions now open
+  as the first entries in the chat log itself, rather than a separate
+  fixed block), and the Data/Code views open as sheets that slide up over
+  it instead of replacing it. Desktop is unaffected — it keeps the
+  original three-tab sidebar (Analysis/Data/Code) and side-panel chat.
+- Fix a real layout-breaking bug on the Traditional Chinese page
+  (`zh-tw/index.html`) specifically: its `@media (max-width: 720px)`
+  block had fallen out of sync with the English page's own copy of the
+  same rules (two separate `.md-demo-chat` selectors instead of one
+  merged rule), so opening the Data sheet on mobile collapsed the chat
+  panel's `flex-direction`/`position` back to browser defaults — visible
+  as the input row rendering squeezed at the top of the screen instead of
+  pinned to the bottom. Both pages' mobile CSS now match exactly.
+- Simplify the widget's copy and navigation: shorten the scenario
+  paragraph, drop the now-inaccurate "these aren't mockups — they're
+  runnable examples under `examples/`" line (the live example now lives
+  under `apps/landing/src/marketing-demo/`, not `examples/`), shorten nav
+  labels ("分析畫面"/"資料狀況" → "分析"/"資料"), and add small line
+  icons to the Data and Code entry points.
+- Update `apps/landing/public/sitemap.xml`'s `lastmod` for `/` and
+  `/zh-tw/` to reflect today's content changes.
+
 ## v0.2.19
 
 No breaking changes — patch release. Purely additive CD wiring; no

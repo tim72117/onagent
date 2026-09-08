@@ -341,12 +341,92 @@
 
     /* use cases */
     .cases { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+    /* Single remaining case — case-split's own two-column layout is the
+       full-width composition now, not a grid cell alongside a sibling. */
+    .cases-single { display: block; }
     .case {
       position: relative; border: 1px solid var(--border-soft); border-radius: 18px; padding: 30px;
       background: linear-gradient(180deg, var(--panel) 0%, var(--bg-2) 100%); overflow: hidden;
       transition: transform 0.2s, border-color 0.2s;
     }
     .case:hover { transform: translateY(-4px); border-color: rgba(201,162,75,0.35); }
+    /* Capped and centered rather than stretching to the full card width —
+       at this card's full width (now the only one, spanning the section)
+       both columns would otherwise grow uncomfortably wide with no
+       breathing room at the card's own edges. */
+    .case-split { display: grid; grid-template-columns: 0.8fr 1.3fr; gap: 32px; align-items: center; max-width: 760px; margin: 0 auto; }
+    .case-illustration { display: flex; align-items: center; }
+    /* Spans both of .case-split's columns (it's a grid item too, since
+       .case-split's grid rules apply to any direct child of .case) and
+       sits on its own row below the illustration+text row, centered
+       rather than stretched — one action for the whole card, not tied to
+       either column's width. */
+    .case-try-row { grid-column: 1 / -1; display: flex; justify-content: center; margin-top: 28px; }
+    /* Fixed width, not 100% — .collage's children (the app window, the
+       overlapping chart card, the floating bubbles) are all absolutely
+       positioned in real pixels, so letting this stretch to whatever
+       narrow width a mobile column gives it would squeeze the whole
+       illustration out of its own proportions. Centering it (and the text
+       column) rather than left-aligning keeps both readable as a single
+       stack instead of a full-bleed block once the layout no longer has a
+       second column to justify against. */
+    @media (max-width: 760px) {
+      .case-split { grid-template-columns: 1fr; justify-items: center; }
+      .case-illustration, .case-content { width: 100%; max-width: 380px; }
+    }
+    /* Layered product-illustration collage: a soft gradient backdrop
+       holding a main "app window" (sidebar + KPIs + trend chart), a
+       smaller chart card overlapping its bottom-right corner, and a few
+       floating decorative bubbles — evokes "marketing analytics product"
+       at a glance without being a literal screenshot of this exact demo. */
+    .collage {
+      position: relative; width: 100%; height: 230px; border-radius: 16px; overflow: visible;
+      background: radial-gradient(120% 100% at 20% 0%, #3a2f18 0%, #221c11 55%, #17130c 100%);
+    }
+    .win {
+      position: absolute; left: 18px; top: 18px; width: 78%;
+      background: #fff; border-radius: 10px; overflow: hidden;
+      box-shadow: 0 22px 44px -16px rgba(0,0,0,0.55);
+    }
+    .win-bar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #f0ead9; }
+    .win-dot { width: 7px; height: 7px; border-radius: 50%; background: #e6e1d3; }
+    .win-search { flex: 1; margin-left: 6px; height: 12px; border-radius: 6px; background: #f3efe4; max-width: 100px; }
+    .win-body { display: flex; }
+    .win-side { width: 34px; padding: 10px 8px; display: flex; flex-direction: column; gap: 7px; border-right: 1px solid #f3efe4; }
+    .win-side i { display: block; height: 4px; border-radius: 2px; background: #eee8d8; }
+    .win-side i.on { background: var(--accent); }
+    .win-main { flex: 1; padding: 10px 12px; }
+    .win-kpis { display: flex; gap: 8px; margin-bottom: 8px; }
+    .kpi { flex: 1; background: #faf8f2; border-radius: 6px; padding: 6px 8px; }
+    .kpi-label { height: 4px; width: 60%; border-radius: 2px; background: #e6e1d3; margin-bottom: 5px; }
+    .kpi-value { font-family: var(--mono); font-size: 12px; font-weight: 700; color: #2b2718; }
+    .win-chart { height: 46px; border-radius: 6px; background: #faf8f2; position: relative; overflow: hidden; }
+    .win-chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .float-chart {
+      position: absolute; right: 4px; bottom: -6px; width: 158px;
+      background: #fff; border-radius: 10px; padding: 10px 12px 8px;
+      box-shadow: 0 20px 40px -14px rgba(0,0,0,0.5);
+      transform: rotate(-1.5deg);
+    }
+    .float-chart-title { font-size: 12px; font-weight: 700; color: #2b2718; margin-bottom: 8px; }
+    .float-bars { display: flex; align-items: flex-end; gap: 5px; height: 44px; }
+    .float-bars .b { flex: 1; border-radius: 2px 2px 0 0; }
+    .float-bars .b.dark { background: #c9a24b; }
+    .float-bars .b.light { background: #f0dfae; }
+    .float-labels { display: flex; gap: 5px; margin-top: 4px; }
+    .float-labels span { flex: 1; text-align: center; font-size: 7.5px; color: #a89b82; }
+    .bubble {
+      position: absolute; display: grid; place-items: center; border-radius: 50%;
+      box-shadow: 0 10px 22px -8px rgba(0,0,0,0.5);
+    }
+    .bubble svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+    .b-plus { width: 34px; height: 34px; right: 14px; top: -14px; background: var(--grad); color: #1a1408; }
+    .b-plus svg { width: 16px; height: 16px; }
+    .b-chat { width: 30px; height: 30px; left: 4px; bottom: 30px; background: #fff; color: var(--accent); }
+    .b-chat svg { width: 14px; height: 14px; }
+    .b-ring { width: 22px; height: 22px; left: 44%; bottom: -10px; border: 3px solid var(--accent-2); background: transparent; box-shadow: none; }
+    .b-mini { width: 26px; height: 26px; left: -8px; top: 40px; background: #fff; color: var(--accent); }
+    .b-mini svg { width: 13px; height: 13px; }
     .case-badge {
       display: inline-block; font-family: var(--mono); font-size: 12px; color: var(--accent-2);
       background: var(--accent-soft); border: 1px solid rgba(201,162,75,0.28); padding: 4px 10px; border-radius: 7px; margin-bottom: 16px;
@@ -355,6 +435,11 @@
     .case p { color: var(--text-2); font-size: 15px; line-height: 1.6; margin-bottom: 18px; }
     .case .chat { font-family: var(--mono); font-size: 13px; border-top: 1px dashed var(--border); padding-top: 16px; display: flex; flex-direction: column; gap: 8px; }
     .bubble-u { align-self: flex-end; background: var(--grad); color: #1a1408; padding: 7px 12px; border-radius: 12px 12px 3px 12px; max-width: 85%; font-weight: 600; }
+    /* Static example questions, not an active sent message — the bold
+       gradient (built for "you just sent this") reads too strong for a
+       suggestion chip, so this variant softens to a translucent accent
+       tint instead. */
+    .chat-examples .bubble-u { background: #fbfaf7; color: #2b2718; font-weight: 500; }
     .bubble-a { align-self: flex-start; background: rgba(255,255,255,0.05); border: 1px solid var(--border); color: var(--text-2); padding: 7px 12px; border-radius: 12px 12px 12px 3px; max-width: 90%; }
     .bubble-a .tc { color: var(--ok); }
 
@@ -420,7 +505,7 @@
        this same block rule-for-rule: both pages import the same widget
        bundle (mountMarketingDemo(inner, { lang: 'zh' }) below), so the
        styling has to match regardless of which page it's opened from. */
-    .case-try-btn { margin-top: 16px; width: 100%; }
+    .case-try-btn { width: auto; min-width: 260px; padding: 15px 28px; font-size: 16.5px; }
     .md-modal-backdrop {
       position: fixed; inset: 0; z-index: 100;
       background: rgba(28, 25, 23, 0.72); backdrop-filter: blur(3px);
@@ -446,6 +531,10 @@
       padding: 16px 22px; border-bottom: 1px solid #e4e0da; background: #f1efec;
     }
     .md-modal-title { font-family: var(--sans); font-weight: 700; font-size: 14.5px; color: #1c1917; }
+    .md-modal-bar-actions { display: flex; align-items: center; gap: 8px; }
+    /* Mobile-only — desktop reaches Code via the sidebar nav instead (see
+       widget.js's own comment on #md-demo-nav). */
+    .md-modal-code-btn { display: none; }
     .md-modal-close {
       width: 30px; height: 30px; border-radius: 4px; border: 1px solid #e4e0da;
       background: #fff; color: #6b6560; font-size: 14px; cursor: pointer;
@@ -656,16 +745,118 @@
     .md-demo-chat-msg-markdown pre code { background: none; padding: 0; color: inherit; }
     .md-demo-chat-msg-markdown a { color: #c1622b; text-decoration: underline; }
     .md-demo-footer { flex: none; padding: 14px 16px; border-top: 1px solid #e4e0da; background: #faf9f7; }
-    @media (max-width: 960px) {
+    @media (max-width: 960px) and (min-width: 721px) {
       .md-demo { flex-direction: column; }
-      .md-demo-chat { width: auto; border-left: none; border-top: 1px solid #e4e0da; }
+      /* :not([hidden]) here isn't about the hidden attribute — it's needed
+         purely to match (0,2,0) specificity: the base rule that sets
+         width:340px is itself qualified with :not([hidden]), and a plain
+         .md-demo-chat here would lose to it regardless of this media
+         query matching (media queries don't factor into the cascade's
+         specificity comparison). */
+      .md-demo-chat:not([hidden]) { width: auto; border-left: none; border-top: 1px solid #e4e0da; }
       .md-demo-nav { width: auto; flex-direction: row; border-right: none; border-bottom: 1px solid #e4e0da; }
       .md-demo-nav-btn { flex: 1; justify-content: center; }
     }
+    /* Rough first-pass mobile layout — container positions only, not final
+       polish. Modeled on tripace/web/src/geo-planning's phone pattern: chat
+       becomes the primary fixed-bottom surface (their composer), and the
+       content sheet (their draggable info sheet) opens on demand from a
+       direct button (Data under the scenario, Code next to the sheet's own
+       close button) instead of a picked-from-a-menu tab. Fixed px offsets
+       throughout (not vh) for the same reason their own comment gives:
+       vh behaves inconsistently across device heights. */
+    .md-demo-nav-sheet-backdrop { display: none; }
+    @media (max-width: 720px) {
+      .md-demo { position: relative; flex-direction: column; }
+      /* The sidebar nav has no role on mobile anymore — Data and Code are
+         both direct buttons elsewhere (see widget.js's own comment on
+         #md-demo-nav) — so it's simply hidden rather than repurposed. */
+      .md-demo-nav { display: none; }
+      .md-modal-code-btn {
+        display: inline-flex; align-items: center; gap: 5px; padding: 0 12px; height: 30px; border-radius: 4px;
+        border: 1px solid #e4e0da; background: #fff; color: #1c1917;
+        font-family: var(--sans); font-size: 12.5px; font-weight: 700; cursor: pointer;
+      }
+      .md-demo-nav-sheet-backdrop {
+        display: block; position: absolute; inset: 0; z-index: 25; background: rgba(28,25,23,0.35);
+        opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+      }
+      .md-demo-nav-sheet-backdrop.is-open { opacity: 1; pointer-events: auto; }
+      /* Chat now fills the whole container (not a 60%-capped composer
+         strip) — see widget.js's own comment: scenario + quick-tests moved
+         in here too, so chat is effectively the entire mobile screen, and
+         .md-demo-main's own view (now just the result pane) sits behind it,
+         reached instead via the result cards' "show result" button, which
+         switches views. Flush with every edge, so no top border-radius (a
+         rounded top corner only reads as "a sheet" when it stops short of
+         the container's own top — this one doesn't). :not([hidden]) here
+         is a specificity match, not a hidden-state check — see the 960px
+         block's own comment above for why a plain .md-demo-chat selector
+         would silently lose the width override.
+         Both states get the FULL property set (position/inset/flex layout),
+         not just display — chat is the permanent mobile screen now, with
+         Data/Code as sheets overlaying it (see .md-demo-main) rather than
+         views that replace it, so widget.js's chatEl.hidden toggle (still
+         correct on desktop, where it frees the sidebar's width for a
+         full-width Data/Code view) must not collapse this back to a
+         default static/row layout. An earlier version of this override set
+         only `display: flex` on the [hidden] case, which left position,
+         flex-direction, inset etc. unset — chat then rendered as a
+         static, row-direction box at the top of the page (with the input
+         row squeezed next to the nav trigger) whenever hidden was true. */
+      .md-demo-chat:not([hidden]), .md-demo-chat[hidden] {
+        display: flex; flex-direction: column; position: absolute; inset: 0;
+        width: auto; z-index: 20; border: none; border-radius: 0;
+      }
+      /* No floating trigger to clear anymore (Code moved to the modal's
+         own bar, which sits above .md-demo entirely, not overlapping it —
+         see index.html's #md-modal-code-btn) — plain padding. */
+      .md-demo-chat-log { padding: 16px 20px; gap: 12px; }
+      .md-demo-quick-tests { padding: 0; }
+      .md-demo-footer { padding: 14px 20px calc(14px + env(safe-area-inset-bottom, 0px)); }
+      /* Content sheet: Analysis (its result pane)/Data/Code, shown over the
+         now-full-height chat panel — same PhoneBottomSheet mechanics as
+         .md-demo-nav above (fixed to the container's edges, animated via
+         `transform`, not height), and above chat's own z-index:20 so
+         whichever sheet a visitor opened is what's actually on top. Taller
+         max-height than the nav picker (85% vs 60%) since this holds real
+         content (tables, charts, code) that benefits from the room, not
+         just a short list of three tab buttons. */
+      .md-demo-main {
+        position: absolute; left: 0; right: 0; bottom: 0; top: auto;
+        border-radius: 16px 16px 0 0; z-index: 30; max-height: 85%; overflow-y: auto;
+        padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+        transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.32,0.72,0,1);
+        box-shadow: 0 -12px 32px -12px rgba(0,0,0,0.35); background: #faf9f7;
+      }
+      .md-demo-main.is-sheet-open { transform: translateY(0); }
+      .md-demo-main-sheet-close {
+        display: grid; place-items: center; position: sticky; top: 0; left: 100%;
+        width: 30px; height: 30px; margin-bottom: 8px; border-radius: 50%;
+        border: 1px solid #e4e0da; background: #fff; color: #6b6560; cursor: pointer;
+      }
+    }
+    .md-demo-main-sheet-close { display: none; }
     .md-demo-scenario { border-bottom: 1px dashed #e6e1d3; padding-bottom: 14px; margin-bottom: 14px; }
     .md-demo-scenario-title { font-size: 12.5px; font-weight: 700; color: #8c8468; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
     .md-demo-scenario-text { font-size: 13.5px; line-height: 1.65; color: #4a4536; margin-bottom: 8px; }
-    .md-demo-scenario-data { font-size: 12.5px; color: #8c8468; font-family: var(--mono); }
+    .md-demo-scenario-data { font-size: 12.5px; color: #8c8468; font-family: var(--mono); margin-bottom: 10px; }
+    /* Direct shortcut into the Data sheet, right where the dataset is
+       described — Data no longer has its own nav-menu entry (see
+       widget.js's own comment), so this is now the primary way to reach it. */
+    .md-demo-scenario-data-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px; border-radius: 6px; border: 1px solid #d2ccc3; background: #fff;
+      color: #1c1917; font-family: var(--sans); font-size: 12.5px; font-weight: 600; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .md-demo-scenario-data-btn:hover { background: #f3efe4; border-color: #c1622b; }
+    /* Without this, the icon's <rect>/<path> render with SVG's own default
+       fill (solid black) and no stroke — a filled black square instead of
+       a line icon, since nothing else on the page happens to style this
+       specific button's svg child. */
+    .md-demo-scenario-data-btn svg { width: 15px; height: 15px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    .md-modal-code-btn svg { width: 13px; height: 13px; stroke: currentColor; stroke-width: 1.8; fill: none; stroke-linecap: round; stroke-linejoin: round; }
     .md-demo-quick-tests { margin-bottom: 14px; }
     .md-demo-quick-tests-label { font-size: 12.5px; color: #8c8468; margin-bottom: 8px; }
     .md-demo-quick-test-btns { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -844,40 +1035,74 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         <div class="sec-head reveal">
           <div class="sec-tag">What you can build</div>
           <h2>用一句話，驅動真實的介面操作</h2>
-          <p>這些不是示意圖——都是 repo 裡 <code style="font-family:var(--mono);color:var(--accent-2)">examples/</code> 底下能跑的範例。</p>
         </div>
-        <div class="cases">
-          <div class="case reveal">
-            <span class="case-badge">examples/react-demo · React</span>
-            <h3>電商業主助手</h3>
-            <p>一句複雜指令，AI 拆解成一連串操作——建立商品、新增規格、逐一設定庫存與價格——每個動作都對應一個你註冊的 handler。</p>
-            <div class="chat">
-              <span class="bubble-u">幫我上架這件襯衫，黑白灰卡其 4 種顏色都用庫存 50、售價 890</span>
-              <span class="bubble-a"><span class="tc">→ fill_product_form({...})
-→ add_variant("黑") → set_stock_price(50, 890)
-→ add_variant("白") → set_stock_price(50, 890)
-→ add_variant("灰") → set_stock_price(50, 890)
-→ add_variant("卡其") → set_stock_price(50, 890)
-→ click_publish_button()</span><br />已上架，共 4 個顏色規格 ✓</span>
+        <div class="cases cases-single">
+          <div class="case case-split reveal">
+            <div class="case-illustration">
+              <div class="collage" aria-hidden="true">
+                <div class="win">
+                  <div class="win-bar">
+                    <span class="win-dot"></span><span class="win-dot"></span><span class="win-dot"></span>
+                    <span class="win-search"></span>
+                  </div>
+                  <div class="win-body">
+                    <div class="win-side">
+                      <i class="on"></i><i></i><i></i><i></i><i></i>
+                    </div>
+                    <div class="win-main">
+                      <div class="win-kpis">
+                        <div class="kpi"><div class="kpi-label"></div><div class="kpi-value">$18.2k</div></div>
+                        <div class="kpi"><div class="kpi-label"></div><div class="kpi-value">2.4×</div></div>
+                      </div>
+                      <div class="win-chart">
+                        <svg viewBox="0 0 200 46" preserveAspectRatio="none">
+                          <polygon points="0,40 25,30 50,34 75,18 100,24 125,10 150,16 175,6 200,12 200,46 0,46" fill="#f0dfae"/>
+                          <polyline points="0,40 25,30 50,34 75,18 100,24 125,10 150,16 175,6 200,12" fill="none" stroke="#c9a24b" stroke-width="2"/>
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="float-chart">
+                  <div class="float-chart-title">各通路營收</div>
+                  <div class="float-bars">
+                    <div class="b dark" style="height:60%"></div>
+                    <div class="b light" style="height:40%"></div>
+                    <div class="b dark" style="height:85%"></div>
+                    <div class="b light" style="height:30%"></div>
+                  </div>
+                  <div class="float-labels"><span>FB</span><span>IG</span><span>Google</span><span>Email</span></div>
+                </div>
+                <span class="bubble b-plus"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+                <span class="bubble b-chat"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg></span>
+                <span class="bubble b-ring"></span>
+                <span class="bubble b-mini"><svg viewBox="0 0 24 24"><path d="M4 19V9M12 19V5M20 19v-7"/></svg></span>
+              </div>
+            </div>
+            <div class="case-content">
+              <span class="case-badge">串接展示</span>
+              <h3>行銷數據分析助手</h3>
+              <p>描述你想了解的廣告活動數據，AI 會自動選出相關變數與分析方式。</p>
+              <div class="chat chat-examples">
+                <span class="bubble-u">廣告花費、點擊數跟營收之間有關聯嗎？</span>
+                <span class="bubble-u">這一季哪個通路的營收表現最好？</span>
+                <span class="bubble-u">點擊率這幾個月的趨勢如何？</span>
+              </div>
             </div>
           </div>
-          <div class="case reveal">
-            <span class="case-badge">下方即時展示 · vanilla JS</span>
-            <h3>行銷數據分析助手</h3>
-            <p>描述你想了解的廣告活動數據，AI 會自動選出相關變數與分析方式。</p>
-            <div class="chat">
-              <span class="bubble-u">廣告花費、點擊數跟營收之間有關聯嗎？</span>
-              <span class="bubble-a"><span class="tc">→ select_analysis("correlation", ["spend", "clicks", "revenue"])</span><br />已針對花費、點擊數、營收進行相關分析</span>
-            </div>
-            <!-- Real, live version of this example, not another mock —
-                 connects to the actual "analysis-app" on production over a
-                 real AgentBridge connection (see src/marketing-demo/). Same
-                 widget bundle as index.html's English page, mounted with
-                 lang: 'zh' below — only mounted (and its JS bundle only
-                 fetched) on first click, so a visitor who never tries it
-                 never pays for it. -->
-            <button type="button" class="btn btn-ghost case-try-btn" id="marketing-demo-toggle">
-              立即試用 →
+          <!-- Real, live version of this example, not another mock —
+               connects to the actual "analysis-app" on production over a
+               real AgentBridge connection (see src/marketing-demo/). Same
+               widget bundle as index.html's English page, mounted with
+               lang: 'zh' below — only mounted (and its JS bundle only
+               fetched) on first click, so a visitor who never tries it
+               never pays for it. Sits below both columns (illustration +
+               text), centered, rather than pinned under just the text
+               column, since it's the one action for the whole card, not
+               just its copy. -->
+          <div class="case-try-row">
+            <button type="button" class="btn btn-primary case-try-btn" id="marketing-demo-toggle">
+              體驗看看 →
             </button>
           </div>
         </div>
@@ -897,7 +1122,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     </section>
   </main>
 
-  <!-- Modal overlay for the marketing-analysis widget — see the "立即試用"
+  <!-- Modal overlay for the marketing-analysis widget — see the "體驗看看"
        button's own comment in the case-study section above for why this is
        a near-full-page overlay rather than an in-card accordion. Mirrors
        index.html's (English) copy of this same markup. -->
@@ -905,7 +1130,16 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     <div class="md-modal-panel" role="dialog" aria-modal="true" aria-label="行銷數據分析助手——即時展示">
       <div class="md-modal-bar">
         <span class="md-modal-title">行銷數據分析助手——即時展示</span>
-        <button type="button" class="md-modal-close" id="md-modal-close" aria-label="關閉">✕</button>
+        <div class="md-modal-bar-actions">
+          <!-- Mobile-only: opens the Code sheet via the widget's own
+             openCode() (see widget.js's mountMarketingDemo return value and
+             the wiring below) — Code has no nav-menu entry to click on
+             mobile anymore, see widget.js's own comment on #md-demo-nav. -->
+          <button type="button" class="md-modal-code-btn" id="md-modal-code-btn">
+            <svg viewBox="0 0 24 24"><path d="M8 6l-5 6 5 6M16 6l5 6-5 6"/></svg>Code
+          </button>
+          <button type="button" class="md-modal-close" id="md-modal-close" aria-label="關閉">✕</button>
+        </div>
       </div>
       <div class="md-modal-body" id="marketing-demo-inner"></div>
     </div>
@@ -1135,7 +1369,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   </script>
 
   <!-- Lazy-loaded: the widget module (and its @onagent/bridge dependency)
-       is only fetched once someone actually clicks "立即試用" — see
+       is only fetched once someone actually clicks "體驗看看" — see
        src/marketing-demo/widget.js's own header comment for what this
        connects to and why. Mirrors index.html's (English) copy of this same
        open/close + deep-link machinery; only the mounted `lang` differs. -->
@@ -1147,14 +1381,24 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         backdrop: document.getElementById('md-modal-backdrop'),
         closeBtn: document.getElementById('md-modal-close'),
         inner: document.getElementById('marketing-demo-inner'),
+        codeBtn: document.getElementById('md-modal-code-btn'),
+        api: null,
         mounted: false,
         load: function (inner) {
+          var demo = this
           return import('/src/marketing-demo/widget.js').then(function (mod) {
-            mod.mountMarketingDemo(inner, { lang: 'zh' });
+            demo.api = mod.mountMarketingDemo(inner, { lang: 'zh' });
           });
         },
       },
     };
+    Object.keys(DEMOS).forEach(function (id) {
+      var demo = DEMOS[id];
+      if (!demo.codeBtn) return;
+      demo.codeBtn.addEventListener('click', function () {
+        if (demo.api) demo.api.openCode();
+      });
+    });
 
     function openDemo(id, fromHash) {
       var demo = DEMOS[id];

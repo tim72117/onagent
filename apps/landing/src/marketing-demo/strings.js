@@ -55,15 +55,11 @@ export const VARIABLE_TITLES = {
 
 export const STRINGS = {
   zh: {
-    navAnalysis: '分析畫面',
-    navData: '資料狀況',
+    navAnalysis: '分析',
+    navData: '資料',
     navCode: 'Code',
     scenarioTitle: '情境',
-    scenarioText:
-      '一家經營多通路廣告投放的電商團隊，每月從 Facebook、Google、Instagram、Email' +
-      '與自然流量等來源收集活動成效資料：花費、曝光、點擊、轉換、營收與 ROI，' +
-      '並記錄客戶所在地區、年齡層、分群與使用裝置。這裡用 120 筆模擬活動紀錄，' +
-      '示範 AI 助手如何依照你的提問自動挑選變數、執行對應的分析方法並回傳結果。',
+    scenarioText: '一家電商團隊在 Facebook、Google、Instagram、Email 等通路投放廣告。問我一個問題，AI 會自動挑變數、跑分析、回傳結果。',
     scenarioData: '資料集：120 筆模擬活動紀錄・15 個欄位（6 類別＋9 連續）・6 種分析方法',
     quickTestsLabel: '或點一個問題，帶入右側輸入框：',
     resultPlaceholder: '分析結果會顯示在這裡——在右側輸入問題，或點左邊的範例問題',
@@ -109,13 +105,7 @@ export const STRINGS = {
     navData: 'Dataset',
     navCode: 'Code',
     scenarioTitle: 'Scenario',
-    scenarioText:
-      'An e-commerce team running ads across multiple channels collects monthly campaign ' +
-      'performance data from Facebook, Google, Instagram, Email, and organic traffic — spend, ' +
-      'impressions, clicks, conversions, revenue, and ROI — along with customer region, age ' +
-      'group, segment, and device. This demo uses 120 mock campaign records to show how an AI ' +
-      'assistant picks the right variables and analysis method from your question, then returns ' +
-      'the result.',
+    scenarioText: 'An e-commerce team runs ads on Facebook, Google, Instagram, and Email. Ask a question and AI picks the variables, runs the analysis, and returns a result.',
     scenarioData: 'Dataset: 120 mock campaign records · 15 fields (6 categorical + 9 continuous) · 6 analysis methods',
     quickTestsLabel: 'Or click a question to fill the input on the right:',
     resultPlaceholder: 'Analysis results will appear here — ask a question on the right, or pick an example on the left',
