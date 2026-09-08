@@ -6,6 +6,66 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.2.21
+
+No breaking changes — patch release. Landing-page UI and internal
+analysis/chart logic only; `mountMarketingDemo`'s exported signature and
+its returned `{ openCode }` API are unchanged.
+
+- Move the marketing-demo widget's ~80 `md-demo-*`/`md-sheet-*`/`t-*`
+  styles into a real Shadow DOM (new `widget.css.js`, injected via
+  `attachShadow` in `mountMarketingDemo`) instead of relying on class-name
+  convention to avoid colliding with the host page's own styles — the
+  widget's CSS can no longer leak onto the page, and the page's CSS can no
+  longer bleed into the widget.
+- Replace the mobile layout's `@media (max-width: 720px)` breakpoint
+  overrides with a JS-driven `.is-mobile` class (toggled via
+  `matchMedia` in `widget.js`). The old approach was fragile — whether an
+  override actually won depended on its position in the stylesheet's
+  source order relative to the base rule it was meant to override, not on
+  which one was "the mobile one," and one such override (the input's
+  16px iOS-zoom-prevention font-size) had silently gone dead this way.
+  `.is-mobile <selector>`'s higher specificity makes source order stop
+  mattering.
+- Fix background-page scroll leaking through on iOS Safari while the demo
+  modal is open (`overflow: hidden` alone doesn't stop it there —
+  needs `position: fixed` on `body` with scroll position saved/restored).
+- Fix the demo's composer input auto-zooming the whole page on focus on
+  iOS Safari (font-size was under the 16px threshold that triggers it).
+- Fix `closeDemo`'s `history.back()` navigating away from the site
+  entirely (not just closing the modal) for a visitor who landed directly
+  on a `#try-demo=<id>` deep link — there's no prior same-site history
+  entry for `back()` to land on in that case. Switched to
+  `history.replaceState`, which only edits the current entry.
+- Add `viewport-fit=cover` and `env(safe-area-inset-*)`-based padding so
+  the modal doesn't render under the notch/Dynamic Island or home
+  indicator on notched iPhones.
+- Fix the Data tab's data-preview table: it could overflow its container
+  horizontally (a flex-child `min-width: auto` default) and, on
+  desktop, its `<thead>`'s `position: sticky` never actually stuck  —
+  the intended scroll container (`.md-demo-data-scroll`) never received a
+  bounded height to overflow against, so the whole Data view scrolled as
+  one block instead.
+- Fix `analysis.js`: `trend()` had no guard against a non-numeric
+  variable (unlike `correlation`/`regression`/`ranking`, which already
+  return an honest `insufficient_numeric_data` error for that case) —
+  a bad variable silently produced a `NaN`-filled series. Also, all four
+  methods' numeric checks used `typeof x === 'number'`, which doesn't
+  exclude `NaN`/`Infinity` — a single bad value could silently poison an
+  entire correlation matrix, regression, ranking, or trend series instead
+  of triggering the intended failure path; switched to `Number.isFinite`.
+  `ranking`'s negative `topN` also silently returned "all but the last N"
+  items instead of an empty result (`Array.prototype.slice(0, negative)`
+  counts from the end) — now clamped to 0.
+- Fix `charts.js`: `barChart` didn't handle negative values (regression
+  coefficients can be negative) — bars for negative values rendered with
+  inverted/off-chart height instead of drawing below a zero baseline.
+  `lineChart([])` threw a real exception instead of rendering blank,
+  reachable whenever `trend()` produces an empty series.
+- Fix a latent memory leak: `mountMarketingDemo`'s mobile
+  `matchMedia` listener was never removed on its (currently unreachable
+  in production, but present) re-mount path.
+
 ## v0.2.20
 
 No breaking changes — patch release. Landing-page UI only; no public API
