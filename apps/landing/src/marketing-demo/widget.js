@@ -20,6 +20,7 @@ import { VARIABLES, generateDataset } from './data.js'
 import { frequency, crossTable, correlation, regression, trend, ranking } from './analysis.js'
 import { barChart, groupedBarChart, lineChart, heatmap } from './charts.js'
 import { STRINGS, VARIABLE_TITLES, QUICK_TESTS, resolveLang } from './strings.js'
+import { WIDGET_STYLES } from './widget.css.js'
 
 // The assistant's own reply text is Markdown (per the thought prompt's
 // instructions), rendered to HTML for display — marked has no sanitizer of
@@ -147,7 +148,63 @@ function chartHost() {
   return div
 }
 
-export function mountMarketingDemo(root, options = {}) {
+export function mountMarketingDemo(hostEl, options = {}) {
+  // Shadow DOM gives this widget's ~80 md-demo-*/md-sheet-*/t-* classes real
+  // CSS scoping — the host page's global stylesheet can no longer reach in
+  // (past naming-convention luck), and this widget's own styles can no
+  // longer leak out onto the host page. `hostEl` is the plain page element
+  // the caller passed in (e.g. index.html's #marketing-demo-inner); `root`
+  // below is redefined to a container living inside the shadow tree, so
+  // every existing `root.querySelector(...)` call further down keeps
+  // working unchanged — it's just querying inside the shadow tree instead
+  // of the light DOM now.
+  //
+  // Reuses an existing shadowRoot rather than calling attachShadow again if
+  // one is already there (attachShadow throws "already attached" on a
+  // second call) — defensive only: mountMarketingDemo is invoked from a
+  // `demo.mounted` guard in index.html/zh-tw/index.html that already
+  // ensures this runs at most once per hostEl, so this branch shouldn't
+  // normally trigger, but re-mounting is otherwise expensive to detect
+  // from inside a self-contained module with no other signal.
+  const shadowRoot = hostEl.shadowRoot ?? hostEl.attachShadow({ mode: 'open' })
+  // If a previous mount on this exact hostEl left a matchMedia 'change'
+  // listener registered (see mobileMql below), wiping the shadow tree's
+  // innerHTML doesn't remove it — matchMedia listeners live on the
+  // MediaQueryList object, not the DOM, so they outlive whatever DOM
+  // subtree they were closed over. Stashing the previous mount's cleanup
+  // function on hostEl itself (a plain property, not shadow DOM state, so
+  // it survives the innerHTML wipe below) lets a re-mount actually detach
+  // the stale listener before installing its own — otherwise each
+  // re-mount leaks one more listener (closed over an now-detached `root`)
+  // for the lifetime of the page.
+  hostEl.__marketingDemoCleanup?.()
+  shadowRoot.innerHTML = ''
+  const styleEl = document.createElement('style')
+  styleEl.textContent = WIDGET_STYLES
+  shadowRoot.appendChild(styleEl)
+  const root = document.createElement('div')
+  root.className = 'md-demo-shadow-root'
+  shadowRoot.appendChild(root)
+
+  // State-driven layout class, not a bare @media breakpoint scattered
+  // across widget.css.js: a plain `@media (max-width: 720px) { .md-demo-x
+  // {...} }` override only wins if it happens to appear LATER in the
+  // stylesheet's source order than that selector's own base rule — the
+  // cascade doesn't care which one is "the mobile one," only which one
+  // was written last. That's exactly how the mobile-only .md-demo-input
+  // font-size override went silently dead (it was placed near the top of
+  // the file, before .md-demo-input's own base rule further down, so the
+  // base rule always won regardless of viewport width). Deciding "is this
+  // mobile" once in JS and expressing it as `.is-mobile <selector>` makes
+  // the override's specificity (two classes) unconditionally beat the
+  // bare one-class base rule — order in the file stops mattering.
+  const MOBILE_BREAKPOINT_QUERY = '(max-width: 720px)'
+  const mobileMql = window.matchMedia(MOBILE_BREAKPOINT_QUERY)
+  const syncMobileClass = () => root.classList.toggle('is-mobile', mobileMql.matches)
+  syncMobileClass()
+  mobileMql.addEventListener('change', syncMobileClass)
+  hostEl.__marketingDemoCleanup = () => mobileMql.removeEventListener('change', syncMobileClass)
+
   const lang = resolveLang(options.lang)
   const s = STRINGS[lang]
   const titles = VARIABLE_TITLES[lang]
@@ -339,6 +396,7 @@ export function mountMarketingDemo(root, options = {}) {
     el.innerHTML = `
       <div class="md-demo-subtabs" id="md-demo-data-tabs">
         ${panes.map((p, i) => `<button type="button" class="md-demo-subtab${i === 0 ? ' is-active' : ''}" data-pane="${i}"><span class="md-demo-subtab-dot"></span>${p.name}</button>`).join('')}
+        <button type="button" class="md-demo-main-sheet-close" aria-label="${lang === 'zh' ? '關閉' : 'Close'}">✕</button>
       </div>
       <div class="md-demo-subtab-body" id="md-demo-data-tab-body"></div>
     `
@@ -480,6 +538,7 @@ bridge.prompt(text) // called when the user submits a question`,
     el.innerHTML = `
       <div class="md-demo-code-tabs" id="md-demo-code-tabs">
         ${CODE_FILES.map((f, i) => `<button type="button" class="md-demo-code-tab${i === 0 ? ' is-active' : ''}" data-file="${i}"><span class="md-demo-code-tab-dot"></span>${f.name}</button>`).join('')}
+        <button type="button" class="md-demo-main-sheet-close" aria-label="${lang === 'zh' ? '關閉' : 'Close'}">✕</button>
       </div>
       <pre class="md-demo-code-body"><code id="md-demo-code-content"></code></pre>
     `
@@ -518,19 +577,23 @@ bridge.prompt(text) // called when the user submits a question`,
         </button>
       </nav>
       <div class="md-demo-nav-sheet-backdrop" id="md-demo-nav-sheet-backdrop"></div>
-      <div class="md-demo-main" id="md-demo-main">
-        <!-- Mobile-only rough prototype: closes the content sheet
-           (Analysis/Data/Code — see .md-demo-main's bottom-sheet CSS) back
-           down to the chat panel. Hidden on desktop, where .md-demo-main is
-           just a normal column, not a sheet. -->
-        <button type="button" class="md-demo-main-sheet-close" id="md-demo-main-sheet-close" aria-label="${lang === 'zh' ? '關閉' : 'Close'}">✕</button>
-        <div class="md-demo-view" id="md-demo-view-analysis">
-          <div class="md-demo-result" id="md-demo-result">
-            <p class="md-demo-placeholder">${s.resultPlaceholder}</p>
+      <!-- md-demo-main-slide carries the slide-in/out transform+transition
+           (mobile only — see its own CSS); .md-demo-main itself must stay
+           free of any transform, since a transformed ancestor becomes the
+           new containing block for ALL descendant position: sticky/fixed
+           elements, which silently broke the Data view's sticky <thead>
+           (it was sticking relative to this slide wrapper's animated box
+           instead of .md-demo-data-scroll's own scroll container). -->
+      <div class="md-demo-main-slide" id="md-demo-main-slide">
+        <div class="md-demo-main" id="md-demo-main">
+          <div class="md-demo-view" id="md-demo-view-analysis">
+            <div class="md-demo-result" id="md-demo-result">
+              <p class="md-demo-placeholder">${s.resultPlaceholder}</p>
+            </div>
           </div>
+          <div class="md-demo-view" id="md-demo-view-data" hidden></div>
+          <div class="md-demo-view" id="md-demo-view-code" hidden></div>
         </div>
-        <div class="md-demo-view" id="md-demo-view-data" hidden></div>
-        <div class="md-demo-view" id="md-demo-view-code" hidden></div>
       </div>
       <div class="md-demo-chat" id="md-demo-chat">
         <!-- The scenario blurb and the quick-test questions are just the
@@ -569,23 +632,21 @@ bridge.prompt(text) // called when the user submits a question`,
   const chatEl = root.querySelector('#md-demo-chat')
   const navSheetBackdrop = root.querySelector('#md-demo-nav-sheet-backdrop')
 
-  const mainEl = root.querySelector('#md-demo-main')
-  const mainSheetCloseBtn = root.querySelector('#md-demo-main-sheet-close')
+  const mainSlideEl = root.querySelector('#md-demo-main-slide')
 
   // Mobile-only: the content sheet (Analysis/Data/Code) shares its backdrop
   // with the sidebar nav's desktop styling being irrelevant there — see
   // each element's own comment for why mobile reaches Data/Code via direct
   // buttons instead of picking a tab from #md-demo-nav.
   function closeMainSheet() {
-    mainEl.classList.remove('is-sheet-open')
+    mainSlideEl.classList.remove('is-sheet-open')
     navSheetBackdrop.classList.remove('is-open')
   }
   function openMainSheet() {
-    mainEl.classList.add('is-sheet-open')
+    mainSlideEl.classList.add('is-sheet-open')
     navSheetBackdrop.classList.add('is-open')
   }
   navSheetBackdrop.addEventListener('click', closeMainSheet)
-  mainSheetCloseBtn.addEventListener('click', closeMainSheet)
   const views = {
     analysis: root.querySelector('#md-demo-view-analysis'),
     data: root.querySelector('#md-demo-view-data'),
@@ -608,6 +669,18 @@ bridge.prompt(text) // called when the user submits a question`,
   root.querySelector('#md-demo-scenario-data-btn').addEventListener('click', () => switchView('data'))
   renderDataView(views.data, dataset)
   renderCodeView(views.code)
+  // Data/Code each render their own close button inline in their tab strip
+  // (see renderDataView/renderCodeView) rather than the single shared
+  // button .md-demo-main used to have above the views — that button sat
+  // in its own sticky row, pushing the tab strip down below it, when
+  // mobile's whole point was letting the tab strip itself sit flush
+  // against the sheet's top edge. Bound here (after both renders exist in
+  // the DOM) rather than inside each render function, since both buttons
+  // do the exact same thing and render* shouldn't need to know about
+  // sheet-closing at all.
+  root.querySelectorAll('.md-demo-main-sheet-close').forEach((btn) => {
+    btn.addEventListener('click', closeMainSheet)
+  })
 
   const resultEl = root.querySelector('#md-demo-result')
   const chatLogEl = root.querySelector('#md-demo-chat-log')
@@ -875,6 +948,12 @@ bridge.prompt(text) // called when the user submits a question`,
         setTimeout(() => {
           hideAnalyzing()
           const result = runByMethod(dataset, method, variables, topN)
+          // Switches back to the Analysis view even if the visitor was
+          // looking at Data/Code when the result came in — otherwise a
+          // question asked while browsing Data, say, computes a result
+          // that's invisible until they manually switch tabs (or, on
+          // mobile, dig it out of the result card in the chat log).
+          switchView('analysis')
           renderResult(resultEl, result)
           if (result) addResultCard(result)
         }, ANALYSIS_DELAY_MS)

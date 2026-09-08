@@ -60,7 +60,17 @@ function pearson(xs, ys) {
 }
 
 export function correlation(rows, variableNames) {
-  const clean = rows.filter((r) => variableNames.every((v) => typeof r[v] === 'number'))
+  // Number.isFinite, not typeof === 'number': typeof NaN and
+  // typeof Infinity are BOTH 'number' in JS, so a typeof-only check lets a
+  // NaN/Infinity value (e.g. from upstream malformed data) straight through
+  // this filter — pearson() then propagates that single bad value into
+  // NaN for every pair involving that variable (mean/dx/dy all become NaN),
+  // which reaches heatmap()'s colorFor unguarded and renders as an invalid
+  // "rgb(NaN,NaN,NaN)" fill (silently ignored by canvas, leaving a stale
+  // color) with a literal "NaN" text label — a misleading result exactly
+  // like the ones this insufficient_numeric_data path exists to avoid.
+  // Number.isFinite(NaN)/(Infinity) are both false, so this closes that gap.
+  const clean = rows.filter((r) => variableNames.every((v) => Number.isFinite(r[v])))
   // Fewer than 2 numeric rows makes every pairwise correlation undefined —
   // most commonly because the caller (the AI, picking variable names from
   // its own inference) passed a non-numeric/categorical variable, which
@@ -81,8 +91,15 @@ export function correlation(rows, variableNames) {
 // Simple OLS multiple regression via normal equations — fine for a handful
 // of predictors on a demo dataset; not meant to be a general-purpose solver.
 export function regression(rows, dependentVariable, independentVariables) {
+  // Number.isFinite, not typeof === 'number' — see correlation's own
+  // comment above for why: an Infinity/NaN value passing this filter would
+  // propagate through the XtX/Xty sums and Gaussian elimination below
+  // (Infinity - Infinity, Infinity / Infinity, etc. all produce NaN),
+  // yielding coefficients/rSquared that are NaN/Infinity instead of a
+  // clean number OR an honest insufficient_numeric_data — silently
+  // defeating the point of this whole guard.
   const clean = rows.filter(
-    (r) => typeof r[dependentVariable] === 'number' && independentVariables.every((v) => typeof r[v] === 'number'),
+    (r) => Number.isFinite(r[dependentVariable]) && independentVariables.every((v) => Number.isFinite(r[v])),
   )
   const n = clean.length
   const k = independentVariables.length + 1
@@ -158,10 +175,30 @@ export function trend(rows, variableName, timeVariable = 'month') {
   const order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
   const byPeriod = new Map()
   for (const row of rows) {
+    // Same reasoning as correlation/regression/ranking above: a
+    // variableName that isn't numeric on this row (most commonly the AI
+    // passing a categorical/misspelled variable, which makes every
+    // row[variableName] undefined) would otherwise silently feed
+    // undefined/non-numeric values into mean() below, producing a
+    // fabricated NaN per period — charts.js's lineChart doesn't throw on
+    // NaN (canvas coordinate ops silently no-op), so this would render as
+    // a blank/garbled line with "NaN" point labels instead of an honest
+    // failure. Rows are still grouped by period even when filtered here,
+    // so a variable that's numeric on some rows and not others (shouldn't
+    // happen with this dataset, but not assumed) still contributes its
+    // valid values.
+    // Number.isFinite, not typeof === 'number' — see correlation's own
+    // comment for why: a NaN/Infinity value would otherwise poison mean()
+    // for its whole period, and worse, poison min/max (and therefore every
+    // OTHER period's plotted position too) once it reaches lineChart.
+    if (!Number.isFinite(row[variableName])) continue
     const period = row[timeVariable]
     const list = byPeriod.get(period) ?? []
     list.push(row[variableName])
     byPeriod.set(period, list)
+  }
+  if (byPeriod.size === 0) {
+    return { method: 'trend', variable: variableName, timeVariable, series: [], error: 'insufficient_numeric_data' }
   }
   const series = order
     .filter((p) => byPeriod.has(p))
@@ -177,7 +214,12 @@ export function ranking(rows, groupVariable, metricVariable, topN = 5) {
   // metric is null (e.g. data.js's roi for the zero-spend Organic channel)
   // are filtered the same way — summing through a null silently understates
   // that group's total instead of reflecting that it has no valid value.
-  const clean = rows.filter((r) => typeof r[metricVariable] === 'number')
+  // Number.isFinite, not typeof === 'number' — see correlation's own
+  // comment for why: a NaN/Infinity metric value would otherwise sum into
+  // that group's total (NaN poisons the whole sum; Infinity silently wins
+  // "top" regardless of the other groups' real values) instead of being
+  // excluded the same way a null/non-numeric metric already is below.
+  const clean = rows.filter((r) => Number.isFinite(r[metricVariable]))
   if (clean.length === 0) {
     return { method: 'ranking', groupVariable, metricVariable, items: [], error: 'insufficient_numeric_data' }
   }
@@ -189,6 +231,14 @@ export function ranking(rows, groupVariable, metricVariable, topN = 5) {
   const items = [...sums.entries()]
     .map(([value, total]) => ({ value, total: +total.toFixed(2) }))
     .sort((a, b) => b.total - a.total)
-    .slice(0, topN)
+    // Math.max(0, topN), not a bare topN: Array.prototype.slice treats a
+    // negative end as "count back from the array's end" (e.g.
+    // [a,b,c].slice(0,-1) is [a,b], not []), so a negative topN (an
+    // off-by-one in the AI's tool call, or any other malformed input —
+    // tools.yaml's schema has no `minimum` on topN) would otherwise
+    // silently return "all but the last N" as if that were a legitimate
+    // ranking, instead of the empty/error-shaped result a negative "how
+    // many top items" actually calls for.
+    .slice(0, Math.max(0, topN))
   return { method: 'ranking', groupVariable, metricVariable, items }
 }

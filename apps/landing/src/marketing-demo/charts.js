@@ -39,37 +39,71 @@ export function barChart(items, { width = 640, height = 220, valueSuffix = '' } 
   const padB = 36
   const chartW = width - padL - padR
   const chartH = height - padT - padB
-  const max = Math.max(...items.map((i) => i.value), 1)
+  // regression's own coefficients (the main real-world caller of this
+  // chart, via widget.js's renderResult) can be negative — the original
+  // max-only scale (plus a y = baseline - h positioning formula) assumed
+  // every value was >= 0, so a negative item.value produced a negative
+  // bar height that drew inverted/off-chart instead of a bar at all
+  // (visibly "missing" bars for coefficients like Ad spend/Impressions
+  // above, next to a normal-looking positive Clicks bar). Scaling against
+  // the larger of max(0, ...) and the magnitude of the most negative
+  // value, with a proper zero baseline, is what actually needs both
+  // directions.
+  const maxPositive = Math.max(...items.map((i) => Math.max(i.value, 0)), 0)
+  const maxNegative = Math.max(...items.map((i) => Math.max(-i.value, 0)), 0)
+  const range = Math.max(maxPositive + maxNegative, 1)
+  const usableH = chartH - 18
+  // Baseline (zero line) sits proportionally between the top and bottom of
+  // the plot area based on how much of the range is positive vs negative
+  // — an all-positive dataset keeps the familiar bottom-aligned baseline
+  // (baselineY at the very bottom), an all-negative one flips to the top,
+  // and a mixed one sits in between.
+  const baselineY = padT + (maxPositive / range) * usableH + (chartH - usableH)
 
   ctx.strokeStyle = GRID_LINE
   ctx.lineWidth = 1
   ctx.beginPath()
-  ctx.moveTo(padL, padT + chartH)
-  ctx.lineTo(padL + chartW, padT + chartH)
+  ctx.moveTo(padL, baselineY)
+  ctx.lineTo(padL + chartW, baselineY)
   ctx.stroke()
 
   const gap = 10
   const barW = (chartW - gap * (items.length - 1)) / items.length
   items.forEach((item, i) => {
     const x = padL + i * (barW + gap)
-    const h = (item.value / max) * (chartH - 18)
-    const y = padT + chartH - h
+    const h = (Math.abs(item.value) / range) * usableH
+    const isNegative = item.value < 0
+    const y = isNegative ? baselineY : baselineY - h
 
     ctx.fillStyle = GOLD
     ctx.beginPath()
-    const r = Math.min(6, barW / 2)
-    ctx.moveTo(x, y + h)
-    ctx.lineTo(x, y + r)
-    ctx.arcTo(x, y, x + r, y, r)
-    ctx.lineTo(x + barW - r, y)
-    ctx.arcTo(x + barW, y, x + barW, y + r, r)
-    ctx.lineTo(x + barW, y + h)
+    const r = Math.min(6, barW / 2, h)
+    if (isNegative) {
+      // Rounded corners on the bottom edge (away from the baseline) —
+      // mirror image of the positive-bar path below, which rounds the
+      // top edge (also away from its baseline).
+      ctx.moveTo(x, y)
+      ctx.lineTo(x, y + h - r)
+      ctx.arcTo(x, y + h, x + r, y + h, r)
+      ctx.lineTo(x + barW - r, y + h)
+      ctx.arcTo(x + barW, y + h, x + barW, y + h - r, r)
+      ctx.lineTo(x + barW, y)
+    } else {
+      ctx.moveTo(x, y + h)
+      ctx.lineTo(x, y + r)
+      ctx.arcTo(x, y, x + r, y, r)
+      ctx.lineTo(x + barW - r, y)
+      ctx.arcTo(x + barW, y, x + barW, y + r, r)
+      ctx.lineTo(x + barW, y + h)
+    }
     ctx.closePath()
     ctx.fill()
 
     ctx.fillStyle = TEXT
     ctx.textAlign = 'center'
-    ctx.fillText(String(item.value) + valueSuffix, x + barW / 2, y - 5)
+    // Value label sits above a positive bar, below a negative one — always
+    // on the outside of the bar, away from the baseline it grows from.
+    ctx.fillText(String(item.value) + valueSuffix, x + barW / 2, isNegative ? y + h + 14 : y - 5)
 
     ctx.fillStyle = TEXT_MUTED
     const label = truncate(ctx, String(item.label), barW + gap - 2)
@@ -134,6 +168,12 @@ export function groupedBarChart(rowValues, colValues, table, { width = 640, heig
 // Line chart. series: [{ period, value }]
 export function lineChart(series, { width = 640, height = 220 } = {}) {
   const { canvas, ctx } = makeCanvas(width, height)
+  // An empty series (trend() now guards this itself with
+  // insufficient_numeric_data, but this function has no way to know
+  // whether some other/future caller already checked that) would otherwise
+  // reach `points[0].x` further down with points === [] and throw — return
+  // a blank canvas instead of crashing the whole result render.
+  if (series.length === 0) return canvas
   const padL = 36
   const padR = 12
   const padT = 16
