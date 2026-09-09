@@ -46,12 +46,12 @@ export function AppSettingsList({
             <path d="M15 18l-6-6 6-6" />
           </svg>
         </button>
-        <span className={styles.title}>"{appId}" settings</span>
+        <span className={styles.title}>App settings</span>
       </div>
 
       <div className={styles.list}>
         <button type="button" className={styles.row} onClick={keySheet.onOpen}>
-          <div>
+          <div className={styles.rowInfo}>
             <div className={styles.rowLabel}>Key</div>
             <div className={styles.rowValue}>{hasKey ? 'Issued' : 'Not issued'}</div>
           </div>
@@ -61,7 +61,7 @@ export function AppSettingsList({
         </button>
 
         <button type="button" className={styles.row} onClick={originSheet.onOpen}>
-          <div>
+          <div className={styles.rowInfo}>
             <div className={styles.rowLabel}>Allowed origin</div>
             <div className={styles.rowValue}>{allowedOrigin ?? 'Not set'}</div>
             {!allowedOrigin && (

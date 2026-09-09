@@ -513,7 +513,10 @@ export function ToolWizard({
         </div>
 
         <div className={`modal-actions ${styles.actions}`}>
-          <button type="button" className="text-btn" onClick={onClose}>
+          {/* Desktop-only — mobile already has SheetHeader's ✕ close
+              button up top (see .mobileHeader), so this would be a
+              second, redundant way to back out of the wizard there. */}
+          <button type="button" className={`text-btn ${styles.cancelBtn}`} onClick={onClose}>
             Cancel
           </button>
           {stepIndex > 0 && (

@@ -1,7 +1,10 @@
+/* z-index is set inline (BottomSheet.tsx), not here — it depends on how
+   deeply this sheet is nested inside other BottomSheets (see
+   SheetDepthContext in BottomSheet.tsx for why a static value here can't
+   express that). */
 .backdrop {
   position: fixed;
   inset: 0;
-  z-index: 30;
   background: rgba(28, 25, 23, 0.45);
   opacity: 0;
   pointer-events: none;
@@ -15,7 +18,6 @@
 .panel {
   position: fixed;
   inset: auto 0 0 0;
-  z-index: 31;
   background: var(--bg-raised);
   border-radius: 16px 16px 0 0;
   box-shadow: var(--shadow-sheet);

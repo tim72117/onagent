@@ -312,6 +312,21 @@ export default function App() {
     setThoughtDraft(activeSummary?.thought ?? '')
   }, [activeSummary?.appId, activeSummary?.thought])
 
+  // Same reasoning as selectAppSettings's own fallback below: rendering the
+  // "No app selected" empty state when the user actually already has one or
+  // more apps is worse than just picking the first one — most noticeable on
+  // mobile, where MobileWorkspaceCards (not a Sidebar list) is the landing
+  // screen, so arriving there is otherwise a dead end until the user
+  // remembers to open the app picker themselves. Guarded on view?.kind
+  // !== 'settings' since that's account-level (SettingsView), not
+  // app-scoped, and genuinely has nothing to do with which app is selected.
+  useEffect(() => {
+    if (draft || !summaries || summaries.length === 0) return
+    if (view?.kind === 'settings') return
+    selectApp(summaries[0].appId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, summaries, view?.kind])
+
   // Runs action immediately if there's nothing unsaved to lose; otherwise
   // gates it behind a confirmation. action itself may be async — this
   // helper doesn't need to await it, callers that care already do.
@@ -326,6 +341,17 @@ export default function App() {
       destructive: false,
       onConfirm: action,
     })
+  }
+
+  // Same shared ConfirmModal as withDiscardConfirm above, but unconditional
+  // and message/action supplied by the caller — for local, component-owned
+  // dirty state this file's own `dirty` doesn't cover, e.g.
+  // MobileWorkspaceCards.tsx's in-progress "new tool" draft, which isn't
+  // added to draft.tools (and so can't dirty this app's own `dirty` flag)
+  // until it's actually saved. The caller decides whether its own local
+  // state is dirty enough to ask at all; this just renders the dialog.
+  function confirmDiscard(message: string, onConfirm: () => void) {
+    setPendingConfirm({ message, confirmLabel: 'Discard', destructive: false, onConfirm })
   }
 
   // afterSelect: runs after the app finishes loading, instead of the usual
@@ -735,7 +761,8 @@ export default function App() {
               onSaveThought={saveThought}
               onChangeTool={updateTool}
               onRemoveTool={removeTool}
-              onAddTool={addTool}
+              onCreateTool={appendTool}
+              onConfirmDiscard={confirmDiscard}
               onAddToolWizard={() => setShowToolWizard(true)}
             />
           ) : (

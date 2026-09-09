@@ -7,8 +7,21 @@
          letterboxes the page around notches/the home indicator instead
          of extending under them, so every safe-area calc() in this app's
          mobile CSS (MobileTopBar/MobileBottomBar/BottomSheet/App.module.css)
-         was previously a no-op. -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+         was previously a no-op.
+
+         interactive-widget=resizes-content tells the browser to shrink the
+         layout viewport itself when the on-screen keyboard opens, instead
+         of leaving it full-height with the keyboard just overlaid on top.
+         Without it, every fullscreen BottomSheet (position:fixed; inset:0)
+         keeps its pre-keyboard height, so a focused input near the bottom
+         of one (ToolNameSheet/ToolDescriptionSheet, both full-screen with
+         little else above the field) ends up covered by the keyboard —
+         the browser's own "scroll the focused input into view" heuristic
+         has nothing to scroll, since nothing about the fixed panel's own
+         geometry changed from its perspective. Supported by current
+         Chrome/Android WebView and Safari; unsupported browsers just
+         ignore this token and keep the old (keyboard-overlays) behavior. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Console — onagent</title>
 
     <!-- Google Tag Manager: loads the onagent container (GTM-MXMK83XR),

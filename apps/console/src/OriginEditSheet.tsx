@@ -1,5 +1,7 @@
+import { useEffect, useRef } from 'react'
 import { BottomSheet } from './BottomSheet'
 import { SheetHeader } from './SheetHeader'
+import { focusAndReveal } from './focusField'
 import styles from './OriginEditSheet.module.css'
 
 // Mobile-only edit sheet for a single app's allowed origin — opened by
@@ -32,6 +34,17 @@ export function OriginEditSheet({
   originBusy: boolean
   onSaveOrigin: (e: React.FormEvent) => Promise<boolean>
 }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // See ToolNameSheet.tsx's own comment on why this focuses via ref+effect
+  // gated on `open` instead of the input's own autoFocus prop — BottomSheet
+  // keeps this sheet always mounted (for its close transition), so
+  // autoFocus would fire the moment its parent (AppSettingsList.tsx) mounts,
+  // popping the keyboard before the user ever taps "Allowed origin".
+  useEffect(() => {
+    if (open) focusAndReveal(inputRef.current)
+  }, [open])
+
   return (
     <BottomSheet open={open} onClose={onClose} disableBackdropClose>
       <form onSubmit={onSaveOrigin}>
@@ -43,11 +56,11 @@ export function OriginEditSheet({
         />
         <div className={styles.body}>
           <input
+            ref={inputRef}
             className={styles.input}
             placeholder="https://your-site.example.com"
             value={originDraft}
             onChange={(e) => onOriginDraftChange(e.target.value)}
-            autoFocus
           />
         </div>
       </form>

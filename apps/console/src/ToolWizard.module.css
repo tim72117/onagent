@@ -250,6 +250,14 @@
     border-top: 1px solid var(--border);
   }
 
+  /* Mobile already has SheetHeader's ✕ close button in .mobileHeader —
+     this Cancel button would be a second, redundant way to back out of
+     the wizard, and .actions' flex layout (this button, then Back/Next)
+     would otherwise leave an odd gap on steps with no Back button. */
+  .cancelBtn {
+    display: none;
+  }
+
   /* Single column — the two-column card grid reads cramped once the
      viewport is phone-width (each card's label + hint + icon needs more
      than half the width to avoid wrapping awkwardly). */
