@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { App as AppSchema, Tool } from './schema'
+import { emptyTool } from './schema'
 import type { ValidationIssue } from './validate'
 import { ThoughtEditSheet } from './ThoughtEditSheet'
 import { ToolEditSheet } from './ToolEditSheet'
@@ -42,7 +43,8 @@ export function MobileWorkspaceCards({
   onSaveThought,
   onChangeTool,
   onRemoveTool,
-  onAddTool,
+  onCreateTool,
+  onConfirmDiscard,
   onAddToolWizard,
 }: {
   draft: AppSchema
@@ -57,10 +59,22 @@ export function MobileWorkspaceCards({
   onSaveThought: (e: React.FormEvent) => void
   onChangeTool: (index: number, next: Tool) => void
   onRemoveTool: (index: number) => void
-  onAddTool: () => void
+  // Appends straight to draft.tools (App.tsx's appendTool) — called only
+  // once, by the brand-new ToolEditSheet instance below's own Save, not on
+  // "+ New tool" itself. Unlike the old onAddTool this replaces (which
+  // appended an emptyTool() immediately, before any field was even open),
+  // the new tool doesn't exist in draft.tools — and can't dirty this app's
+  // save/autosave machinery, or show up mid-creation in the Tools list
+  // above — until the user actually saves it.
+  onCreateTool: (tool: Tool) => void
+  onConfirmDiscard: (message: string, onConfirm: () => void) => void
   onAddToolWizard: () => void
 }) {
   const [openToolIndex, setOpenToolIndex] = useState<number | null>(null)
+  // The tool currently being created via "+ New tool", held here instead
+  // of in draft.tools until it's actually saved — see onCreateTool's own
+  // comment above for why. null means no creation in progress.
+  const [newTool, setNewTool] = useState<Tool | null>(null)
   const thoughtSheet = useSheet()
 
   return (
@@ -136,19 +150,10 @@ export function MobileWorkspaceCards({
           )
         })}
         <div className={styles.addRow}>
-          {/* onAddTool (App.tsx's appendTool) synchronously pushes onto
-              draft.tools and re-renders this component with the updated
-              draft before the next paint — draft.tools.length read here,
-              before that call, is exactly the new tool's index, and by
-              the time ToolEditSheet reads draft.tools[openToolIndex] on
-              its own next render the array already contains it. */}
           <button
             type="button"
             className="primary"
-            onClick={() => {
-              setOpenToolIndex(draft.tools.length)
-              onAddTool()
-            }}
+            onClick={() => setNewTool(emptyTool())}
             data-track="tool_creation_method_selected:blank"
           >
             + New tool
@@ -174,6 +179,24 @@ export function MobileWorkspaceCards({
         onRemove={() => {
           if (openToolIndex !== null) onRemoveTool(openToolIndex)
         }}
+      />
+
+      {/* A separate instance, not the same one reused with an isNew flag
+          flipped on the same tool prop — this one's tool never lives in
+          draft.tools until Save, so it needs its own onClose (discard the
+          local newTool draft, not touch openToolIndex/draft.tools at all)
+          and its own onChange (append via onCreateTool, the one and only
+          time this tool ever reaches draft.tools). */}
+      <ToolEditSheet
+        open={newTool !== null}
+        onClose={() => setNewTool(null)}
+        tool={newTool}
+        onChange={(next) => {
+          onCreateTool(next)
+          setNewTool(null)
+        }}
+        isNew
+        onConfirmDiscard={onConfirmDiscard}
       />
     </div>
   )

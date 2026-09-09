@@ -55,6 +55,15 @@
   text-align: left;
 }
 
+/* See ToolEditSheet.module.css's own .rowInfo comment — same fix, same
+   underlying flex/nowrap-min-width bug: without this, a long Allowed
+   origin URL forces this row (and .list, and .root) wider than the
+   screen instead of truncating with an ellipsis. */
+.rowInfo {
+  min-width: 0;
+  flex: 1;
+}
+
 .rowLabel {
   font-size: 14px;
   font-weight: 600;

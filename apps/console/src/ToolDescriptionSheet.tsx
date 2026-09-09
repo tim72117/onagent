@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BottomSheet } from './BottomSheet'
 import { SheetHeader } from './SheetHeader'
+import { focusAndReveal } from './focusField'
 import styles from './ToolFieldSheet.module.css'
 
 // See ToolNameSheet.tsx's own comment — same local-draft-then-Save shape,
@@ -17,9 +18,15 @@ export function ToolDescriptionSheet({
   onSave: (next: string) => void
 }) {
   const [draft, setDraft] = useState(description)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // See ToolNameSheet.tsx's own comment on why this focuses via ref+effect
+  // gated on `open` instead of the textarea's own autoFocus prop.
   useEffect(() => {
-    if (open) setDraft(description)
+    if (open) {
+      setDraft(description)
+      focusAndReveal(textareaRef.current)
+    }
   }, [open, description])
 
   function handleSubmit(e: React.FormEvent) {
@@ -39,11 +46,11 @@ export function ToolDescriptionSheet({
         </div>
         <div className={styles.body}>
           <textarea
+            ref={textareaRef}
             className={styles.descriptionInput}
             placeholder="What does this tool do, and when should the model call it?"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            autoFocus
           />
         </div>
       </form>

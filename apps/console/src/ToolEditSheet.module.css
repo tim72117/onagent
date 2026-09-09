@@ -46,6 +46,24 @@
   text-align: left;
 }
 
+/* Wraps rowLabel+rowValue. A flex item's default min-width is auto, which
+   for a nowrap child (.rowValue below) resolves to that text's full
+   unwrapped width — without min-width:0 here, a long description doesn't
+   truncate with an ellipsis at all; it instead forces this whole flex item
+   (and everything downstream: .row, .list, .body) wider than the visible
+   sheet, which — combined with .body's overflow-y:auto implicitly forcing
+   its overflow-x to auto too (a CSS quirk: overflow-x/-y can't have one
+   "visible" and the other not) — makes .body horizontally scrollable, with
+   every row (and "Delete tool" below it, despite having no long content of
+   its own) appearing shifted/clipped by whatever that scroll position
+   happens to be, while .header (a sibling, not inside .body's scroll
+   area) stays fully visible — reading as "text is cut off on the left"
+   rather than the actual "container is scrolled right" cause. */
+.rowInfo {
+  min-width: 0;
+  flex: 1;
+}
+
 .rowLabel {
   font-size: 14px;
   font-weight: 600;

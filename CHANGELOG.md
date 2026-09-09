@@ -6,6 +6,68 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.3.4
+
+No breaking changes — patch release. Follow-up fixes to the mobile
+console layout added in v0.3.0.
+
+- Fix a real bug: `ThoughtEditSheet`/`ToolEditSheet` could render
+  obscured by the fixed `MobileTopBar`/`MobileBottomBar` instead of
+  covering the full screen. Both live inside
+  `MobileWorkspaceCards.module.css`'s `.root`, which sets
+  `-webkit-overflow-scrolling: touch` for its own momentum scrolling — a
+  long-standing WebKit/iOS Safari quirk traps a `position: fixed`
+  descendant of such a container as if positioned relative to that
+  scrolling ancestor instead of the real viewport. `PlaygroundSheet`
+  never hit this only because its parent (`MobileNav.tsx`) doesn't use
+  that property, not because `BottomSheet.tsx` itself was fine.
+  `BottomSheet.tsx` now portals every sheet to `document.body`, so this
+  can't recur regardless of which caller's DOM subtree declares it.
+- Fix a related real bug the portal fix above exposed: tapping a row in
+  `ToolEditSheet.tsx` (Name/Description/Parameters/Returns) could open
+  the corresponding field sheet underneath, not on top of, the row list
+  — its fields were real and fillable (programmatically), but invisible
+  and untappable, reading as "the fields don't respond." Every
+  `BottomSheet` shares the same fixed z-index (30/31) and is portaled to
+  `document.body`; `ToolEditSheet` nests four more always-mounted
+  `BottomSheet`s as children (`ToolNameSheet`/`ToolDescriptionSheet`/
+  `ToolParametersSheet`/`ToolReturnsSheet`), and with identical z-index
+  across all of them, which one visually won was decided by portal
+  commit order among `document.body`'s children — not guaranteed to
+  track actual nesting. Added `SheetDepthContext` so each `BottomSheet`
+  knows how many `BottomSheet` ancestors it has and computes a z-index
+  strictly above its parent's, regardless of portal/commit order.
+- `BottomSheet.tsx` now locks `document.body` scroll while any sheet is
+  open — without it, a touch-scroll gesture that ran out of room inside
+  a sheet's own content fell through to the page underneath, scrolling
+  the fixed top/bottom bars along with it.
+- `ThoughtEditSheet.module.css`'s `.body` was `overflow: hidden` instead
+  of `overflow-y: auto`, silently clipping content that ran past the
+  visible area instead of letting it scroll.
+- `ToolNameSheet`/`ToolDescriptionSheet`/`OriginEditSheet` switched from
+  `autoFocus` to a ref+effect gated on `open` — `BottomSheet` keeps every
+  sheet always-mounted for its close transition, so `autoFocus` (which
+  fires at mount time) was popping the mobile keyboard the moment the
+  *parent* sheet mounted, well before the user actually opened that
+  specific field.
+- `App.tsx` now auto-selects the first app once the list loads and none
+  is selected yet, mirroring `selectAppSettings`'s own existing fallback
+  — mobile's landing screen is the workspace itself (not a `Sidebar` list
+  to click), so with no app selected it dead-ended on "No app selected"
+  until the user manually opened the app picker.
+- `AppSettingsList.tsx`'s mobile header no longer embeds the app name
+  next to the back arrow ("App settings" instead of `"<appId>" settings`).
+- `ToolEditSheet.tsx` no longer shows "Delete tool" for a brand-new,
+  untouched tool (the state right after "+ New tool" creates it,
+  before any field has been edited) — deleting reads as destroying saved
+  work when there's nothing here yet to lose. Disappears the moment any
+  field is edited.
+- `ToolWizard.tsx`'s mobile view no longer shows a "Cancel" button in its
+  footer — mobile already has `SheetHeader`'s ✕ close button, making
+  Cancel a second, redundant way to back out.
+- `apps/console/index.html`'s viewport meta now disables pinch/double-tap
+  zoom (`maximum-scale=1.0, user-scalable=no`).
+
 ## v0.3.3
 
 No breaking changes — patch release.
