@@ -71,7 +71,7 @@ go build -o onagent ./cmd/onagent
 
 > 以下與後續章節為了簡潔，一律直接寫 `onagent login`、`onagent list-apps`、`onagent save-tools` 等指令；實際執行時請替換成上一步判斷出來的完整路徑，例如 `${CLAUDE_SKILL_DIR}/bin/onagent-linux-amd64 login --web`，而不是直接執行裸指令 `onagent`。
 
-`onagent` 提供兩種登入方式，指向的後端與 console 網址預設都是 `https://onagent.shuttle.tools`，如需指向本機開發環境可用 `-api`、`-console` 參數覆蓋。
+`onagent` 提供兩種登入方式，指向的後端與 console 網址預設都是 `https://onagent.shuttle.tools`，如需指向本機開發環境可用 `-api`、`-console` 參數覆蓋。**`-console` 預設會直接繼承 `-api` 解析後的值**（因為 console 前端通常跟後端 API 同源部署）——只設 `-api` 就會同時決定 CLI 呼叫後端 API 打去哪裡、以及 `--web` 開瀏覽器要跳去的網址：例如 `onagent login --web -api http://localhost:8081`，瀏覽器會開到 `http://localhost:8081`，不需要額外再指定 `-console`。只有當 console 前端跟 API 不同源時（例如各自獨立部署），才需要另外用 `-console <url>` 覆蓋瀏覽器要開的網址。
 
 - **`onagent login --web [-api <url>] [-console <url>]`**：開啟瀏覽器走網頁登入流程。這是預設應該優先使用的方式，適合互動式終端機環境，也是唯一能確保跟 console 網頁 UI（例如之後建立 app、簽發 apiKey）使用同一組登入狀態的方式。
 - **`onagent login [-api <url>]`**：在終端機互動輸入 email/password 登入，不會開瀏覽器。適合沒有瀏覽器可用的環境（例如純 SSH、CI/無頭環境），或使用者明確表示不想開瀏覽器時使用。

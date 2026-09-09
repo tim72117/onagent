@@ -93,12 +93,15 @@ func usage() {
   onagent save-tools [-api <url>] <appId> <tools.yaml>
   onagent get-tools [-api <url>] <appId>
 
-  -api and -console both default to https://onagent.shuttle.tools (the
-  deployed onagent service). -console (login --web only) is the origin
-  the console front-end is served from — the CLI appends /app/cli-auth
-  itself, since that's the path prefix the console is mounted under.
-  Point either at a local onagent dev server with e.g. -api
-  http://localhost:8080 -console http://localhost:8080.`)
+  -api defaults to https://onagent.shuttle.tools (the deployed onagent
+  service). -console (login --web only) is the origin the console
+  front-end is served from — the CLI appends /app/cli-auth itself, since
+  that's the path prefix the console is mounted under — and defaults to
+  whatever -api resolved to, not always the deployed service, since a
+  local onagent dev server usually serves both from the same origin too.
+  Point this at a local onagent dev server with just -api
+  http://localhost:8080; only add -console separately if the console
+  truly lives somewhere else.`)
 }
 
 // --- login -------------------------------------------------------------
@@ -168,7 +171,7 @@ func runLoginPassword(args []string) error {
 // parts) and apps/console/src/CliAuthPage.tsx for the browser side.
 func runLoginWeb(args []string) error {
 	apiBase, rest := apiFlag(args)
-	consoleBase, rest := consoleFlag(rest)
+	consoleBase, rest := consoleFlag(rest, apiBase)
 	if len(rest) != 0 {
 		return fmt.Errorf("login --web takes no extra arguments")
 	}
@@ -843,9 +846,12 @@ func loadToken() (string, error) {
 
 // defaultServerURL is where onagent talks by default: the deployed onagent
 // backend, not localhost — most people running this CLI are talking to the
-// real service, not developing onagent itself. Both apiFlag and
-// consoleFlag default here since the console front-end is embedded
-// same-origin with the API in production (backend/cmd/server/web.go).
+// real service, not developing onagent itself. apiFlag defaults here;
+// consoleFlag instead defaults to apiFlag's own resolved value (see its
+// own comment) — both ultimately land on defaultServerURL only when
+// neither -api nor -console is overridden, matching how the console
+// front-end is embedded same-origin with the API in production
+// (backend/cmd/server/web.go).
 const defaultServerURL = "https://onagent.shuttle.tools"
 
 // apiFlag pulls an optional "-api <url>" out of args, wherever it appears
@@ -866,11 +872,22 @@ func apiFlag(args []string) (base string, rest []string) {
 
 // consoleFlag is apiFlag's counterpart for login --web: where the console
 // front-end (not the API) is served, since that's what actually opens in
-// the browser for the user to approve. Override with -console only — see
-// apiFlag's comment for why there's no environment variable form.
-func consoleFlag(args []string) (base string, rest []string) {
+// the browser for the user to approve. Defaults to apiBase (the resolved
+// -api value, already defaulted itself), not unconditionally to
+// defaultServerURL — the same "console is embedded same-origin with the
+// API" assumption defaultServerURL's own comment describes for production
+// also usually holds for a local onagent dev server, so overriding -api
+// alone (the natural thing to reach for when pointing this at a local
+// backend) now takes the browser along with it too. Without this, "-api
+// http://localhost:8080" silently left the browser opening the real
+// deployed console instead — a genuinely confusing failure mode, since
+// nothing here would tell you *why* login seemed to work against the
+// wrong environment. Override with -console only when the console truly
+// lives somewhere other than -api's origin — no environment variable, so
+// there's exactly one way to point either of these somewhere else.
+func consoleFlag(args []string, apiBase string) (base string, rest []string) {
 	val, rest := extractFlag(args, "-console")
-	base = defaultServerURL
+	base = apiBase
 	if val != "" {
 		base = val
 	}

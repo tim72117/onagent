@@ -6,6 +6,35 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.3.3
+
+No breaking changes — patch release.
+
+- Fix `onagent` CLI: `-console` (used by `login --web` to pick which
+  origin to open in the browser) now defaults to whatever `-api` resolved
+  to, instead of always defaulting to the deployed production console
+  regardless of `-api`. Previously, `onagent login --web -api
+  http://localhost:8081` silently opened the real
+  `https://onagent.shuttle.tools` console instead of the local one — a
+  confusing failure mode since nothing indicated why login appeared to
+  work against the wrong environment. `-console <url>` still overrides
+  explicitly when the console front-end truly lives somewhere other than
+  `-api`'s origin. Updated `packages/claude-skill/skill/SKILL.md`'s
+  onagent-cli-setup skill to describe the new default-inheritance
+  behavior.
+- Fix admin console's "Schema check" page permanently reporting the
+  `tools` table as drifted in production: its reference struct
+  (`toolsFull` in `backend/internal/adminconsole/schema_check.go`) was
+  never updated when `source_template` was added to the `tools` table
+  (v0.3.0's ToolWizard work), so the live database's real column looked
+  like an undeclared "extra column" to the checker. No database change —
+  the column already existed; only the check's own reference struct was
+  out of date.
+- Add favicon fallbacks (`favicon.ico`, `favicon-32x32.png`,
+  `apple-touch-icon.png`) alongside the existing SVG favicon across all
+  landing pages, since some crawlers and surfaces (e.g. search-result
+  favicon display) don't reliably resolve an SVG-only `<link rel="icon">`.
+
 ## v0.3.2
 
 No breaking changes — patch release. Follow-up fix to the mobile console
