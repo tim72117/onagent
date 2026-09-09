@@ -57,16 +57,52 @@ console layout added in v0.3.0.
   until the user manually opened the app picker.
 - `AppSettingsList.tsx`'s mobile header no longer embeds the app name
   next to the back arrow ("App settings" instead of `"<appId>" settings`).
-- `ToolEditSheet.tsx` no longer shows "Delete tool" for a brand-new,
-  untouched tool (the state right after "+ New tool" creates it,
-  before any field has been edited) — deleting reads as destroying saved
-  work when there's nothing here yet to lose. Disappears the moment any
-  field is edited.
 - `ToolWizard.tsx`'s mobile view no longer shows a "Cancel" button in its
   footer — mobile already has `SheetHeader`'s ✕ close button, making
   Cancel a second, redundant way to back out.
 - `apps/console/index.html`'s viewport meta now disables pinch/double-tap
   zoom (`maximum-scale=1.0, user-scalable=no`).
+- `ToolEditSheet.tsx`'s Name/Description/Parameters/Returns row sheets
+  each used to save straight back into `draft.tools` the moment their own
+  Save was pressed, autosaving after every single field instead of once
+  per editing session. `ToolEditSheet` now holds its own local draft;
+  each row sheet's Save only updates that, and `ToolEditSheet` gained its
+  own header Save that's the one point committing everything at once.
+- "+ New tool" no longer appends an empty tool to `draft.tools`
+  immediately — it stays local to `ToolEditSheet` (a dedicated `isNew`
+  instance) until its own Save actually adds it, so it can't show up
+  mid-creation in the Tools list, and Delete is hidden entirely (nothing
+  yet exists to delete). Closing it with unsaved edits now asks to
+  discard, via a new `App.tsx` `confirmDiscard` helper reusing the
+  existing shared `ConfirmModal`.
+- A tool's name can no longer be saved empty. It's the tool's actual
+  identifier (the LLM calls it by this string) and half of the backend's
+  `app_id`+`name` primary key, not just a display label — `ToolNameSheet`
+  and `ToolEditSheet`'s own Save both now block on `TOOL_NAME_RE`, not
+  just "changed from the original." Previously, clearing the name and
+  tapping Save appeared to succeed (the sheet closed) while `App.tsx`'s
+  autosave silently refused to persist it, leaving the tool permanently
+  stuck dirty with nothing explaining why.
+- Fix a real bug: a long tool description (or allowed-origin URL) forced
+  its row wider than the screen instead of truncating with an ellipsis,
+  which — combined with `overflow-y: auto` implicitly forcing
+  `overflow-x` to `auto` too — made the whole row list horizontally
+  scrollable, so every row (including ones with short text, like "Delete
+  tool") could appear shifted/clipped depending on scroll position. The
+  row's label+value wrapper needed `min-width: 0` for its `white-space:
+  nowrap`/`text-overflow: ellipsis` to actually take effect, instead of
+  forcing the flex item wider to fit the unwrapped text
+  (`ToolEditSheet.module.css`, `AppSettingsList.module.css`).
+- Fix the on-screen keyboard covering the focused field instead of the
+  sheet scrolling to reveal it. `apps/console/index.html`'s viewport
+  meta gained `interactive-widget=resizes-content`, so the browser
+  shrinks the layout viewport (and with it, every fullscreen
+  `position: fixed` `BottomSheet`) around the keyboard instead of leaving
+  it full-height with the keyboard just overlaid on top. A new
+  `focusField.ts` helper additionally scrolls the focused input into view
+  once `visualViewport`'s `resize` event confirms the keyboard has
+  actually finished opening (`ToolNameSheet`/`ToolDescriptionSheet`/
+  `OriginEditSheet`).
 
 ## v0.3.3
 
