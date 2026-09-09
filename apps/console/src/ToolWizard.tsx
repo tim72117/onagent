@@ -352,7 +352,7 @@ export function ToolWizard({
 
   return (
     <div
-      className={`modal-overlay ${styles.overlay} ${open ? styles.overlayOpen : ''}`}
+      className={`${styles.overlay} ${open ? styles.overlayOpen : ''}`}
       role="dialog"
       aria-modal="true"
       aria-label="New tool (guided)"
@@ -363,7 +363,7 @@ export function ToolWizard({
           sheet variant a stray tap discarding a multi-step edit in
           progress would be worse than requiring the explicit close (✕)
           button (same reasoning as BottomSheet's disableBackdropClose). */}
-      <div className={`modal ${styles.panel} ${open ? styles.panelOpen : ''}`}>
+      <div className={`${styles.panel} ${open ? styles.panelOpen : ''}`}>
         <div className={styles.mobileHeader}>
           <SheetHeader title={titleText} onClose={onClose} />
         </div>

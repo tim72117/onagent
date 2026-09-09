@@ -6,6 +6,29 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.3.2
+
+No breaking changes — patch release. Follow-up fix to the mobile console
+layout added in v0.3.0.
+
+- Fix a real regression: `ToolWizard.tsx` (the guided "Build one step by
+  step" tool-creation flow) rendered permanently visible on desktop with
+  no way to close it. v0.3.0 made this component always-mounted (so its
+  mobile full-screen-sheet variant can animate closed instead of just
+  unmounting), gating desktop visibility with a scoped `.overlay
+  {display:none}` / `.overlayOpen {display:flex}` pair composed onto the
+  same element as the shared global `.modal-overlay {display:flex}` class
+  (`KeyModal`/`AddAppModal`/`ConfirmModal` all reuse that same class for
+  their own centered-dialog look). Both rules have identical specificity
+  (one class selector each), so which one won was decided entirely by
+  Vite's CSS chunk ordering, not by `open`'s value — that ordering placed
+  `.modal-overlay`'s `display:flex` last, so the wizard was visible from
+  the moment the app loaded regardless of state. `.overlay`/`.panel` no
+  longer share the global `.modal-overlay`/`.modal` classes at all — they
+  now fully duplicate the handful of declarations those provided, so
+  there's no competing global rule left for chunk order to accidentally
+  favor.
+
 ## v0.3.1
 
 No breaking changes — patch release. Follow-up fixes to the mobile

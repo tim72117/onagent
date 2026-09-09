@@ -1,20 +1,49 @@
-/* ToolWizard-only styles — the shared .modal/.field/.checkbox-row shell
-   these compose with stays in style.css since KeyModal/AddAppModal/
-   ConfirmModal all reuse that same shell.
+/* ToolWizard-only styles. .modal-title/.modal-hint/.field/.checkbox-row/
+   .modal-actions (from style.css, also used by KeyModal/AddAppModal/
+   ConfirmModal) are still reused as-is below for pure presentation with
+   no open/closed state of its own — safe to share since nothing here
+   toggles their display.
 
-   ToolWizard is now always mounted (see App.tsx and ToolWizard.tsx's own
-   comment) instead of conditionally rendered, so .overlay/.panel below
-   need their own open/closed visibility instead of relying on mount/
-   unmount — but only on the mobile fullscreen-sheet variant further down,
-   which actually animates. On desktop the .modal-overlay/.modal look is
-   unchanged from before (just hidden outright via display:none when
-   !open, since there's nothing to animate there — same as this component
-   behaved when it was conditionally rendered). */
+   .overlay/.panel are NOT shared with those three modals' .modal-overlay/
+   .modal, even though the desktop look is meant to be identical — this
+   component is now always mounted (see App.tsx and ToolWizard.tsx's own
+   comment) instead of conditionally rendered like those three, so it
+   needs its own open/closed display toggle. An earlier version composed
+   `modal-overlay ${styles.overlay}` on the same element specifically so
+   it could inherit .modal-overlay's layout for free — but a scoped
+   .overlay{display:none} and the global .modal-overlay{display:flex}
+   are the SAME specificity (one class each), so which one won was
+   whichever landed later in the bundled CSS, decided by Vite's chunk
+   ordering rather than by anything in this file. That ordering put
+   .modal-overlay's display:flex last, so the wizard rendered permanently
+   visible on desktop with no way to close it — .overlayOpen's
+   display:flex was already redundant with the win .modal-overlay was
+   getting for free regardless of `open`. Duplicating .modal-overlay/
+   .modal's declarations into fully self-contained .overlay/.panel rules
+   (below) removes the shared class entirely, so there's no longer a
+   competing global rule for chunk order to accidentally favor. */
 .overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 40;
   display: none;
 }
 .overlayOpen {
   display: flex;
+}
+
+.panel {
+  width: 100%;
+  max-width: 520px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  padding: 24px;
 }
 
 /* Desktop title — shown only there; the mobile fullscreen variant uses
