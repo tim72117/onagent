@@ -45,12 +45,39 @@
 
 構想方向：新增一種對話式引導建立 tool 的方式，作為現有兩種方式（console 手動編輯、YAML + CLI）之外的第三種選項，不取代、也不影響 YAML + `onagent tool create` 這條既有路徑——依序詢問使用者這個工具的用途、類型、可能的參數有哪些、參數類型，由介面（可能搭配 LLM）幫使用者組出完整的 tool 定義，不需要使用者自己寫 JSON Schema。
 
-（這個構想已實作為 AI Tool Builder，見 `docs/ai-tool-builder-design-2026-09-09.md`。）
+（這個構想已實作為 AI Tool Builder——console 的「Generate with AI」流程，見 `apps/console/src/aiToolGenerator.ts`/`AiToolGeneratorSheet.tsx`，後端定義於 `backend/internal/console/tool-builder-tools.yaml`。設計文件已刪除，per-user provisioning、從 app 清單隱藏等尚未完成的部分見這兩個檔案的註解。）
 
 尚未拍板的細節：
 - 是獨立的新 UI 流程，還是整合進現有 console 的 tool 編輯器？
 - 引導問題本身是固定表單，還是用 LLM 動態追問？
 - 組出來的 tool 定義是直接存檔，還是先讓使用者確認/編輯過再存？
+
+## CLI `tool list`/`tool create` 輸出入格式不對稱（已確認、尚未修正）
+
+`backend/cmd/onagent/main.go` 的 `runGetTools`（`tool list`）與 `runSaveTools`（`tool create`）自己的註解互相矛盾：
+
+- `tool list`（`runGetTools`）：`client.getApp(appID)` 拿到整個 `toolschema.App`（`appId`/`tools:[...]`/`thought`），原封不動 `yaml.Marshal` 印出。其註解宣稱「Marshaled straight back out as toolschema.App's own yaml tags ... so this output can be piped into a file and round-tripped back in」。
+- `tool create`（`runSaveTools`）：`yaml.Unmarshal(data, &tool)` 讀進的是**單一 `toolschema.Tool`**（沒有外層 `tools:` 包裹，也沒有 `appId`/`thought`）。其註解自己承認「tool.yaml is a single tool's own fields ... not an App-shaped file with appId/tools/thought」。
+
+`apiClient.getApp`（`client.go` 對應方法）的 doc comment 也重複同樣的錯誤宣稱：「the same document runSaveTools sends, read back」。
+
+**實測結論**：只要 app 有 ≥1 個工具，`tool list <appId> > out.yaml` 的輸出直接餵給 `tool create <appId> out.yaml` 必定失敗——`yaml.Unmarshal` 把整個 `App` 塞進 `Tool` 型別，`tool.Name`/`Description`/`Parameters` 全部收不到值變成零值，`Validate()` 一定因為空 `name`/空 `parameters.type` 而報錯。沒有任何測試涵蓋這條路徑（`apiclient_test.go` 只測 HTTP client 層，不測 CLI 指令的 YAML 解析/組裝邏輯），這個矛盾因此從未被抓到。
+
+**已確認的修法方向**：把 `tool list` 的輸出格式改成單一 `Tool` 陣列（不再包 `appId`/`thought`），`tool create` 同步支援一次吃單一 `Tool` 或 `Tool` 陣列——讓兩者真正可以 round-trip。另一個備選方向（尚未拍板）：CLI 額外提供一個「整份 App-shaped YAML 一次載入」的指令（例如 `onagent app load <file.yaml>`），這樣 `backend/internal/console/tool-builder-tools.yaml` 這類完整 App 定義檔可以直接部署，不需要拆成多個單一 Tool 檔案。
+
+尚未修正——只完成了問題確認與根因分析，程式碼改動還沒動手。
+
+## `aiToolGenerator.ts` 重造 `Playground.tsx` 已有的 WebSocket 協定邏輯（已確認、尚未修正）
+
+`apps/console/src/aiToolGenerator.ts`（AI tool builder 的核心邏輯）自己手刻了一份 WebSocket 協定處理（hello → 等 ack → prompt → 處理 `tool_call` → 回 `tool_result`），跟 `apps/console/src/Playground.tsx` 已經寫好、驗證過的協定處理邏輯是兩份獨立、平行維護的實作，沒有共用程式碼。
+
+這被認為是 AI tool builder 曾經完全壞掉（`propose_tool` 設成 `kind: query` 但 `aiToolGenerator.ts` 只監聽 `tool_query`，實際上後端對 `kind: action` 的工具送的是 `tool_call`，導致訊息類型完全對不上、生成永遠逾時失敗）這個 bug 的背後根因——如果當初重用 `Playground.tsx` 已有的協定處理程式碼，而不是重新刻一份，這個訊息類型不匹配的錯誤本可以在寫程式當下就被既有邏輯的行為約束住，不會需要另外一次除錯才發現。這個 protocol type bug 已經在 commit `552db38` 修正（`kind: action` + 監聽 `tool_call`），但**重複實作本身**（根因）還沒解決。
+
+尚未拍板的細節：
+- 具體怎麼重構才能讓兩者共用協定處理邏輯（抽出共用的 hook/module，還是讓 `aiToolGenerator.ts` 直接複用 `Playground.tsx` 的某個內部函式）
+- 這次重構的優先順序——目前 protocol type 已經修好，功能上暫時堪用，這是一次「防止未來同類 bug 再發生」的技術債清理，不是緊急修復
+
+尚未修正——只完成了問題確認與根因分析，程式碼改動還沒動手。
 
 ## Playground 工具呼叫視覺化（構想，尚未拍板）
 

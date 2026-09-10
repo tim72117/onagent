@@ -16,9 +16,7 @@ import { randomRequestId } from './randomRequestId'
 // that nothing feeds the *content* of that result back into the LLM.
 //
 // TOOL_BUILDER_APP_ID is still hardcoded/shared, not yet provisioned per
-// user or hidden from the normal app list — see
-// docs/ai-tool-builder-design-2026-09-09.md's "Runtime notes" for what's
-// still outstanding there.
+// user or hidden from the normal app list.
 const TOOL_BUILDER_APP_ID = 'tool-builder'
 
 type Envelope = { type: string; requestId?: string; payload?: unknown }

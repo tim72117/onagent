@@ -11,8 +11,7 @@ import styles from './ToolFieldSheet.module.css'
 // real WebSocket round trip against the tool-builder app). On success,
 // onGenerated hands the proposed Tool to the caller's own isNew
 // ToolEditSheet instance for review/edit before Save — this sheet's job
-// ends the moment generation succeeds, not at Save (see
-// docs/ai-tool-builder-design-2026-09-09.md).
+// ends the moment generation succeeds, not at Save.
 export function AiToolGeneratorSheet({
   open,
   onClose,
