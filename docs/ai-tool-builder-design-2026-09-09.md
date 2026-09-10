@@ -24,9 +24,22 @@ inference code needed at all.
 
 The YAML below is checked into the repo verbatim as
 `backend/internal/console/tool-builder-tools.yaml` — the source of truth for
-`onagent save-tools tool-builder backend/internal/console/tool-builder-tools.yaml`
-whenever this app needs to be (re-)provisioned. Keep the two in sync if either
-changes.
+the `tool-builder` app's definition. No code loads this file automatically;
+provisioning (or re-provisioning after an edit) is a manual, one-time step
+run against whichever app id is actually being served (see "Runtime notes"
+below for why that's still a single shared `tool-builder` app id today), one
+tool at a time:
+
+```
+onagent tool create tool-builder <(yq '.tools[0]' backend/internal/console/tool-builder-tools.yaml)
+onagent app thought set tool-builder "$(yq '.thought' backend/internal/console/tool-builder-tools.yaml)"
+```
+
+(`onagent tool create` takes a single tool definition, not a whole app file —
+see the CLI's own `-h` output. There's no single command that provisions an
+app from this file end-to-end; the two pieces, `thought` and `tools`, are
+pushed separately.) Keep the file and whatever's actually live in sync by
+hand if either changes.
 
 ```yaml
 appId: tool-builder      # see "Runtime notes" below on how this is actually provisioned per user
@@ -97,9 +110,14 @@ tools:
 
 Notes on this shape:
 
-- `propose_tool` itself is declared `kind: query` (see `toolschema.Tool.Kind`)
-  so the console can block on its `tool_result` and know the turn is
-  genuinely finished — see "Runtime notes" below.
+- `propose_tool` itself is declared `kind: action` (see
+  `toolschema.Tool.Kind`), not `query` — its `returns` block is only ever
+  read by the frontend's own bookkeeping (it marks the turn as finished
+  once the proposal arrives), never fed back into the LLM's reasoning, so
+  it's fire-and-forget rather than a blocking query. The backend still
+  waits for a `tool_result` regardless of `Kind` (see
+  `ws.Session.AskInteraction`), so the frontend always sends one back; it
+  just never reads its content.
 - `parameters`/`returns` inside `propose_tool`'s own schema are typed as
   `object` with a **prose description** of the nested shape, rather than a
   fully recursive JSON Schema meta-schema. `ParameterSchema` (this codebase's
@@ -162,7 +180,8 @@ docs/comments.
 Frontend wiring (WebSocket protocol handling, minimal generate UI,
 `propose_tool` argument handoff into `ToolEditSheet`) is implemented as
 `AiToolGeneratorSheet.tsx`/`aiToolGenerator.ts` — `propose_tool` is
-`kind: query`, so the backend sends `TypeToolQuery`, not `TypeToolCall`
-(see `protocol/message.go`'s doc comment on the distinction); the first
-implementation listened only for `tool_call` and so never saw the actual
-`tool_query` message, always timing out after 30s — now fixed.
+`kind: action` (see above), so the backend sends `TypeToolCall`, not
+`TypeToolQuery` (see `protocol/message.go`'s doc comment on the
+distinction). The first implementation assumed the opposite and listened
+only for `tool_query`, so it never saw the actual `tool_call` message and
+always timed out after 30s — fixed by listening for `tool_call` instead.

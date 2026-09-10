@@ -927,8 +927,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     var term = document.getElementById('term');
     var lines = [
       { t: 'comment', text: '# 1. Define a tool, push it to the platform' },
-      { t: 'prompt', cmd: 'onagent save-tools demo-app tools' },
-      { t: 'ok', text: '✓ Saved 1 tool to "demo-app"' },
+      { t: 'prompt', cmd: 'onagent tool create demo-app tool.yaml' },
+      { t: 'ok', text: '✓ Saved "tool.yaml" to "demo-app"' },
       { t: 'gap' },
       { t: 'comment', text: '# 2. Embed the SDK in your frontend' },
       { t: 'prompt', cmd: 'npm i @onagent/bridge' },

@@ -29,10 +29,75 @@ Breaking changes:
   round-trip within a single prompt, all sharing that prompt's
   `RequestID`, and those rows must all count — see `quota.Record`'s doc
   comment.
-- `quota.UserSummary.TotalTokens` (admin API JSON field `totalTokens`) is
-  removed — it was always numerically identical to `Used` once quota
-  enforcement moved to a token-sum model, so the two API fields collapsed
-  into one meaning with no consumer left reading the removed one.
+- `quota.UserSummary.Used` (admin API JSON field `used`) keeps its name
+  and type but changes meaning: it used to be a `COUNT(*)` of billable
+  prompts in the current period, and is now a `SUM(usage_events.
+  total_tokens)`. Any consumer that displayed this number as-is now shows
+  a token count instead of a prompt count, silently.
+- `quota.Service.Check(ctx context.Context, appID string)` is now
+  `Check(ctx context.Context, userID int64)` — it no longer resolves a
+  standing from the app's owner, but takes the billable user directly.
+  Every caller (`ws.APIKeyResolver.ResolveApp`, `ws.Session.
+  handlePrompt`, `console.playgroundResolver.ResolveApp`) was updated to
+  pass the same userID it bills to `Record` — see "Other fixes" below for
+  why this mattered.
+- `apps.allowed_origin TEXT` (single origin) is replaced by
+  `apps.allowed_origins TEXT[]` (multiple origins); existing rows are
+  migrated automatically and the old column dropped. Follows through the
+  whole stack: `auth.Store.SetOrigin(appID, origin string)` →
+  `SetOrigins(appID string, origins []string)`, `auth.Store.OriginFor` →
+  `OriginsFor` (returns `[]string`), `auth.VerifyResult.AllowedOrigin
+  string` → `AllowedOrigins []string`. Console REST: `PUT /console/apps/
+  {appId}/origin` request body `{"origin": string}` → `{"origins":
+  [string, ...]}`; the `appSummary` response's `allowedOrigin string` →
+  `allowedOrigins []string`. `onagent` CLI: `set-origin` renamed to `app
+  origin set` (still takes one origin on the command line, sent as a
+  one-element array).
+- `apps.owner_id` is now `NOT NULL` (existing NULL-owner rows are
+  backfilled to a fixed user id by the migration) — any code path that
+  wrote an `apps` row without an owner now fails at the database level
+  instead of silently creating an orphaned app. `onagent save-tools` (the
+  old command; see the CLI rename below) could previously do this; its
+  replacement always requires an existing, owned app.
+- `ws.AppResolver.ResolveApp`'s return signature gains a `userID int64`
+  (inserted between `sessionID` and `ok`) — both implementations
+  (`ws.APIKeyResolver`, `console.playgroundResolver`) and `ws.NewSession`
+  (new 8th parameter, `userID int64`) were updated; any other
+  implementation of this interface fails to compile.
+- `toolschema.Registry.Save(app *App) error` (replace an app's entire
+  tool set in one call) is removed, replaced by `Registry.SaveTool(appID
+  string, tool Tool) error` (upsert one tool by name, leaving the app's
+  other tools untouched) and `Registry.DeleteTool(appID, name string)
+  error`. Console REST: `PUT /console/apps/{appId}/tools` (replace the
+  whole array) is removed, replaced by `PUT /console/apps/{appId}/tools/
+  {toolName}` (upsert one tool; the body's `name` must match the URL) and
+  `DELETE /console/apps/{appId}/tools/{toolName}`.
+- `onagent` CLI's command tree is restructured into `<resource> <verb>`
+  form; every old command name is removed outright (running it prints
+  usage and exits non-zero, it does not alias to the new name):
+  `list-apps`→`app list`, `create-app`→`app create`,
+  `set-origin`→`app origin set`, `set-thought`→`app thought set`,
+  `issue-key`→`key issue`, `get-tools`→`tool list`. `save-tools`→`tool
+  create` is also a semantic change, not just a rename: the old command
+  read a whole-app YAML file (`appId`/`thought`/`tools[]`) and replaced
+  every tool on the app; the new command reads a single tool's YAML file
+  and upserts just that one tool. New commands with no old equivalent:
+  `app delete`, `key revoke`, `tool delete`.
+- Console REST handlers now decode request bodies with
+  `DisallowUnknownFields()` — an unrecognized JSON field used to be
+  silently ignored and is now rejected with `400 Bad Request`. Applies to
+  every endpoint that takes a body (`register`, `login`, `createApp`,
+  `setOrigin`, `setThought`, the new `saveTool`/`deleteTool`,
+  `issueToken`, `startCliAuth`).
+
+Also new in this release, not breaking: `toolschema.App.Public` /
+`apps.public` (new column, default `false`) lets an app's owner mark it
+public, so any signed-in user can try it from the console's Playground
+(`console.ownedOrPublicApp`) — REST management endpoints (edit/delete/
+key/origin) remain owner-only regardless of this flag. And the
+AI-assisted tool builder feature itself (`AiToolGeneratorSheet.tsx`,
+`aiToolGenerator.ts`, `backend/internal/console/tool-builder-tools.yaml`)
+— see "Other fixes" below for the bug that shipped with it.
 
 Why the quota model changed: prompt count was a poor proxy for actual LLM
 cost once a single prompt could trigger a variable number of internal
@@ -60,12 +125,23 @@ Other fixes:
 
 - Fix a real bug in the AI-assisted tool builder feature ("Generate with
   AI" in the mobile console): `aiToolGenerator.ts` only listened for a
-  `tool_call` WebSocket message, but its one tool (`propose_tool`) is
-  declared `kind: query`, so the backend actually sends `TypeToolQuery`
-  ("tool_query"), never `TypeToolCall` — the frontend never saw the
-  message and always timed out after 30s, even when the LLM successfully
-  proposed a tool. Fixed to listen for `tool_query`, matching what
-  `protocol/message.go` actually sends for a query-kind tool.
+  `tool_query` WebSocket message, but its one tool (`propose_tool`) is
+  fire-and-forget — its acknowledgement is never reasoned about further,
+  so it's correctly declared `kind: action`, not `query` — meaning the
+  backend actually sends `TypeToolCall` ("tool_call"), never
+  `TypeToolQuery`. The frontend never saw the message and always timed
+  out after 30s, even when the LLM successfully proposed a tool. Fixed to
+  listen for `tool_call`, matching what `protocol/message.go` actually
+  sends for an action-kind tool; also corrected
+  `backend/internal/console/tool-builder-tools.yaml`, which had
+  documented the wrong `kind: query` and was the source of the mistaken
+  assumption in the first place.
+- Fix `quota.Service.Check` checking the wrong user (see the breaking
+  `Check` signature change above): for a Public app, a visitor was gated
+  against the **app owner's** standing instead of their own — meaning a
+  visitor could exhaust their own quota and keep using any Public app for
+  free (nobody was checking them), while the owner could be wrongly
+  blocked by usage that wasn't theirs.
 - Fix a real bug in `onagent` CLI's `set-origin` command: it sent
   `{"origin": "<value>"}` (a singular string field) to the backend, but
   `console.go`'s handler only reads `{"origins": [...]}` (a plural array
@@ -94,11 +170,28 @@ Other fixes:
   states a specific prompt-count allowance for the Free plan (stale after
   the token-based quota change), replaced with "a small monthly usage
   allowance for testing."
-- `docs/ai-tool-builder-design-2026-09-09.md`: corrected the `tool_call`/
-  `tool_query` mismatch in its own runtime notes (it prescribed the buggy
-  `tool_call` listening behavior above), and removed the "Frontend" TODO
-  item now that it's implemented — the app's own per-user provisioning
-  ("Ownership"/"Hiding it from the normal app list") remains un-implemented.
+- `docs/ai-tool-builder-design-2026-09-09.md`: corrected its own
+  `propose_tool` YAML example (`kind: query` → `kind: action`) and
+  runtime notes, which had documented the wrong assumption that caused
+  the `tool_call`/`tool_query` bug above in the first place; the app's
+  own per-user provisioning ("Ownership"/"Hiding it from the normal app
+  list") remains un-implemented, and provisioning `tool-builder` itself
+  is still a manual step (no code loads its YAML file automatically).
+- `apps/landing/docs/index.html` (and its Traditional Chinese landing
+  page's terminal demo): every CLI command reference updated to the new
+  `onagent app|key|tool <verb>` command tree (see the CLI breaking change
+  above) — `list-apps`→`app list`, `create-app`→`app create`,
+  `set-origin`→`app origin set`, `set-thought`→`app thought set`,
+  `issue-key`→`key issue`, and the `save-tools`/`get-tools` sections
+  rewritten for the new single-tool-per-file semantics (`tool create`/
+  `tool list`), including new `app delete`/`key revoke`/`tool delete`
+  rows in the command reference table. This page was the primary
+  external-facing integration guide and had not been updated when the
+  CLI command tree changed.
+- `docs/backend-dispatch-integration-guide-2026-08-10.md`,
+  `docs/deployment.md`, `docs/known-issues-pending-discussion.md`:
+  updated stale `save-tools`/`issue-key` command references and YAML
+  examples to match the new CLI command tree and single-tool file shape.
 
 ## v0.3.5
 

@@ -39,9 +39,13 @@
 
 ## Tool 定義簡化設定（構想，尚未拍板）
 
-目前建立 tool 定義只能用兩種方式：console 網頁的 tool 編輯器手動輸入，或撰寫本機 `tools.yaml` 用 `onagent save-tools` 推送——兩者都要求使用者自己寫出完整的 JSON Schema（`name`/`description`/`parameters`/`properties` 等），對不熟悉 JSON Schema 的使用者有門檻。
+目前建立 tool 定義只能用兩種方式：console 網頁的 tool 編輯器手動輸入，或撰寫本機單一 tool 的 YAML 檔用 `onagent tool create` 推送——兩者都要求使用者自己寫出完整的 JSON Schema（`name`/`description`/`parameters`/`properties` 等），對不熟悉 JSON Schema 的使用者有門檻。
 
-構想方向：新增一種對話式引導建立 tool 的方式，作為現有兩種方式（console 手動編輯、`tools.yaml` + CLI）之外的第三種選項，不取代、也不影響 `tools.yaml` + `onagent save-tools` 這條既有路徑——依序詢問使用者這個工具的用途、類型、可能的參數有哪些、參數類型，由介面（可能搭配 LLM）幫使用者組出完整的 tool 定義，不需要使用者自己寫 JSON Schema。
+（本節寫成時 CLI 指令仍叫 `save-tools`，已隨 CLI 指令樹重構改名為 `tool create`，且語意從整批覆蓋一個 app 的所有 tools 改成單一 tool 的 upsert——不影響這裡的構想方向本身。）
+
+構想方向：新增一種對話式引導建立 tool 的方式，作為現有兩種方式（console 手動編輯、YAML + CLI）之外的第三種選項，不取代、也不影響 YAML + `onagent tool create` 這條既有路徑——依序詢問使用者這個工具的用途、類型、可能的參數有哪些、參數類型，由介面（可能搭配 LLM）幫使用者組出完整的 tool 定義，不需要使用者自己寫 JSON Schema。
+
+（這個構想已實作為 AI Tool Builder，見 `docs/ai-tool-builder-design-2026-09-09.md`。）
 
 尚未拍板的細節：
 - 是獨立的新 UI 流程，還是整合進現有 console 的 tool 編輯器？

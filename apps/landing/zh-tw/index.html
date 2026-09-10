@@ -885,8 +885,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     var term = document.getElementById('term');
     var lines = [
       { t: 'comment', text: '# 1. 定義一個 tool，推上平台' },
-      { t: 'prompt', cmd: 'onagent save-tools demo-app tools' },
-      { t: 'ok', text: '✓ Saved 1 tool to "demo-app"' },
+      { t: 'prompt', cmd: 'onagent tool create demo-app tool.yaml' },
+      { t: 'ok', text: '✓ Saved "tool.yaml" to "demo-app"' },
       { t: 'gap' },
       { t: 'comment', text: '# 2. 前端嵌入 SDK' },
       { t: 'prompt', cmd: 'npm i @onagent/bridge' },

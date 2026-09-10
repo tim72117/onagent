@@ -477,7 +477,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> onagent list-apps
+          <pre><span class="t-prompt">$</span> onagent app list
 <span class="t-com"># a list of apps (even an empty one) means you're logged in.</span>
 <span class="t-com"># "not logged in" means onagent login hasn't succeeded yet.</span></pre>
         </div>
@@ -506,13 +506,16 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
             <tbody>
               <tr><td>login</td><td>—</td><td>Sign in with email/password typed into the terminal.</td></tr>
               <tr><td>login --web</td><td><code>[-console &lt;url&gt;]</code></td><td>Sign in via a browser tab; token is exchanged through a local callback server.</td></tr>
-              <tr><td>list-apps</td><td>—</td><td>List your apps, each with tool count and whether a key exists.</td></tr>
-              <tr><td>create-app</td><td><code>&lt;appId&gt;</code></td><td>Create a new app namespace.</td></tr>
-              <tr><td>issue-key</td><td><code>&lt;appId&gt;</code></td><td>Mint a new API key for the app, shown once. Revokes any previous key immediately.</td></tr>
-              <tr><td>set-origin</td><td><code>&lt;appId&gt; &lt;origin&gt;</code></td><td>Set the exact allowed browser origin for this app's WebSocket connections.</td></tr>
-              <tr><td>set-thought</td><td><code>&lt;appId&gt; &lt;thought&gt;</code></td><td>Set (or, with an empty string, clear) the app's custom system prompt.</td></tr>
-              <tr><td>save-tools</td><td><code>&lt;appId&gt; &lt;tools.yaml&gt;</code></td><td>Validate and upload the <code>tools</code> array from a local YAML file.</td></tr>
-              <tr><td>get-tools</td><td><code>&lt;appId&gt;</code></td><td>Print the app's current tool definitions as YAML, in the same shape <code>save-tools</code> reads.</td></tr>
+              <tr><td>app list</td><td>—</td><td>List your apps, each with tool count and whether a key exists.</td></tr>
+              <tr><td>app create</td><td><code>&lt;appId&gt;</code></td><td>Create a new app namespace.</td></tr>
+              <tr><td>app delete</td><td><code>&lt;appId&gt;</code></td><td>Delete an app and everything under it (tools, key, origin). Cannot be undone.</td></tr>
+              <tr><td>app origin set</td><td><code>&lt;appId&gt; &lt;origin&gt;</code></td><td>Set the exact allowed browser origin for this app's WebSocket connections.</td></tr>
+              <tr><td>app thought set</td><td><code>&lt;appId&gt; &lt;thought&gt;</code></td><td>Set (or, with an empty string, clear) the app's custom system prompt.</td></tr>
+              <tr><td>key issue</td><td><code>&lt;appId&gt;</code></td><td>Mint a new API key for the app, shown once. Revokes any previous key immediately.</td></tr>
+              <tr><td>key revoke</td><td><code>&lt;appId&gt;</code></td><td>Revoke the app's current API key immediately.</td></tr>
+              <tr><td>tool list</td><td><code>&lt;appId&gt;</code></td><td>Print the app's current tool definitions as YAML.</td></tr>
+              <tr><td>tool create</td><td><code>&lt;appId&gt; &lt;tool.yaml&gt;</code></td><td>Validate and upload one tool definition from a local YAML file, adding it or replacing the existing tool of the same name — other tools on the app are untouched.</td></tr>
+              <tr><td>tool delete</td><td><code>&lt;appId&gt; &lt;toolName&gt;</code></td><td>Remove one tool from the app by name.</td></tr>
             </tbody>
           </table>
         </div>
@@ -538,7 +541,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> onagent create-app my-app
+          <pre><span class="t-prompt">$</span> onagent app create my-app
 Created app <span class="t-str">"my-app"</span>.</pre>
         </div>
         <p class="body-text">Or in the console: sign in at <code>/app</code> and click <strong style="color:var(--text)">+ New app</strong>.</p>
@@ -549,7 +552,7 @@ Created app <span class="t-str">"my-app"</span>.</pre>
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> onagent issue-key my-app
+          <pre><span class="t-prompt">$</span> onagent key issue my-app
 API key for <span class="t-str">"my-app"</span> (shown once — copy it now, it can't be retrieved again):
   <span class="t-str">sk_live_ab12cd34...</span>
 Issuing a new key later immediately revokes this one.</pre>
@@ -574,7 +577,7 @@ Issuing a new key later immediately revokes this one.</pre>
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> onagent set-origin my-app https://your-site.example.com
+          <pre><span class="t-prompt">$</span> onagent app origin set my-app https://your-site.example.com
 Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">"https://your-site.example.com"</span>.</pre>
         </div>
         <p class="body-text">
@@ -608,25 +611,14 @@ Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">
         <p class="intro">
           A tool is one capability your page exposes to the LLM: a name it calls, a description that tells the
           model when to use it, and a JSON-Schema-shaped set of parameters. You can define tools two ways —
-          hand-write a <code>tools.yaml</code> and push it with <code>onagent save-tools</code>, or use the console's
+          hand-write a YAML file per tool and push it with <code>onagent tool create</code>, or use the console's
           built-in tool editor. Both write to the exact same underlying definition; use whichever fits how many
-          tools you have and whether you want them under version control.
+          tools you have and whether you want them under version control. <code>onagent tool create</code> adds
+          or replaces one tool at a time by name — it never touches the app's other tools.
         </p>
 
-        <h3 class="sub-head" id="tools-yaml-schema">tools.yaml schema</h3>
-        <p class="body-text">Top-level fields:</p>
-        <div class="table-wrap">
-          <table class="doc-table">
-            <thead><tr><th>Field</th><th>Required</th><th>Notes</th></tr></thead>
-            <tbody>
-              <tr><td>appId</td><td>No</td><td>May be present but is ignored by <code>onagent save-tools</code> — the <code>appId</code> given as a command-line argument always wins. This lets one <code>tools.yaml</code> be reused verbatim across multiple apps.</td></tr>
-              <tr><td>thought</td><td>No</td><td>The app's custom system prompt for the agent that selects tools (see <a href="#tool-kind">below</a>). Omit to use the platform default.</td></tr>
-              <tr><td>tools</td><td>Yes</td><td>Array of tool definitions — see below. This is the only part of the file <code>save-tools</code> actually sends.</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <p class="body-text">Each entry under <code>tools</code>:</p>
+        <h3 class="sub-head" id="tools-yaml-schema">tool.yaml schema</h3>
+        <p class="body-text">One file describes one tool — these are its fields:</p>
         <div class="table-wrap">
           <table class="doc-table">
             <thead><tr><th>Field</th><th>Required</th><th>Notes</th></tr></thead>
@@ -642,50 +634,53 @@ Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">
 
         <div class="code-block">
           <div class="cb-top">
-            <div class="cb-file"><span class="fdot"></span>tools.yaml</div>
+            <div class="cb-file"><span class="fdot"></span>search_products.yaml</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-key">appId</span><span class="t-punc">:</span> <span class="t-str">my-app</span>   <span class="t-com"># optional — ignored by save-tools; the CLI arg wins</span>
-<span class="t-key">thought</span><span class="t-punc">:</span> <span class="t-str">""</span>    <span class="t-com"># optional — custom system prompt, or omit for the default</span>
-<span class="t-key">tools</span><span class="t-punc">:</span>
-  <span class="t-punc">-</span> <span class="t-key">name</span><span class="t-punc">:</span> <span class="t-str">search_products</span>
-    <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">Search the product catalog by keyword.</span>
-    <span class="t-key">parameters</span><span class="t-punc">:</span>
-      <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">object</span>
-      <span class="t-key">properties</span><span class="t-punc">:</span>
-        <span class="t-key">query</span><span class="t-punc">:</span>
-          <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span>
-          <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">The search keywords.</span>
-        <span class="t-key">maxResults</span><span class="t-punc">:</span>
-          <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">integer</span>
-      <span class="t-key">required</span><span class="t-punc">:</span>
-        <span class="t-punc">-</span> <span class="t-str">query</span>
-    <span class="t-key">returns</span><span class="t-punc">:</span>
-      <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">array</span>
-      <span class="t-key">items</span><span class="t-punc">:</span>
-        <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">object</span>
-        <span class="t-key">properties</span><span class="t-punc">:</span>
-          <span class="t-key">id</span><span class="t-punc">:</span> <span class="t-punc">{</span> <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span> <span class="t-punc">}</span>
-          <span class="t-key">name</span><span class="t-punc">:</span> <span class="t-punc">{</span> <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span> <span class="t-punc">}</span>
-    <span class="t-key">kind</span><span class="t-punc">:</span> <span class="t-str">query</span>   <span class="t-com"># the LLM needs the actual search results back</span>
-
-  <span class="t-punc">-</span> <span class="t-key">name</span><span class="t-punc">:</span> <span class="t-str">add_to_cart</span>
-    <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">Add a product to the current user's shopping cart.</span>
-    <span class="t-key">parameters</span><span class="t-punc">:</span>
-      <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">object</span>
-      <span class="t-key">properties</span><span class="t-punc">:</span>
-        <span class="t-key">productId</span><span class="t-punc">:</span>
-          <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span>
-          <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">The product's unique ID.</span>
-        <span class="t-key">quantity</span><span class="t-punc">:</span>
-          <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">integer</span>
-          <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">How many units to add. Defaults to 1 if omitted.</span>
-        <span class="t-key">giftWrap</span><span class="t-punc">:</span>
-          <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span>
-          <span class="t-key">enum</span><span class="t-punc">:</span> <span class="t-punc">[</span><span class="t-str">none</span><span class="t-punc">,</span> <span class="t-str">standard</span><span class="t-punc">,</span> <span class="t-str">premium</span><span class="t-punc">]</span>   <span class="t-com"># constrains the LLM to one of these three</span>
-      <span class="t-key">required</span><span class="t-punc">:</span>
-        <span class="t-punc">-</span> <span class="t-str">productId</span>
-    <span class="t-com"># kind omitted → defaults to "action"</span></pre>
+          <pre><span class="t-key">name</span><span class="t-punc">:</span> <span class="t-str">search_products</span>
+<span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">Search the product catalog by keyword.</span>
+<span class="t-key">parameters</span><span class="t-punc">:</span>
+  <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">object</span>
+  <span class="t-key">properties</span><span class="t-punc">:</span>
+    <span class="t-key">query</span><span class="t-punc">:</span>
+      <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span>
+      <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">The search keywords.</span>
+    <span class="t-key">maxResults</span><span class="t-punc">:</span>
+      <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">integer</span>
+  <span class="t-key">required</span><span class="t-punc">:</span>
+    <span class="t-punc">-</span> <span class="t-str">query</span>
+<span class="t-key">returns</span><span class="t-punc">:</span>
+  <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">array</span>
+  <span class="t-key">items</span><span class="t-punc">:</span>
+    <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">object</span>
+    <span class="t-key">properties</span><span class="t-punc">:</span>
+      <span class="t-key">id</span><span class="t-punc">:</span> <span class="t-punc">{</span> <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span> <span class="t-punc">}</span>
+      <span class="t-key">name</span><span class="t-punc">:</span> <span class="t-punc">{</span> <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span> <span class="t-punc">}</span>
+<span class="t-key">kind</span><span class="t-punc">:</span> <span class="t-str">query</span>   <span class="t-com"># the LLM needs the actual search results back</span></pre>
+        </div>
+        <p class="body-text">A second tool, with no <code>kind</code> (defaults to <code>action</code>):</p>
+        <div class="code-block">
+          <div class="cb-top">
+            <div class="cb-file"><span class="fdot"></span>add_to_cart.yaml</div>
+            <button class="copy-btn" data-copy>Copy</button>
+          </div>
+          <pre><span class="t-key">name</span><span class="t-punc">:</span> <span class="t-str">add_to_cart</span>
+<span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">Add a product to the current user's shopping cart.</span>
+<span class="t-key">parameters</span><span class="t-punc">:</span>
+  <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">object</span>
+  <span class="t-key">properties</span><span class="t-punc">:</span>
+    <span class="t-key">productId</span><span class="t-punc">:</span>
+      <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span>
+      <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">The product's unique ID.</span>
+    <span class="t-key">quantity</span><span class="t-punc">:</span>
+      <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">integer</span>
+      <span class="t-key">description</span><span class="t-punc">:</span> <span class="t-str">How many units to add. Defaults to 1 if omitted.</span>
+    <span class="t-key">giftWrap</span><span class="t-punc">:</span>
+      <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span>
+      <span class="t-key">enum</span><span class="t-punc">:</span> <span class="t-punc">[</span><span class="t-str">none</span><span class="t-punc">,</span> <span class="t-str">standard</span><span class="t-punc">,</span> <span class="t-str">premium</span><span class="t-punc">]</span>   <span class="t-com"># constrains the LLM to one of these three</span>
+  <span class="t-key">required</span><span class="t-punc">:</span>
+    <span class="t-punc">-</span> <span class="t-str">productId</span>
+<span class="t-com"># kind omitted → defaults to "action"</span></pre>
         </div>
 
         <h3 class="sub-head" id="tool-kind">action vs. query — both block, they differ in what the LLM sees back</h3>
@@ -718,26 +713,27 @@ Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">
         </div>
 
         <h3 class="sub-head" id="push-tools">Push tools</h3>
-        <p class="body-text">Save the YAML above as <code>tools.yaml</code> and push it:</p>
+        <p class="body-text">Save each YAML above to its own file and push them one at a time — this adds the tool, or replaces the existing tool of that name if it already exists:</p>
         <div class="code-block">
           <div class="cb-top">
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> onagent save-tools my-app tools.yaml
-Saved 2 tools to <span class="t-str">"my-app"</span>.</pre>
+          <pre><span class="t-prompt">$</span> onagent tool create my-app search_products.yaml
+Saved <span class="t-str">"search_products"</span> to <span class="t-str">"my-app"</span>.
+<span class="t-prompt">$</span> onagent tool create my-app add_to_cart.yaml
+Saved <span class="t-str">"add_to_cart"</span> to <span class="t-str">"my-app"</span>.</pre>
         </div>
         <p class="body-text">
           <code>onagent</code> validates the file locally before sending anything. The most common validation failures:
         </p>
         <ul class="doc-list">
           <li><strong>Invalid tool name</strong> — doesn't match <code>^[a-zA-Z_][a-zA-Z0-9_]*$</code> (no hyphens, no leading digit, no spaces).</li>
-          <li><strong>Missing <code>description</code></strong> on a tool.</li>
+          <li><strong>Missing <code>description</code></strong> on the tool.</li>
           <li><strong>Missing <code>parameters.type</code></strong> — the <code>parameters</code> block (or its <code>type</code> field) was omitted entirely.</li>
-          <li><strong>Duplicate tool <code>name</code></strong> within the same app.</li>
         </ul>
         <p class="body-text">
-          To read back what's currently saved (e.g. to diff against your local file, or seed a new file from the
+          To read back what's currently saved (e.g. to diff against your local files, or seed a new file from the
           console editor's state):
         </p>
         <div class="code-block">
@@ -745,7 +741,15 @@ Saved 2 tools to <span class="t-str">"my-app"</span>.</pre>
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> onagent get-tools my-app <span class="t-com">> tools.yaml</span></pre>
+          <pre><span class="t-prompt">$</span> onagent tool list my-app</pre>
+        </div>
+        <p class="body-text">To remove a tool from the app:</p>
+        <div class="code-block">
+          <div class="cb-top">
+            <div class="cb-file"><span class="fdot"></span>terminal</div>
+            <button class="copy-btn" data-copy>Copy</button>
+          </div>
+          <pre><span class="t-prompt">$</span> onagent tool delete my-app add_to_cart</pre>
         </div>
 
         <h4 class="micro-head">Setting a custom thought (system prompt)</h4>
@@ -758,10 +762,10 @@ Saved 2 tools to <span class="t-str">"my-app"</span>.</pre>
             <div class="cb-file"><span class="fdot"></span>terminal</div>
             <button class="copy-btn" data-copy>Copy</button>
           </div>
-          <pre><span class="t-prompt">$</span> onagent set-thought my-app <span class="t-str">"Always confirm destructive actions before calling them."</span>
+          <pre><span class="t-prompt">$</span> onagent app thought set my-app <span class="t-str">"Always confirm destructive actions before calling them."</span>
 Set <span class="t-str">"my-app"</span>'s thought.</pre>
         </div>
-        <p class="body-text">Pass an empty string to clear it and fall back to the platform default; this can also be embedded as the top-level <code>thought</code> field in <code>tools.yaml</code>.</p>
+        <p class="body-text">Pass an empty string to clear it and fall back to the platform default.</p>
       </section>
 
       <!-- ============================================================ -->
@@ -819,7 +823,7 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
             <tbody>
               <tr><td>url</td><td>Yes</td><td>WebSocket endpoint, e.g. <code>wss://onagent.shuttle.tools/ws</code>. Always use <code>wss://</code>, never <code>ws://</code> — the API key rides in a URL query parameter on the handshake (browsers can't attach custom headers to a WebSocket upgrade), so an unencrypted connection puts it on the wire, and often in server access logs, in plaintext.</td></tr>
               <tr><td>appId</td><td>Yes</td><td>The app whose tool set this session loads.</td></tr>
-              <tr><td>apiKey</td><td>No</td><td>The key from <code>onagent issue-key</code>. When set, it always overrides <code>appId</code> for authorization (the backend resolves the real appId server-side from the key). Omit only when connecting to a backend explicitly configured to allow its dev/no-auth mode.</td></tr>
+              <tr><td>apiKey</td><td>No</td><td>The key from <code>onagent key issue</code>. When set, it always overrides <code>appId</code> for authorization (the backend resolves the real appId server-side from the key). Omit only when connecting to a backend explicitly configured to allow its dev/no-auth mode.</td></tr>
               <tr><td>tools</td><td>Yes</td><td>Either a <code>Record&lt;string, ToolHandler&gt;</code> map you build yourself, or a <code>ToolEntry[]</code> array (see <a href="#define-tool"><code>defineTool</code></a> below) — the constructor normalizes either shape the same way, including a duplicate-name check. See <a href="#tool-handlers">Implement tool handlers</a>.</td></tr>
               <tr><td>onAssistantMessage</td><td>No</td><td><code>(text: string) =&gt; void</code> — called with natural-language messages meant for display to the user (e.g. render into a chat panel).</td></tr>
               <tr><td>onError</td><td>No</td><td><code>(err) =&gt; void</code> — called on protocol/inference errors not tied to one specific call.</td></tr>
@@ -833,11 +837,11 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
         <h3 class="sub-head" id="tool-handlers">Implement tool handlers</h3>
         <p class="body-text">
           Each key in <code>tools</code> must match a tool name your app has pushed to the platform (via
-          <code>save-tools</code> or the console editor). A handler receives the call's parsed arguments and
+          <code>tool create</code> or the console editor). A handler receives the call's parsed arguments and
           returns (or resolves to) whatever value is appropriate for that tool's <code>kind</code>:
         </p>
         <ul class="doc-list">
-          <li>For an <code>action</code> tool, the return value is ignored by the LLM — only whether your handler threw determines success/failure. Still return something meaningful if you want it visible via <code>get-tools</code>/codegen tooling, but don't rely on the model seeing it.</li>
+          <li>For an <code>action</code> tool, the return value is ignored by the LLM — only whether your handler threw determines success/failure. Still return something meaningful if you want it visible via <code>tool list</code>/codegen tooling, but don't rely on the model seeing it.</li>
           <li>For a <code>query</code> tool, whatever you return (sync or via a resolved Promise) is serialized and fed straight back into the LLM's reasoning — shape it to match the tool's <code>returns</code> schema.</li>
           <li>Throwing (or an async handler's Promise rejecting) reports failure back to the backend with the error's message.</li>
         </ul>
@@ -982,8 +986,8 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
             <tbody>
               <tr><td>WebSocket won't connect, API key looks correct</td><td>A few things reject the handshake independently — an invalid/expired token, an unknown <code>appId</code>, quota exhaustion — but an unset or mismatched allowed origin is a common one worth checking first. See <a href="#set-origin">Origin is fail-closed</a> above.</td></tr>
               <tr><td><code>onagent</code> says "not logged in"</td><td>Run <code>onagent login --web</code> (or <code>onagent login</code>) again; the cached token may be missing or expired.</td></tr>
-              <tr><td><code>save-tools</code> fails validation</td><td>Checked in order per tool: name regex, duplicate name, missing <code>description</code>, missing <code>parameters.type</code>. The first failure found is the one you'll see. See <a href="#push-tools">Push tools</a> above.</td></tr>
-              <tr><td>Console warning: "backend declares tools with no registered handler"</td><td>A tool exists on the platform (pushed via <code>save-tools</code> or the console editor) that your <code>tools</code> map doesn't have a matching handler key for. Add the missing handler or remove the unused tool definition.</td></tr>
+              <tr><td><code>tool create</code> fails validation</td><td>Checked in order: name regex, missing <code>description</code>, missing <code>parameters.type</code>. The first failure found is the one you'll see. See <a href="#push-tools">Push tools</a> above.</td></tr>
+              <tr><td>Console warning: "backend declares tools with no registered handler"</td><td>A tool exists on the platform (pushed via <code>tool create</code> or the console editor) that your <code>tools</code> map doesn't have a matching handler key for. Add the missing handler or remove the unused tool definition.</td></tr>
               <tr><td>Issued a new key and everything broke</td><td>Expected — issuing a key immediately revokes the previous one. Update every deployed copy of the old key to the new one.</td></tr>
               <tr><td>A tool call seems to hang</td><td>Likely a <code>kind: query</code> tool whose handler never resolves. Query tools block a shared backend lock while waiting — make sure the handler always resolves or rejects, and reserve <code>query</code> for cases that truly need data back.</td></tr>
             </tbody>

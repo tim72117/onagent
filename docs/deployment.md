@@ -130,7 +130,7 @@ Actions）：
   AgentBridge。不設定的話 build 一樣會成功，只是 widget 會停在
   「尚未上線」狀態（見 `apps/landing/src/marketing-demo/widget.js` 的
   `!API_KEY` 檢查）。這是瀏覽器端可見的 app key，不是伺服器機密，用
-  `onagent issue-key analysis-app` 取得
+  `onagent key issue analysis-app` 取得
 
 WIF 的 provider / service account 需要你自己在 GCP 專案裡建立
 （`gcloud iam workload-identity-pools` 系列指令），本文件不重複展開，

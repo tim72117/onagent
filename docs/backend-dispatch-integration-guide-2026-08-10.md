@@ -29,21 +29,19 @@ tool 在瀏覽器執行、有些 tool 在你自己的後端執行。
 ### 1. 在 tools.yaml 加上 `backendDispatch` 區塊
 
 ```yaml
-appId: your-app-id
-tools:
-  - name: recommend_nearby
-    description: 依使用者目前位置推薦附近地點
-    parameters:
-      type: object
-      properties:
-        lat:
-          type: number
-        lng:
-          type: number
-      required: [lat, lng]
-    backendDispatch:
-      endpoint: https://your-backend.example.com/onagent/recommend_nearby
-      timeoutMs: 8000
+name: recommend_nearby
+description: 依使用者目前位置推薦附近地點
+parameters:
+  type: object
+  properties:
+    lat:
+      type: number
+    lng:
+      type: number
+  required: [lat, lng]
+backendDispatch:
+  endpoint: https://your-backend.example.com/onagent/recommend_nearby
+  timeoutMs: 8000
 ```
 
 - `endpoint`：必填，onagent 會直接對這個網址發 POST。
@@ -55,17 +53,18 @@ tools:
 ### 2. 用 CLI 推上去
 
 ```bash
-onagent save-tools <appId> tools.yaml
+onagent tool create <appId> tools.yaml
 ```
 
 例如：
 
 ```bash
-onagent save-tools your-app-id tools.yaml
+onagent tool create your-app-id tools.yaml
 ```
 
-`appId` 是必填的位置參數（目標要寫入哪個 app），不是從 YAML 檔案裡的 `appId` 欄位讀取的——同一份
-`tools.yaml` 可以被重複用在不同 app 上。
+`appId` 是必填的位置參數（目標要寫入哪個 app）。這個指令只 upsert 檔案裡這一個 tool（依 `name`
+新增或取代），不會動同一個 app 底下的其他 tool——同一份單一 tool 的 YAML 檔可以被重複用在不同
+app 上。
 
 **目前 console 網頁介面沒有地方可以直接新增這個欄位**，只能透過 YAML + CLI 推送。（如果你之後在
 console 網頁裡編輯這個 tool 的其他欄位再存檔，`backendDispatch` 設定不會被清掉——但要「新增」還是得
