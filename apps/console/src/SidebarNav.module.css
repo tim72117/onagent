@@ -69,6 +69,22 @@
   cursor: pointer;
 }
 
+/* Wraps an optional leading icon + .itemLabel as one flex group, so
+   .item's own justify-content: space-between still pushes a trailing
+   .statusDot (AppList.tsx's key/origin status) all the way to the row's
+   right edge regardless of whether a given row has an icon. */
+.itemMain {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.itemIcon {
+  flex: none;
+  stroke: currentColor;
+}
+
 .itemLabel {
   overflow: hidden;
   text-overflow: ellipsis;

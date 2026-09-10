@@ -1,5 +1,11 @@
 .root {
   max-width: 560px;
+  /* Centered on desktop the same way .editorPaneWide (App.module.css,
+     Playground's single-column path) is — App settings is likewise a
+     single focused form, not a two-column layout that needs the full
+     .workspace width, so it shouldn't just hug the left edge under
+     DesktopAppBar.tsx's app-picker row. */
+  margin: 0 auto;
   padding: 32px;
 }
 

@@ -6,6 +6,72 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.3.5
+
+No breaking changes — patch release. Desktop console layout changes; no
+programmatic interface affected (`Sidebar`/`DesktopAppBar` are internal to
+`apps/console`, not exported for reuse).
+
+- **Desktop app switching moved from the sidebar into a dropdown above the
+  workspace** (`DesktopAppBar.tsx`, new) — mirrors `MobileTopBar.tsx`'s
+  "current app name + chevron" trigger, opening a dismissible popover
+  (click-outside/Escape to close) instead of a bottom sheet. Renders the
+  same `AppList.tsx` the sidebar used to render directly, so row markup/
+  status dots/the "+ New app" button are unchanged; only the surrounding
+  chrome differs. `Sidebar.tsx` no longer renders `AppList` itself.
+- **YAML preview split out of the tool editor into its own workspace view**
+  — `PreviewPanel.tsx` used to render permanently in the tool editor's
+  right-hand pane; it's now reached via a new "YAML" item in the sidebar
+  (next to "Settings", desktop-only for now — see `View`'s new `'preview'`
+  kind) and takes over the full workspace width when open. The tool
+  editor, Agent Thought, and Playground panes are single-column now that
+  nothing needs the second column; the two-column
+  `.workspaceBody`/`.editorPane` grid and its `<1100px` collapse rule were
+  removed as dead weight (`App.module.css`).
+- **Sidebar nav items gained icons** — Thought, Playground, Settings
+  (renamed from "App settings"), YAML, and each tool row now show a small
+  line icon before their label (`AgentNav.tsx`, `Sidebar.tsx`,
+  `ToolList.tsx`, via new shared `.itemMain`/`.itemIcon` classes in
+  `SidebarNav.module.css`). Tool rows all share one generic wrench icon for
+  now — the frontend `Tool` type still has no `kind` field to distinguish
+  action vs. query tools with different icons (tracked in
+  `docs/audit-functional.md`).
+- **`workspaceHeader` (the "Unsaved changes" badge / validation-error
+  strip above the tool editor) no longer reserves space when it has
+  nothing to show** — previously always rendered with its full padding
+  even when empty, which read as a stray blank band once `DesktopAppBar`
+  was added above it as a second top row.
+- Fixed a stale `@media (max-width: 1100px)` rule in `style.css` for
+  `.thought-textarea`'s mobile min-height: its justifying comment
+  referenced the two-column `.editorPane`/`.workspaceBody` grid removed by
+  this same release, and 1100px no longer corresponded to any real layout
+  transition. Now keyed off 860px (the console's actual mobile
+  breakpoint), matching where `.thought-textarea` (shared by the desktop
+  Agent Thought editor and the mobile `ThoughtEditSheet`'s loading
+  skeleton) actually needs a viewport-relative height floor.
+- New `--space-1` through `--space-8` spacing tokens (`style.css`, 4px
+  steps) — formalizes the 16px/14px-16px/24px values already most common
+  across `*.module.css`; only newly-touched files (`PlaygroundSheet`,
+  `AppSettingsView`, `DesktopAppBar`, `SidebarNav`) adopt them so far, not
+  a full sweep.
+- Fixed `PlaygroundSheet.module.css`'s mobile Playground view running its
+  status badge, hint copy, transcript, and message input flush to the
+  screen edges — its `.body` had no left/right padding of its own
+  (desktop's equivalent gets it from `App.module.css`'s `.editorPane`);
+  added `--space-4` padding plus the existing `--safe-bottom` inset
+  (stacked additively, not replaced).
+- Centered `AppSettingsView.module.css` on desktop (`margin: 0 auto`,
+  matching the tool editor/Playground/YAML views' single-column
+  centering) — it previously hugged the workspace's left edge under the
+  new `DesktopAppBar` row.
+- Performance: `DesktopAppBar` wrapped in `React.memo`, and `selectApp`/
+  `addApp`/`withDiscardConfirm` (`App.tsx`) wrapped in `useCallback`, so
+  the app-picker no longer re-renders on every unrelated keystroke
+  elsewhere in the console (tool/Thought/origin edits). `refreshDraftForSwitch`
+  now fetches the switched-to app and refreshes the sidebar's app-summary
+  list concurrently (`Promise.all`) instead of sequentially, since neither
+  depends on the other.
+
 ## v0.3.4
 
 No breaking changes — patch release. Follow-up fixes to the mobile

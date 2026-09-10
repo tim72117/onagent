@@ -4,7 +4,7 @@
    this sheet has no Save button to clip. */
 .header {
   flex: none;
-  padding: 16px 16px 0;
+  padding: var(--space-4) var(--space-4) 0;
 }
 
 .body {
@@ -13,10 +13,19 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  /* .panel.fullscreen (BottomSheet.module.css) deliberately doesn't pad
-     for --safe-bottom itself — leaves that decision to whichever content
-     actually sits at the bottom edge. Here, Playground.tsx's own message
-     input row is that content (via its own internal layout), so it's
-     given clearance here rather than in BottomSheet.module.css. */
-  padding-bottom: var(--safe-bottom);
+  /* Playground.tsx itself has no left/right padding of its own — on
+     desktop that's supplied by App.module.css's .editorPane
+     (padding: 24px 28px 40px), which every desktop caller wraps it in.
+     This sheet is that wrapper's mobile equivalent, so it owns the same
+     responsibility: without the left/right value here, the status badge,
+     hint copy, and transcript all ran flush to the screen edges.
+     Bottom is --space-4 (a deliberate visual gap below the input row,
+     .playgroundInputRow in Playground.module.css has no bottom margin of
+     its own — it always relied on this wrapper, same as left/right)
+     plus --safe-bottom stacked after it for the device inset on top of
+     that gap, not instead of it. .panel.fullscreen (BottomSheet.module.css)
+     deliberately doesn't pad for --safe-bottom itself — leaves that
+     decision to whichever content actually sits at the bottom edge; here,
+     that's this sheet's .body, not Playground.tsx. */
+  padding: 0 var(--space-4) calc(var(--space-4) + var(--safe-bottom));
 }

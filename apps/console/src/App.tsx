@@ -9,6 +9,7 @@ import { KeyModal } from './KeyModal'
 import { AddAppModal } from './AddAppModal'
 import { ConfirmModal } from './ConfirmModal'
 import { Sidebar } from './Sidebar'
+import { DesktopAppBar } from './DesktopAppBar'
 import { MobileNav } from './MobileNav'
 import { SettingsView } from './SettingsView'
 import { AppSettingsView } from './AppSettingsView'
@@ -58,7 +59,14 @@ type AuthState = 'checking' | 'anonymous' | 'authenticated'
 // two views can end up true at once, with the render ternaries' ordering
 // silently deciding which one wins. null means "no sub-view" (the
 // workspace's own empty-state / no-tool-selected fallback).
-type View = { kind: 'tool'; index: number } | { kind: 'agent' } | { kind: 'playground' } | { kind: 'settings' } | { kind: 'appSettings' } | null
+type View =
+  | { kind: 'tool'; index: number }
+  | { kind: 'agent' }
+  | { kind: 'playground' }
+  | { kind: 'settings' }
+  | { kind: 'appSettings' }
+  | { kind: 'preview' }
+  | null
 
 // Whether each view kind has a mobile entry point of its own — used below
 // to clear a view on resize-to-mobile only when it doesn't. This used to
@@ -77,6 +85,7 @@ const VIEW_HAS_MOBILE_ENTRY_POINT: Record<NonNullable<View>['kind'], boolean> = 
   playground: true, // MobileBottomBar.tsx's Playground button
   settings: false, // no mobile entry point — see the effect below
   appSettings: true, // MobileTopBar.tsx's gear icon
+  preview: false, // desktop-Sidebar-only entry point (YAML button) — no mobile equivalent yet
 }
 
 // Only place in this file that needs a JS-level mobile/desktop signal
@@ -330,18 +339,25 @@ export default function App() {
   // Runs action immediately if there's nothing unsaved to lose; otherwise
   // gates it behind a confirmation. action itself may be async — this
   // helper doesn't need to await it, callers that care already do.
-  function withDiscardConfirm(action: () => void) {
-    if (!dirty) {
-      action()
-      return
-    }
-    setPendingConfirm({
-      message: 'Discard unsaved changes to this app?',
-      confirmLabel: 'Discard',
-      destructive: false,
-      onConfirm: action,
-    })
-  }
+  // useCallback (only re-created when dirty itself changes, not on every
+  // render) so callers like selectApp/addApp that also useCallback stay
+  // referentially stable across unrelated re-renders — see DesktopAppBar's
+  // own React.memo, which this stability is what makes worthwhile.
+  const withDiscardConfirm = useCallback(
+    (action: () => void) => {
+      if (!dirty) {
+        action()
+        return
+      }
+      setPendingConfirm({
+        message: 'Discard unsaved changes to this app?',
+        confirmLabel: 'Discard',
+        destructive: false,
+        onConfirm: action,
+      })
+    },
+    [dirty],
+  )
 
   // Same shared ConfirmModal as withDiscardConfirm above, but unconditional
   // and message/action supplied by the caller — for local, component-owned
@@ -358,22 +374,28 @@ export default function App() {
   // "leave Settings/App settings, land in the workspace" default —
   // selectAppSettings uses this to pick a default app and land back in
   // App settings, not the workspace (see its own comment).
-  function selectApp(appId: string, afterSelect: () => void = () => setView(null)) {
-    withDiscardConfirm(async () => {
-      try {
-        const app = await api.getApp(appId)
-        setDraft({ appId: app.appId, tools: app.tools ?? [] })
-        setDirty(false)
-        afterSelect()
-      } catch (err) {
-        reportError(err)
-      }
-    })
-  }
+  // useCallback so DesktopAppBar.tsx (wrapped in React.memo) doesn't
+  // re-render every time App does, just because onSelectApp's identity
+  // would otherwise be a fresh closure on every render.
+  const selectApp = useCallback(
+    (appId: string, afterSelect: () => void = () => setView(null)) => {
+      withDiscardConfirm(async () => {
+        try {
+          const app = await api.getApp(appId)
+          setDraft({ appId: app.appId, tools: app.tools ?? [] })
+          setDirty(false)
+          afterSelect()
+        } catch (err) {
+          reportError(err)
+        }
+      })
+    },
+    [withDiscardConfirm, reportError],
+  )
 
-  function addApp() {
+  const addApp = useCallback(() => {
     withDiscardConfirm(() => setShowAddApp(true))
-  }
+  }, [withDiscardConfirm])
 
   async function createApp(appId: string) {
     try {
@@ -590,10 +612,12 @@ export default function App() {
     withDiscardConfirm(async () => {
       switchView()
       try {
-        const app = await api.getApp(draft.appId)
+        // Independent endpoints (app.appId's own tools/fields vs. the
+        // summaries list) — no data dependency between them, so run them
+        // concurrently instead of paying their latency twice in sequence.
+        const [app] = await Promise.all([api.getApp(draft.appId), refreshSummaries()])
         setDraft({ appId: app.appId, tools: app.tools ?? [] })
         setDirty(false)
-        await refreshSummaries()
       } catch (err) {
         reportError(err)
       }
@@ -637,6 +661,18 @@ export default function App() {
     refreshDraftForSwitch(() => setView({ kind: 'appSettings' }))
   }
 
+  // Same "needs some app, default to the first one if none selected yet"
+  // shape as selectAppSettings above — PreviewPanel.tsx has nothing
+  // meaningful to render without a draft to serialize to YAML.
+  function selectPreview() {
+    if (!draft) {
+      if (!summaries || summaries.length === 0) return
+      selectApp(summaries[0].appId, () => setView({ kind: 'preview' }))
+      return
+    }
+    refreshDraftForSwitch(() => setView({ kind: 'preview' }))
+  }
+
   async function doLogout() {
     try {
       await api.logout()
@@ -673,6 +709,7 @@ export default function App() {
   const playgroundSelected = view?.kind === 'playground'
   const settingsSelected = view?.kind === 'settings'
   const appSettingsSelected = view?.kind === 'appSettings'
+  const previewSelected = view?.kind === 'preview'
   const appLevelIssues = issues.filter((i) => i.toolIndex === null)
 
   return (
@@ -694,20 +731,20 @@ export default function App() {
             userEmail={user.email}
             summaries={summaries}
             activeAppId={draft?.appId ?? null}
-            onSelectApp={selectApp}
-            onAddApp={addApp}
             tools={draft?.tools ?? null}
             activeToolIndex={activeToolIndex}
             agentSelected={agentSelected}
             playgroundSelected={playgroundSelected}
             settingsSelected={settingsSelected}
             appSettingsSelected={appSettingsSelected}
+            previewSelected={previewSelected}
             issuesByTool={issuesByTool}
             onSelectTool={selectTool}
             onSelectAgent={selectAgent}
             onSelectPlayground={selectPlayground}
             onSelectSettings={selectSettings}
             onSelectAppSettings={selectAppSettings}
+            onSelectPreview={selectPreview}
             onAddTool={addTool}
             onAddToolWizard={() => setShowToolWizard(true)}
           />
@@ -715,6 +752,14 @@ export default function App() {
       }
       main={
         <main className={styles.workspace}>
+        {!isMobile && (
+          <DesktopAppBar
+            summaries={summaries}
+            activeAppId={draft?.appId ?? null}
+            onSelectApp={selectApp}
+            onAddApp={addApp}
+          />
+        )}
         {settingsSelected ? (
           <SettingsView quota={quota} onLogout={doLogout} />
         ) : appSettingsSelected && draft ? (
@@ -746,6 +791,12 @@ export default function App() {
               onDeleteApp={deleteApp}
             />
           )
+        ) : previewSelected && draft ? (
+          <div className={styles.workspaceBody}>
+            <section className={styles.editorPane}>
+              <PreviewPanel app={draft} />
+            </section>
+          </div>
         ) : draft ? (
           isMobile ? (
             <MobileWorkspaceCards
@@ -767,27 +818,34 @@ export default function App() {
             />
           ) : (
           <>
-            <header className={styles.workspaceHeader}>
-              <div className={styles.workspaceHeading}>
-                {(dirty || busy) && (
-                  <span className={`${styles.badge} ${styles.badgeDirty}`}>
-                    {busy ? 'Saving…' : 'Unsaved changes'}
-                  </span>
-                )}
-              </div>
+            {/* Only rendered when it actually has something to show — an
+                empty header still reserved its full padding/border-bottom
+                height, which read as a stray blank band once DesktopAppBar
+                was added above it (this header used to be the workspace's
+                only top row; now it's a second one stacked under that). */}
+            {(dirty || busy || appLevelIssues.length > 0) && (
+              <header className={styles.workspaceHeader}>
+                <div className={styles.workspaceHeading}>
+                  {(dirty || busy) && (
+                    <span className={`${styles.badge} ${styles.badgeDirty}`}>
+                      {busy ? 'Saving…' : 'Unsaved changes'}
+                    </span>
+                  )}
+                </div>
 
-              {appLevelIssues.length > 0 && (
-                <ul className="issue-list issue-list-inline">
-                  {appLevelIssues.map((issue, i) => (
-                    <li key={i}>{issue.message}</li>
-                  ))}
-                </ul>
-              )}
-            </header>
+                {appLevelIssues.length > 0 && (
+                  <ul className="issue-list issue-list-inline">
+                    {appLevelIssues.map((issue, i) => (
+                      <li key={i}>{issue.message}</li>
+                    ))}
+                  </ul>
+                )}
+              </header>
+            )}
 
             {playgroundSelected ? (
-              <div className={`${styles.workspaceBody} ${styles.workspaceBodySingle}`}>
-                <section className={`${styles.editorPane} ${styles.editorPaneWide}`}>
+              <div className={styles.workspaceBody}>
+                <section className={styles.editorPane}>
                   <Playground appId={draft.appId} tools={draft.tools} />
                 </section>
               </div>
@@ -844,10 +902,6 @@ export default function App() {
                       </div>
                     </div>
                   )}
-                </section>
-
-                <section className={styles.previewPane}>
-                  <PreviewPanel app={draft} />
                 </section>
               </div>
             )}

@@ -1,0 +1,80 @@
+/* Desktop-only — replaces the app list that used to live directly in
+   Sidebar.tsx. Sits as its own row across the top of the workspace (see
+   App.module.css's .workspace), same permanent-bar placement as
+   MobileTopBar.tsx uses on mobile, just styled for a mouse-driven trigger
+   + dismissible popover instead of a fixed bar + full-screen sheet. */
+.root {
+  position: relative;
+  flex: none;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.trigger:hover {
+  background: var(--sidebar-bg);
+  border-color: var(--border);
+}
+
+.triggerLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
+.triggerLabel.placeholder {
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+
+.chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  transition: transform 120ms ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.popover {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  left: var(--space-4);
+  z-index: 20;
+  width: 340px;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  padding: var(--space-3);
+}
+
+/* Passed to AppList.tsx's rowClassName — sizes its rows up from the
+   dense, mouse-driven default in SidebarNav.module.css (padding: 6px 8px,
+   font-size: 13px, meant for the narrow sidebar) to match this popover's
+   larger scale, same technique AppPickerSheet.module.css already uses to
+   size the same shared rows up for its own (touch-target) context. */
+.row {
+  padding: var(--space-3) var(--space-3);
+  font-size: 14px;
+}
