@@ -39,6 +39,7 @@ interface ProposeToolArgs {
   description?: unknown
   parameters?: unknown
   returns?: unknown
+  kind?: unknown
 }
 
 function isProposeToolArgs(v: unknown): v is ProposeToolArgs {
@@ -53,11 +54,20 @@ function isProposeToolArgs(v: unknown): v is ProposeToolArgs {
 function toTool(args: ProposeToolArgs): Tool | null {
   if (typeof args.name !== 'string' || typeof args.description !== 'string') return null
   if (typeof args.parameters !== 'object' || args.parameters === null) return null
+  // Falls back to undefined (-> 'action', the backend's own default) for
+  // anything other than exactly 'action'/'query' — an LLM mis-typing this
+  // enum should degrade to the safe default, not smuggle an invalid string
+  // through to a save. See docs/audit-functional.md's 2026-09-11 entry for
+  // why silently defaulting to 'action' here (rather than, say, failing
+  // toTool outright) is the same behavior a human editing this tool by
+  // hand would get from the backend either way.
+  const kind = args.kind === 'action' || args.kind === 'query' ? args.kind : undefined
   return {
     name: args.name,
     description: args.description,
     parameters: args.parameters as Tool['parameters'],
     returns: (args.returns as Tool['returns'] | undefined) ?? undefined,
+    kind,
   }
 }
 

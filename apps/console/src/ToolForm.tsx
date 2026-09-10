@@ -54,6 +54,7 @@ export function ToolForm({
             value={tool.name}
             onChange={(e) => onChange({ ...tool, name: e.target.value })}
           />
+          <p className="thought-copy">The tool's identifier as the model calls it — snake_case, unique within this app.</p>
           {templateLabel && (
             <span className={styles.sourceTemplate} title="Built from this template in the guided wizard">
               From template: {templateLabel}
@@ -81,6 +82,7 @@ export function ToolForm({
 
       <label className="field">
         <span className="micro-label">Description</span>
+        <p className="thought-copy">Explains to the model when and why to call this tool — written for the model's benefit, not yours.</p>
         <textarea
           className="tool-description-input"
           rows={3}
@@ -92,6 +94,7 @@ export function ToolForm({
 
       <div className="field">
         <span className="micro-label">Parameters</span>
+        <p className="thought-copy">The arguments the model must fill in when it calls this tool.</p>
         <SchemaEditor
           schema={tool.parameters}
           onChange={(next) => onChange({ ...tool, parameters: next })}
@@ -101,6 +104,8 @@ export function ToolForm({
       </div>
 
       <div className="field">
+        <span className="micro-label">Returns</span>
+        <p className="thought-copy">The shape of data the page sends back after running this tool — only reaches the model if Kind below is set to query.</p>
         <label className="checkbox-row">
           <input
             type="checkbox"
@@ -117,6 +122,25 @@ export function ToolForm({
             onChange={(next) => onChange({ ...tool, returns: next })}
           />
         )}
+      </div>
+
+      <div className="field">
+        <span className="micro-label">Kind</span>
+        <p className="thought-copy">
+          Unchecked (action, the default): the call is forwarded to the page and the model is told
+          it succeeded, but whatever the page sends back is never seen by the model — use this for
+          fire-and-forget effects like clicking a button. Checked (query): the model waits for the
+          page's actual answer and reasons about it — use this whenever "returns" above describes
+          real data the model needs, like this tool's own result.
+        </p>
+        <label className="checkbox-row">
+          <input
+            type="checkbox"
+            checked={tool.kind === 'query'}
+            onChange={(e) => onChange({ ...tool, kind: e.target.checked ? 'query' : 'action' })}
+          />
+          Wait for the page's answer and feed it back to the model (query)
+        </label>
       </div>
 
       <div className={styles.dangerZone}>

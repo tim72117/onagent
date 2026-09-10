@@ -93,6 +93,10 @@ describe('Playground click_button mock', () => {
 
   async function renderConnected(tools: Tool[]) {
     render(<Playground appId="test-app" tools={tools} />)
+    // Playground now awaits a quota check before opening its socket (see
+    // its connect effect), so the WebSocket doesn't exist synchronously
+    // after render the way it used to — let that promise settle first.
+    await act(async () => {})
     ws = FakeWebSocket.instances[0]
     await act(async () => {
       ws.emitOpen()

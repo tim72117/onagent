@@ -1,7 +1,11 @@
 /* See ThoughtEditSheet.module.css's own comment — SheetHeader's negative
-   margin assumes a parent with 16px padding to offset it, which
-   .panel.fullscreen doesn't have. Not visually obvious here only because
-   this sheet has no Save button to clip. */
+   margin (-16px -16px 16px, SheetHeader.module.css) assumes a parent with
+   16px padding to offset it, which .panel.fullscreen doesn't have on its
+   own. Without this wrapper, that negative margin pulls SheetHeader's
+   whole row up past the sheet's top safe-area inset, crushing it against
+   the close-button row with no visible gap below it — not obvious on a
+   sheet with a Save button to clip against, but very obvious here where
+   nothing else marks where the header row ends. */
 .header {
   flex: none;
   padding: var(--space-4) var(--space-4) 0;

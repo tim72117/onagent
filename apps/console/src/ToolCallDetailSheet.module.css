@@ -1,0 +1,24 @@
+.intro {
+  margin: 12px 0 16px;
+  font-size: 12.5px;
+  color: var(--ink-dim);
+}
+
+.jsonBlock {
+  margin: 4px 0 16px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.jsonBlockError {
+  color: var(--danger);
+  border-color: var(--danger-wash);
+}

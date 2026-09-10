@@ -17,6 +17,7 @@ export function SheetHeader({
   saveDisabled,
   saveType = 'submit',
   onSave,
+  trailing,
 }: {
   title: string
   onClose: () => void
@@ -24,6 +25,17 @@ export function SheetHeader({
   saveDisabled?: boolean
   saveType?: 'submit' | 'button'
   onSave?: () => void
+  // Extra content between the title and the save button (or, with no
+  // saveLabel, at the row's trailing edge) — e.g. PlaygroundSheet.tsx's
+  // connection-status pill. A plain sibling span placed outside this
+  // component used to fight this row's own -16px negative margin (see
+  // .header below): align-items:center centers flex items by their own
+  // box, and that margin shifts where this row's visible content actually
+  // sits without changing the box height layout measures — so a sibling
+  // centered against the row read as vertically offset from the title/close
+  // button. Rendering trailing INSIDE this row's own flex context avoids
+  // that entirely, the same way saveLabel already does.
+  trailing?: React.ReactNode
 }) {
   return (
     <div className={styles.header}>
@@ -33,6 +45,7 @@ export function SheetHeader({
         </svg>
       </button>
       <span className={styles.title}>{title}</span>
+      {trailing}
       {saveLabel && (
         <button type={saveType} className={styles.saveBtn} onClick={onSave} disabled={saveDisabled}>
           {saveLabel}

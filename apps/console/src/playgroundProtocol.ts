@@ -72,8 +72,18 @@ export interface ErrorPayload {
   code?: string
 }
 
-export function playgroundWsUrl(appId: string): string {
-  return BASE.replace(/^http/, 'ws') + `/console/apps/${encodeURIComponent(appId)}/playground`
+// fresh, when true, asks the backend for a brand-new sessionID (a random
+// suffix appended to the usual stable "PG-<userID>-<appId>" — see
+// playground.go's ResolveApp) instead of the one every other connection for
+// this user+app reuses. Playground.tsx's "Reset context" button is the only
+// caller that passes this: a developer explicitly asking to start over gets
+// a want orchestrator with no memory of the prior conversation, and (since
+// the orchestrator's session store is keyed by sessionID too) a store
+// lookup that never finds the old sessionID's rows either — old history
+// stays exactly where it was, just no longer attached to what happens next.
+export function playgroundWsUrl(appId: string, fresh?: boolean): string {
+  const url = BASE.replace(/^http/, 'ws') + `/console/apps/${encodeURIComponent(appId)}/playground`
+  return fresh ? url + '?fresh=1' : url
 }
 
 export function send(ws: WebSocket, type: MessageType, requestId: string | undefined, payload: unknown) {
@@ -105,8 +115,10 @@ export function connectPlayground(
     // already-open connection.
     onConnectionError?: () => void
   },
+  // See playgroundWsUrl's own doc comment.
+  fresh?: boolean,
 ): WebSocket {
-  const ws = new WebSocket(playgroundWsUrl(appId))
+  const ws = new WebSocket(playgroundWsUrl(appId, fresh))
 
   ws.addEventListener('open', () => {
     // Mirrors packages/bridge/src/client.ts's own connect(): hello must go

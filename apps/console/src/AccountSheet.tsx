@@ -1,4 +1,4 @@
-import type { Quota } from './api'
+import { useQuota } from './QuotaContext'
 import { Avatar } from './Avatar'
 import { BottomSheet } from './BottomSheet'
 import styles from './AccountSheet.module.css'
@@ -13,16 +13,16 @@ import styles from './AccountSheet.module.css'
 export function AccountSheet({
   open,
   onClose,
-  quota,
   userEmail,
   onLogout,
 }: {
   open: boolean
   onClose: () => void
-  quota: Quota | null
   userEmail: string
   onLogout: () => void
 }) {
+  const { quota } = useQuota()
+
   return (
     <BottomSheet open={open} onClose={onClose}>
       <div className={styles.header}>

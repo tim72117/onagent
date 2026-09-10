@@ -387,12 +387,16 @@ select:focus-visible {
   padding: 0;
 }
 
-.thought-default {
-  margin-top: 10px;
+/* Inline inside .thought-copy-below's <p> (right after "...default."), not
+   block-level — anchors the ? trigger and its popover together (same
+   click-outside-to-dismiss pattern as Playground.tsx's own help popover)
+   so the popover positions relative to this span, not the whole page. */
+.thought-default-anchor {
+  position: relative;
+  display: inline-block;
 }
 
-/* Inline inside .thought-copy-below's <p> (right after "...shown below."),
-   not block-level — inline-grid + vertical-align keeps it centered on the
+/* inline-grid + vertical-align keeps the trigger centered on the
    surrounding text's baseline instead of sitting a few pixels off from it
    the way a plain inline-block circle tends to. */
 .thought-default-toggle {
@@ -415,6 +419,43 @@ select:focus-visible {
 .thought-default-toggle:hover {
   color: var(--ink);
   border-color: var(--ink-faint);
+}
+
+/* Matches Playground.module.css's .helpPopover — same "small anchored
+   overlay, not gated on any editor state" treatment, so a developer can
+   compare the platform default against their own already-written text
+   instead of only seeing it while the field is still empty. */
+.thought-default-popover {
+  position: absolute;
+  z-index: 5;
+  width: 320px;
+  max-width: 80vw;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sheet);
+}
+
+/* Placement chosen at open time by usePopoverPlacement.ts, based on the
+   trigger's distance to each viewport edge — same reasoning as
+   Playground.module.css's .helpPopoverTopLeft etc., expressed as data
+   attributes here since this file (unlike Playground.tsx) isn't a CSS
+   Module, so it can't build a dynamic classname string the same way. */
+.thought-default-popover[data-vertical='bottom'] {
+  top: calc(100% + 6px);
+}
+
+.thought-default-popover[data-vertical='top'] {
+  bottom: calc(100% + 6px);
+}
+
+.thought-default-popover[data-horizontal='left'] {
+  left: 0;
+}
+
+.thought-default-popover[data-horizontal='right'] {
+  right: 0;
 }
 
 .thought-default-text {

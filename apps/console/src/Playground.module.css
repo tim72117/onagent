@@ -37,6 +37,236 @@
   background: var(--danger-wash);
 }
 
+.resetContextBtn {
+  flex: none;
+  margin-left: 8px;
+  font-size: 11px;
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  color: var(--ink-faint);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.resetContextBtn:hover:not(:disabled) {
+  color: var(--ink-dim);
+  border-color: var(--ink-faint);
+}
+
+.resetContextBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Wraps the ? trigger + its popover so the click-outside effect
+   (Playground.tsx) can distinguish a click on either of them from one that
+   should close the popover. Sits between the "Playground" label and the
+   status pill in .playgroundHeader's flex row — margin-right:auto pushes
+   the status pill to the far right the way justify-content:space-between
+   used to, now that there are three children instead of two. */
+.helpAnchor {
+  position: relative;
+  margin-right: auto;
+}
+
+.helpTrigger {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.helpTrigger:hover {
+  color: var(--ink-dim);
+  border-color: var(--ink-faint);
+}
+
+.helpPopover {
+  position: absolute;
+  z-index: 5;
+  width: 280px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sheet);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+/* Four placements from usePopoverPlacement.ts — picked at open time based
+   on the trigger's distance to each viewport edge, so the popover never
+   renders partly off-screen near a corner. */
+.helpPopoverBottomLeft {
+  top: calc(100% + 6px);
+  left: 0;
+}
+
+.helpPopoverBottomRight {
+  top: calc(100% + 6px);
+  right: 0;
+}
+
+.helpPopoverTopLeft {
+  bottom: calc(100% + 6px);
+  left: 0;
+}
+
+.helpPopoverTopRight {
+  bottom: calc(100% + 6px);
+  right: 0;
+}
+
+/* Replaces the usual instructional copy when the account is out of tokens
+   (Playground.tsx's 'quotaExceeded' state) — the connection is never
+   attempted in that case, so this explains why rather than leaving the
+   status pill's "Out of tokens" as the only clue. */
+.quotaNotice {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--danger-wash);
+  border: 1px solid var(--danger-wash);
+}
+
+.quotaNoticeTitle {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.quotaNoticeBody {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+/* One icon per tool_call/tool_query seen this connection (Playground.tsx's
+   toolCalls) — a persistent, at-a-glance strip of what the agent has tried
+   to call so far, separate from the transcript's own per-call text line.
+   Horizontally scrollable rather than wrapping, since it's meant to stay a
+   single glanceable row even after many calls accumulate. */
+.toolCallStrip {
+  display: flex;
+  align-items: center;
+  /* Matches .toolCallIcon's own height (36px) so this row reserves real
+     space even with zero children — see Playground.tsx's own comment on
+     why this always renders now instead of being conditionally mounted. */
+  min-height: 36px;
+  margin-top: 10px;
+  padding: 6px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+
+/* Taller than the populated state (56px vs. 36px) — a bare-minimum-height
+   empty row read as a stray gap rather than a deliberate "tool activity
+   happens here" area; the extra height plus the caption together make its
+   purpose legible even before there's ever been anything to show in it.
+   Shrinks back to the icons' own natural height the instant real content
+   (an icon, the inference dot) exists to fill it. */
+.toolCallStripEmpty {
+  min-height: 56px;
+  justify-content: center;
+}
+
+.toolCallStripEmptyLabel {
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-style: italic;
+  text-align: center;
+}
+
+/* One timeline step: an optional connector line into it, then its icon or
+   the in-flight inference dot. gap lives inside the step (around the
+   connector) rather than on the strip itself, so the connector visually
+   joins its two neighbors instead of floating between two gaps. */
+.flowStep {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.flowConnector {
+  width: 14px;
+  height: 2px;
+  margin: 0 3px;
+  border-radius: 1px;
+  background: var(--border-strong);
+}
+
+/* The "inference is running right now" position at the end of the
+   timeline — pulses until the turn settles, at which point it either
+   becomes a tool icon (the model called one) or disappears (plain text
+   reply). Same pulse animation the pending status dot uses. */
+.inferenceDot {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: toolCallPulse 1s ease-in-out infinite;
+}
+
+.toolCallIcon {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--sidebar-bg);
+  color: var(--ink-dim);
+  border: 1px solid var(--border);
+}
+
+.toolCallStatusDot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-raised);
+  background: var(--ink-faint);
+}
+
+.toolCallIconPending .toolCallStatusDot {
+  background: var(--accent);
+  animation: toolCallPulse 1s ease-in-out infinite;
+}
+
+.toolCallIconOk .toolCallStatusDot {
+  background: var(--accent);
+}
+
+.toolCallIconFailed .toolCallStatusDot {
+  background: var(--danger);
+}
+
+@keyframes toolCallPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 .playgroundTranscript {
   flex: 1;
   min-height: 240px;
@@ -89,6 +319,18 @@
   align-self: flex-start;
   background: var(--danger-wash);
   color: var(--danger);
+}
+
+/* Distinct from .playgroundMsgError — this is the no-mock query-tool
+   fallback reporting a fake but ok:true result (handleToolMessage in
+   Playground.tsx), so it uses the accent wash instead of the danger one:
+   red here would misread as "this call failed" when the agent actually
+   got usable (if fabricated) data back. */
+.playgroundMsgFabricated {
+  align-self: flex-start;
+  background: var(--accent-wash);
+  color: var(--ink-dim);
+  font-size: 12.5px;
 }
 
 .playgroundMsgPending {

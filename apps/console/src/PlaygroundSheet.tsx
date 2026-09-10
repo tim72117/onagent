@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { Tool } from './schema'
 import { BottomSheet } from './BottomSheet'
 import { SheetHeader } from './SheetHeader'
@@ -20,12 +21,30 @@ export function PlaygroundSheet({
   appId: string | null
   tools: Tool[]
 }) {
+  // Mirrors Playground's own header row here, in the row a phone user
+  // actually sees without scrolling (this sheet's close-button row),
+  // instead of leaving it in Playground's own header further down — see
+  // Playground.tsx's hideHeaderInBody/renderHeaderExtras props, which
+  // exist for exactly this. The node itself (help popover, connection
+  // status pill, Reset context button) is fully rendered by Playground —
+  // this sheet just places it, styling and all.
+  const [headerExtras, setHeaderExtras] = useState<React.ReactNode>(null)
+
   return (
     <BottomSheet open={open} onClose={onClose} fullscreen>
       <div className={styles.header}>
-        <SheetHeader title="Playground" onClose={onClose} />
+        <SheetHeader title="Playground" onClose={onClose} trailing={headerExtras} />
       </div>
-      <div className={styles.body}>{appId && <Playground appId={appId} tools={tools} />}</div>
+      <div className={styles.body}>
+        {appId && (
+          <Playground
+            appId={appId}
+            tools={tools}
+            hideHeaderInBody
+            renderHeaderExtras={setHeaderExtras}
+          />
+        )}
+      </div>
     </BottomSheet>
   )
 }

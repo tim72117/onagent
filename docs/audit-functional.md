@@ -6,6 +6,19 @@
 
 ---
 
+## 最新掃描：2026-09-11
+
+> 方法：從一次 Playground 實測（`get_weather` 查詢工具的假資料回傳，LLM 卻只收到「executed successfully」罐頭訊息）反查根因，人工逐檔追蹤前後端資料鏈。
+
+### 🔴 Console 編輯畫面完全沒有 `kind`/`backendDispatch` 欄位，經它存檔一次就會把這兩個既有值靜默覆寫成預設值（新發現，已實測重現）
+- **位置**：前端型別 `apps/console/src/schema.ts:17-40`（`Tool` interface 缺 `kind`/`backendDispatch`，只有 `id`/`name`/`description`/`parameters`/`returns`/`sourceTemplate`）；整個工具編輯 UI（桌面版 `ToolForm.tsx`、手機版 `ToolEditSheet.tsx` 及其四個子欄位 sheet、`ToolWizard.tsx`）都沒有任何 `kind`/`backendDispatch` 相關輸入或顯示；後端全欄位覆寫寫入邏輯在 `backend/internal/toolschema/registry.go:404-407`（`kind` 空字串時預設回填 `ToolKindAction`）與 `:428-434`（`Updates(map[string]any{...})` 明確把 `kind`、`backend_dispatch` 列入覆寫欄位，非 partial update）。
+- **問題**：後端 `toolschema.Tool`（`backend/internal/toolschema/schema.go:12-81`）完整欄位是 `ID`/`Name`/`Description`/`Parameters`/`Returns`/`Kind`/`BackendDispatch`/`SourceTemplate`，但前端 `Tool` 型別只覆蓋其中 6 個，完全遺漏 `Kind`（action/query，決定工具呼叫是否要把頁面回傳的真實資料帶回給 LLM）跟 `BackendDispatch`（讓後端呼叫開發者自己 HTTP endpoint 的設定）。`saveTool`/`updateAndSaveTool` 送出的 payload 因此永遠不含這兩個欄位；後端 `saveTool()` 是 `Updates(map[string]any{"kind": ..., "backend_dispatch": ...})` 這種明確列出全部欄位的寫法，不是只更新有傳的欄位——所以任何工具只要透過 console 網頁存檔一次（哪怕只是改個 description），資料庫裡原本正確的 `kind: query` 或既有的 `backendDispatch` 設定都會被前端沒傳的空值覆蓋掉：`kind` 被強制改回 `action`（`registry.go:404-407` 的預設回填），`backendDispatch` 被整個清空成 `null`。
+- **repro**：實測時建立一個 `get_weather` 查詢工具（有 `returns` schema，理應是 `kind: query`），Playground 的假資料回傳邏輯（`fakeDataFromSchema`）正確產生並送出了 `{ok: true, result: {temperature: ..., conditions: ...}}`，但 `agent_WS-PG-1-mya.json` 推論 log 顯示 LLM 收到的 `tool_result` 內容始終只有「`"get_weather" executed successfully."`」這句罐頭訊息，資料完全沒有送達。追查後端 `internal/inference/agent_roles.go` 的 `toolFactoryFor`（179-193 行）發現：`kind: action` 的工具會走 `forwardingTool.Call`（205-225 行），該函式**故意**丟棄 `askPage` 回傳的實際內容，只回一句罐頭成功訊息；只有 `kind: query` 才會走 `queryTool.Call`（265-282 行），把頁面實際回傳的 `answerJSON` 交給 LLM。確認 `get_weather` 的 `kind` 是空/`action`，而不是預期的 `query`——這正是本條目描述的存檔覆寫問題導致的結果。
+- **影響範圍**：不只是「AI tool builder 產生的查詢工具沒被正確標註 kind」這一種情境（那是原因之一，仍待修），而是**任何** app 的**任何**工具，只要曾經（透過 CLI 手動 YAML、或未來補上 kind UI 之前的任何管道）被設成 `kind: query` 或帶有 `backendDispatch`，之後只要有人在 console 網頁編輯畫面存檔一次，就會被靜默改回預設值，沒有任何錯誤或警告，且下次要診斷「工具明明設對了但 LLM 拿不到資料」時完全沒有痕跡可查。
+- **修法**：(1) 前端 `schema.ts` 的 `Tool` interface 加上 `kind?: 'action' | 'query'` 欄位；(2) `ToolForm.tsx`/`ToolEditSheet.tsx`（含手機版子欄位 sheet）新增可編輯的 `kind` 選擇器，並正確帶著現有值往返；(3) `aiToolGenerator.ts` 的 `toTool()` 保留 LLM 回傳的 `kind`；(4) `tool-builder-tools.yaml` 的 `propose_tool` schema 加上明確 `kind` 欄位讓 AI 產生工具時能標註；(5) `backendDispatch` 若短期內不打算做完整編輯 UI，至少要讓前端存檔時把既有值原樣帶回（而非整個遺漏），避免同樣的靜默覆寫；(6) 手動修正這次已在正式機建立、被錯誤覆寫成 `action` 的 `get_weather` 工具。
+
+---
+
 ## 最新掃描：2026-09-09
 
 > 方法：3 路並行掃描——(1) console 前端這次未提交的手機版重構（邏輯不一致＋過時註解）、(2) backend 邏輯不一致（排除已記錄條目）、(3) 專案級文件（README/CHANGELOG/apps 說明/`.env.example`/skill 文件）跟實際程式碼現況比對。全部發現皆已人工複核程式碼驗證，非直接採信 agent 結論。

@@ -78,6 +78,15 @@
   white-space: nowrap;
 }
 
+/* A field's own short static purpose blurb — unlike .rowValue (this field's
+   current value, one line, truncated), this is fixed explanatory copy that
+   should stay fully readable, so it wraps instead of truncating. */
+.rowHint {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin-top: 3px;
+}
+
 .chevron {
   flex: none;
   stroke: var(--ink-faint);

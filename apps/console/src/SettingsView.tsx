@@ -1,4 +1,4 @@
-import type { Quota } from './api'
+import { useQuota } from './QuotaContext'
 import styles from './SettingsView.module.css'
 
 // Account settings — desktop-only, reached by clicking the avatar/email in
@@ -11,7 +11,9 @@ import styles from './SettingsView.module.css'
 // origin controls (see AppSettingsView.tsx for those, a separate sidebar
 // nav item): "App settings" and "Settings" (account) are two distinct
 // concepts here, not one screen with two sections.
-export function SettingsView({ quota, onLogout }: { quota: Quota | null; onLogout: () => void }) {
+export function SettingsView({ onLogout }: { onLogout: () => void }) {
+  const { quota } = useQuota()
+
   return (
     <div className={styles.root}>
       <h1 className={styles.heading}>Settings</h1>

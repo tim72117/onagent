@@ -1,4 +1,4 @@
-import type { AppSummary, Quota } from './api'
+import type { AppSummary } from './api'
 import type { Tool } from './schema'
 import { MobileTopBar } from './MobileTopBar'
 import { MobileBottomBar } from './MobileBottomBar'
@@ -23,7 +23,6 @@ import styles from './MobileNav.module.css'
 // in it.
 export function MobileNav({
   userEmail,
-  quota,
   summaries,
   activeAppId,
   tools,
@@ -33,7 +32,6 @@ export function MobileNav({
   onSelectAppSettings,
 }: {
   userEmail: string
-  quota: Quota | null
   summaries: AppSummary[]
   activeAppId: string | null
   tools: Tool[] | null
@@ -65,7 +63,7 @@ export function MobileNav({
         onSelectApp={onSelectApp}
       />
 
-      <AccountSheet open={account.open} onClose={account.onClose} quota={quota} userEmail={userEmail} onLogout={onLogout} />
+      <AccountSheet open={account.open} onClose={account.onClose} userEmail={userEmail} onLogout={onLogout} />
 
       <PlaygroundSheet open={playground.open} onClose={playground.onClose} appId={activeAppId} tools={tools ?? []} />
 

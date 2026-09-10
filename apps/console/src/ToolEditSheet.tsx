@@ -156,6 +156,7 @@ export function ToolEditSheet({
           <button type="button" className={styles.row} onClick={nameSheet.onOpen}>
             <div className={styles.rowInfo}>
               <div className={styles.rowLabel}>Name</div>
+              <div className={styles.rowHint}>The tool's identifier as the model calls it — snake_case, unique within this app.</div>
               <div className={styles.rowValue}>{draft.name || 'unnamed_tool'}</div>
             </div>
             <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
@@ -166,6 +167,7 @@ export function ToolEditSheet({
           <button type="button" className={styles.row} onClick={descriptionSheet.onOpen}>
             <div className={styles.rowInfo}>
               <div className={styles.rowLabel}>Description</div>
+              <div className={styles.rowHint}>Explains to the model when and why to call this tool.</div>
               <div className={styles.rowValue}>{draft.description || 'Not set'}</div>
             </div>
             <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
@@ -178,6 +180,7 @@ export function ToolEditSheet({
               <div className={styles.rowLabel}>
                 Parameters{paramCount(draft.parameters) > 0 && ` (${paramCount(draft.parameters)})`}
               </div>
+              <div className={styles.rowHint}>The arguments the model must fill in when it calls this tool.</div>
               <div className={styles.rowValue}>{paramSummary(draft.parameters)}</div>
             </div>
             <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
@@ -188,12 +191,34 @@ export function ToolEditSheet({
           <button type="button" className={styles.row} onClick={returnsSheet.onOpen}>
             <div className={styles.rowInfo}>
               <div className={styles.rowLabel}>Returns</div>
+              <div className={styles.rowHint}>The shape of data the page sends back — only reaches the model if Query tool below is on.</div>
               <div className={styles.rowValue}>{draft.returns ? 'Declared' : 'Not declared'}</div>
             </div>
             <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
               <path d="M9 18l6-6-6-6" />
             </svg>
           </button>
+
+          {/* A single on/off choice, unlike the four rows above — toggled
+              inline rather than opening its own row-sheet, same as the
+              Returns checkbox inside ToolReturnsSheet.tsx. Still only
+              writes into `draft` here, not out to onChange, like every
+              other row — see this component's own header comment. */}
+          <label className={styles.row}>
+            <div className={styles.rowInfo}>
+              <div className={styles.rowLabel}>Query tool</div>
+              <div className={styles.rowValue}>
+                {draft.kind === 'query'
+                  ? 'Waits for the page’s answer and feeds it back to the model'
+                  : 'Fire-and-forget — the model never sees what the page sends back'}
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={draft.kind === 'query'}
+              onChange={(e) => setDraft((d) => d && { ...d, kind: e.target.checked ? 'query' : 'action' })}
+            />
+          </label>
         </div>
 
         {/* Omitted for the isNew instance — this tool was never added to

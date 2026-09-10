@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { App as AppSchema, Tool } from './schema'
 import { DEFAULT_THOUGHT, emptyTool } from './schema'
 import { api, ApiError } from './api'
-import type { AppSummary, CurrentUser, IssuedKey, Quota } from './api'
+import type { AppSummary, CurrentUser, IssuedKey } from './api'
 import { Login } from './Login'
 import { fireRegistrationConversion } from './analytics'
 import { KeyModal } from './KeyModal'
@@ -22,6 +22,7 @@ import { Playground } from './Playground'
 import { PreviewPanel } from './PreviewPanel'
 import { validateApp } from './validate'
 import { useToast } from './Toast'
+import { QuotaProvider } from './QuotaContext'
 import styles from './App.module.css'
 
 // Lazy: Tiptap + its markdown extension add ~145kB gzip to whatever bundle
@@ -117,11 +118,6 @@ export default function App() {
   const [user, setUser] = useState<CurrentUser | null>(null)
   const [loginError, setLoginError] = useState<string | null>(null)
   const [summaries, setSummaries] = useState<AppSummary[] | null>(null)
-  // Account-level plan/usage standing, shown in the sidebar. Best-effort:
-  // fetched once alongside the app list, but its own failure never blocks
-  // the rest of the console (see the catch below) since it's purely
-  // informational.
-  const [quota, setQuota] = useState<Quota | null>(null)
 
   // draft is the full definition of the app being edited. There is no
   // draft-wide batch "Save" — each tool saves independently via its own
@@ -181,7 +177,8 @@ export default function App() {
     setUser(null)
     setAuthState('anonymous')
     setSummaries(null)
-    setQuota(null)
+    // Quota clears itself — QuotaProvider resets when authenticated goes
+    // false (see QuotaContext.tsx), so there's nothing to null out here.
     setDraft(null)
     setView(null)
     setLoginError(message)
@@ -280,15 +277,6 @@ export default function App() {
     })
   }, [authState, refreshSummaries, logout, reportError])
 
-  // Quota is informational-only sidebar chrome, not something the rest of
-  // the console depends on to function — so unlike refreshSummaries, a
-  // failure here (including a 401) is swallowed rather than routed through
-  // reportError/logout. A real session expiry still gets caught by the
-  // next app-list or save call, which do funnel through logout.
-  useEffect(() => {
-    if (authState !== 'authenticated') return
-    api.getQuota().then(setQuota).catch(() => setQuota(null))
-  }, [authState])
 
   const issues = useMemo(() => (draft ? validateApp(draft) : []), [draft])
   const issuesByTool = useMemo(() => {
@@ -829,12 +817,12 @@ export default function App() {
   const anyToolDirty = draft ? draft.tools.some((_, i) => isToolDirty(i)) : false
 
   return (
+    <QuotaProvider authenticated={authState === 'authenticated'}>
     <AppShell
       sidebar={
         <>
           <MobileNav
             userEmail={user.email}
-            quota={quota}
             summaries={summaries}
             activeAppId={draft?.appId ?? null}
             tools={draft?.tools ?? null}
@@ -877,7 +865,7 @@ export default function App() {
           />
         )}
         {settingsSelected ? (
-          <SettingsView quota={quota} onLogout={doLogout} />
+          <SettingsView onLogout={doLogout} />
         ) : appSettingsSelected && draft ? (
           isMobile ? (
             <AppSettingsList
@@ -1084,5 +1072,6 @@ export default function App() {
         />
       )}
     </AppShell>
+    </QuotaProvider>
   )
 }

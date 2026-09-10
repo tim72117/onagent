@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { Markdown } from '@tiptap/markdown'
 import Placeholder from '@tiptap/extension-placeholder'
 import { applyMarkdownEscapeFix } from './tiptapMarkdownEscapeFix'
+import { usePopoverPlacement } from './usePopoverPlacement'
 
 applyMarkdownEscapeFix()
 
@@ -38,7 +39,36 @@ export function ThoughtEditor({
   defaultPreview: string
   onChange: (next: string) => void
 }) {
+  // Whether the "what's the platform default" help popover is open — see
+  // Playground.tsx's own helpOpen/helpRef for the same pattern (click the ?
+  // trigger, dismiss on an outside click or Escape). This used to gate
+  // showing defaultPreview on `!value` as well (only visible while the
+  // field was still empty), which meant clicking ? after writing any
+  // custom text did nothing visible — the popover here always shows
+  // defaultPreview regardless of value, since the point is letting a
+  // developer compare their own text against the default, not just
+  // previewing it before they've written anything.
   const [defaultExpanded, setDefaultExpanded] = useState(false)
+  const defaultRef = useRef<HTMLSpanElement>(null)
+  const defaultPlacement = usePopoverPlacement(defaultExpanded, defaultRef)
+
+  useEffect(() => {
+    if (!defaultExpanded) return
+    function onPointerDown(e: PointerEvent) {
+      if (defaultRef.current && !defaultRef.current.contains(e.target as Node)) {
+        setDefaultExpanded(false)
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') setDefaultExpanded(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [defaultExpanded])
   const editor = useEditor({
     extensions: [StarterKit, Markdown, Placeholder.configure({ placeholder: defaultPreview })],
     content: value,
@@ -85,23 +115,30 @@ export function ThoughtEditor({
       <p className="thought-copy">Tone, domain knowledge, or rules specific to this app.</p>
       <EditorContent editor={editor} className="thought-textarea" />
       <p className="thought-copy thought-copy-below">
-        Leave empty to use the platform default shown below.{' '}
-        <button
-          type="button"
-          className="thought-default-toggle"
-          onClick={() => setDefaultExpanded((v) => !v)}
-          aria-expanded={defaultExpanded}
-          aria-label={defaultExpanded ? 'Hide platform default text' : 'Show platform default text'}
-        >
-          ?
-        </button>
+        Leave empty to use the platform default.{' '}
+        <span className="thought-default-anchor" ref={defaultRef}>
+          <button
+            type="button"
+            className="thought-default-toggle"
+            onClick={() => setDefaultExpanded((v) => !v)}
+            aria-expanded={defaultExpanded}
+            aria-label={defaultExpanded ? 'Hide platform default text' : 'Show platform default text'}
+          >
+            ?
+          </button>
+          {defaultExpanded && (
+            <div
+              className="thought-default-popover"
+              data-vertical={defaultPlacement.vertical}
+              data-horizontal={defaultPlacement.horizontal}
+              role="tooltip"
+            >
+              <span className="micro-label">Platform default</span>
+              <p className="thought-default-text">{defaultPreview}</p>
+            </div>
+          )}
+        </span>
       </p>
-      {!value && defaultExpanded && (
-        <div className="thought-default">
-          <span className="micro-label">Platform default</span>
-          <p className="thought-default-text">{defaultPreview}</p>
-        </div>
-      )}
     </>
   )
 }

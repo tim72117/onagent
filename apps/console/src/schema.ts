@@ -14,6 +14,8 @@ export interface ParameterSchema {
   enum?: string[]
 }
 
+export type ToolKind = 'action' | 'query'
+
 export interface Tool {
   // Database surrogate key (tools.id) — absent for a tool that has never
   // been saved yet (a brand-new tool the editor is about to create).
@@ -29,6 +31,17 @@ export interface Tool {
   description: string
   parameters: ParameterSchema
   returns?: ParameterSchema
+  // Mirrors toolschema.Tool.Kind. Empty/undefined means 'action' (the
+  // backend's own default — see backend/internal/toolschema/registry.go's
+  // saveTool, which fills an empty Kind in as ToolKindAction on write).
+  // 'query' blocks the in-flight prompt until the front-end answers with
+  // real data, which is then fed back to the LLM — see that Go field's own
+  // doc comment for the full behavioral difference. Must round-trip
+  // through every save: the backend's write is a full-column update, not a
+  // partial one, so a save that omits this field silently overwrites an
+  // existing 'query' tool back to 'action' with no error (see
+  // docs/audit-functional.md's 2026-09-11 entry for the bug this caused).
+  kind?: ToolKind
   // Which ToolWizard template (see ToolWizard.tsx's TEMPLATES) this tool
   // was built from, if any — round-trips through the backend
   // (toolschema.Tool.SourceTemplate). Shown as a display hint in ToolForm,

@@ -189,8 +189,24 @@ func (p *playgroundResolver) ResolveApp(r *http.Request) (appID, sessionID strin
 	// (see WantService.getOrCreate keying off sessionID) — CloseSession
 	// still fires via ws.Session's own `defer` on disconnect (session.go),
 	// so this doesn't leak: it just means nothing is ever reused.
+	//
+	// ?fresh=1 is the opt-in version of the same trick, for Playground.tsx's
+	// "Reset context" button: a developer explicitly asking to start over
+	// gets a new sessionID (a new want orchestrator, AND — since
+	// WantService.buildOrchestrator wires each one to
+	// sessionStore.ForApp(appID), keyed by sessionID — a store lookup that
+	// never finds the old sessionID's rows, so nothing from the previous
+	// conversation gets loaded back in either). The OLD sessionID's rows in
+	// the session store are deliberately left alone: this is a fresh start
+	// for the conversation going forward, not a request to delete history,
+	// and there is no UI here for "also erase what I said before" — a
+	// developer who wants that can still find the old transcript by
+	// whatever means already exist for browsing session history. Checked
+	// after the stable-vs-tool-builder branch above (not merged into it) so
+	// tool-builder's own always-fresh behavior is untouched by this query
+	// param existing at all.
 	sessionID = fmt.Sprintf("PG-%d-%s", user.ID, appID)
-	if appID == toolBuilderAppID {
+	if appID == toolBuilderAppID || r.URL.Query().Get("fresh") == "1" {
 		sessionID += "-" + randomSuffix()
 	}
 	// Billing attribution is the SIGNED-IN caller (user.ID), not the app's

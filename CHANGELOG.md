@@ -6,6 +6,71 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.5.0
+
+Fixes:
+
+- Fix a silent data-loss bug: any tool's `kind` (action/query) was dropped
+  by the console's frontend `Tool` type and overwritten back to the
+  backend's `action` default on every save — including a tool that was
+  correctly `query` via the CLI or a hand-written `tool.yaml`. A `query`
+  tool's whole purpose is to feed the page's real answer back into the
+  model's reasoning (see `toolschema.Tool.Kind`'s doc comment); silently
+  downgrading it to `action` made the page's response invisible to the
+  model with no error anywhere, discovered via a real Playground
+  reproduction where a weather-lookup tool always told the model
+  "executed successfully" instead of the actual (even fabricated
+  placeholder) data. `apps/console/src/schema.ts`'s `Tool` type now
+  carries `kind`, `ToolForm.tsx`/`ToolEditSheet.tsx` expose it as an
+  editable "Query tool" field, and `aiToolGenerator.ts`/
+  `tool-builder-tools.yaml` round-trip it through AI-generated tools too.
+  `backend/internal/toolschema.Tool.BackendDispatch` has the identical
+  silent-overwrite exposure and is not yet fixed — see
+  `docs/audit-functional.md`'s 2026-09-11 entry.
+- Fix `apps/landing/zh-tw/pricing/index.html` missing its Google Tag
+  Manager snippet entirely — every other landing page (the English
+  pricing page, the Traditional Chinese homepage) had it; this one page
+  was never sending analytics.
+
+Playground (console):
+
+- Playground no longer always fails a query tool with no mock effect
+  registered — it now fabricates a schema-shaped placeholder value from
+  the tool's `returns` schema (clearly labeled "fabricated" in the
+  transcript, distinct from a real failure) so a developer can still test
+  how the model reasons about a query tool's data without wiring up a
+  real page or one of the built-in mock templates.
+- Add a persistent, always-visible tool-call timeline above the
+  transcript: each tool call becomes an icon (tap to see its full
+  arguments/result/error in a bottom sheet), consecutive calls are joined
+  by a connector line, and a pulsing dot marks in-flight inference —
+  reads left-to-right as the conversation's tool-activity history instead
+  of being buried in the transcript's own text lines.
+- Add a "Reset context" button: starts a genuinely fresh conversation
+  (a brand-new backend session, not just clearing the visible transcript)
+  by reconnecting under a new session id instead of the developer's
+  usual stable one — old conversation history stays exactly where it was
+  under the old session id, untouched.
+- Add an account quota gate: Playground now checks the signed-in user's
+  quota before opening a connection at all (not just after the backend's
+  own handshake-time rejection, which reached the browser as an
+  undifferentiated failed-connection error with no explanation) and shows
+  an explicit "you've used this month's tokens" notice instead of a bare
+  "Disconnected" status. Backed by a new shared `QuotaContext`
+  (`apps/console/src/QuotaContext.tsx`) that replaces the one-shot
+  `quota` fetch/prop `App.tsx` used to thread through `MobileNav.tsx` to
+  `AccountSheet.tsx`/`SettingsView.tsx` — quota now also refreshes after
+  every completed turn, not only once at page load.
+- Add a collapsible "what is this" help popover and move it (along with
+  the connection-status pill and Reset context) into the mobile sheet's
+  own close-button row, so a phone user sees them without scrolling.
+  `ThoughtEditor.tsx`'s platform-default-prompt popover adopts the same
+  pattern, fixing a real bug where its trigger did nothing once the
+  Thought field already had text (the popover used to only render while
+  the field was still empty). Both popovers share a new
+  `usePopoverPlacement.ts` hook that picks which side to open toward
+  based on the trigger's position, so neither can render off-screen.
+
 ## v0.4.2
 
 Fixes:

@@ -26,6 +26,11 @@ thought: |
     DO include it, it follows the exact same rule as parameters above:
     always {"type": "object", ...}, with "type" present even if you can't
     think of any properties to add.
+  - kind: always required, must be exactly "query" if you included
+    "returns" above, or exactly "action" if you didn't — the two always
+    move together. Never emit "returns" with kind "action": the caller's
+    data would silently never reach the model, defeating the entire point
+    of declaring "returns" in the first place.
   - Every "type" value anywhere in parameters or returns (including their
     own top-level "object") must be lowercase JSON Schema style — "string",
     "number", "integer", "boolean", "array", "object" — never uppercase
@@ -50,7 +55,7 @@ tools:
     kind: action
     parameters:
       type: object
-      required: [name, description, parameters]
+      required: [name, description, parameters, kind]
       properties:
         name:
           type: string
@@ -83,6 +88,22 @@ tools:
             reason about afterwards (a "query" tool) — omit it entirely for
             a fire-and-forget action. Same JSON Schema "object" shape as
             parameters above.
+        kind:
+          type: string
+          enum: [action, query]
+          description: >
+            Required whenever you include "returns" above. "query" means
+            the conversation actually waits for the page's real answer and
+            reasons about it — pick this whenever "returns" describes real
+            data the tool's caller needs (e.g. a weather lookup's
+            temperature, a search's result list). "action" means the tool
+            is fire-and-forget (e.g. clicking a button) and the page's
+            response, if any, is never seen by the conversation — pick this
+            whenever you did NOT include "returns", or the tool has no
+            meaningful data to report back. Getting this wrong silently
+            breaks the tool: a "query"-shaped tool saved as "action" will
+            always tell the model it "succeeded" without ever delivering
+            the data "returns" promised.
     returns:
       type: object
       description: >
