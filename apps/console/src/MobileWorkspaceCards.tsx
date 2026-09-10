@@ -64,13 +64,17 @@ export function MobileWorkspaceCards({
   // it), not per keystroke.
   onChangeTool: (index: number, next: Tool) => void
   onRemoveTool: (index: number) => void
-  // Appends straight to draft.tools (App.tsx's appendTool) — called only
-  // once, by the brand-new ToolEditSheet instance below's own Save, not on
-  // "+ New tool" itself. Unlike the old onAddTool this replaces (which
-  // appended an emptyTool() immediately, before any field was even open),
-  // the new tool doesn't exist in draft.tools — and can't dirty this app's
-  // save machinery, or show up mid-creation in the Tools list above —
-  // until the user actually saves it.
+  // Appends to draft.tools AND persists immediately (App.tsx's appendTool
+  // called with persist:true) — called only once, by the brand-new
+  // ToolEditSheet instance below's own Save, not on "+ New tool" itself.
+  // Unlike the old onAddTool this replaces (which appended an emptyTool()
+  // immediately, before any field was even open), the new tool doesn't
+  // exist in draft.tools — and can't dirty this app's save machinery, or
+  // show up mid-creation in the Tools list above — until the user actually
+  // saves it. By the time this fires the tool is already complete and
+  // confirmed (ToolEditSheet's Save is the only place its onChange ever
+  // fires), so there's no half-finished state to wait on a separate save
+  // step for.
   onCreateTool: (tool: Tool) => void
   onConfirmDiscard: (message: string, onConfirm: () => void) => void
   onAddToolWizard: () => void

@@ -42,7 +42,7 @@ export function ToolDescriptionSheet({
     <BottomSheet open={open} onClose={onClose} fullscreen disableBackdropClose>
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.header}>
-          <SheetHeader title="Description" onClose={onClose} saveLabel="Save" saveDisabled={draft.trim() === description} />
+          <SheetHeader title="Description" onClose={onClose} saveLabel="Done" saveDisabled={draft.trim() === description} />
         </div>
         <div className={styles.body}>
           <textarea

@@ -38,7 +38,7 @@ export function ToolReturnsSheet({
   return (
     <BottomSheet open={open} onClose={onClose} fullscreen disableBackdropClose>
       <div className={styles.header}>
-        <SheetHeader title="Returns" onClose={onClose} saveType="button" saveLabel="Save" saveDisabled={!dirty} onSave={handleSave} />
+        <SheetHeader title="Returns" onClose={onClose} saveType="button" saveLabel="Done" saveDisabled={!dirty} onSave={handleSave} />
       </div>
       <div className={styles.body}>
         <label className="checkbox-row">

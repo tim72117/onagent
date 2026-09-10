@@ -193,9 +193,10 @@ func (s *Service) Check(ctx context.Context, userID int64) (Decision, error) {
 // why that's an acceptable, even correct, behavior change.
 //
 // eventID is stored for audit/debugging only — it is NOT a deduplication
-// key (see docs/known-issues-pending-discussion.md's "用量記錄機制"
-// section for the history of why an INSERT ... ON CONFLICT DO NOTHING
-// dedup was tried and abandoned). A caller retrying the same RequestID, or
+// key (see docs/audit-functional.md's "Playground 頁面重新整理後
+// requestId 歸零，導致用量遺漏" entry for the history of why an
+// INSERT ... ON CONFLICT DO NOTHING dedup was tried and abandoned). A
+// caller retrying the same RequestID, or
 // a single prompt's several round-trips sharing one RequestID, are both
 // expected to each insert their own row — undercounting a real cost is a
 // worse failure mode here than an occasional overcount, with no real

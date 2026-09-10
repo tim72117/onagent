@@ -6,6 +6,67 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.4.2
+
+Fixes:
+
+- Fix mobile console: creating a tool via `MobileWorkspaceCards.tsx`'s
+  "+ New tool" (blank, ToolWizard-built, or AI-generated) looked saved in
+  the UI — it appeared in the tools list and the workspace switched to it —
+  but silently never reached the backend. Reloading the page, or switching
+  apps and back, made it vanish with no error anywhere. `onCreateTool` used
+  to be wired to `App.tsx`'s local-state-only `appendTool`; it's now wired
+  to the same append to persist immediately as `addToolFromWizard` (both
+  now share one `appendTool(tool, persist)` helper — see Internal below).
+- The AI tool generator ("Generate with AI") used to wait out its full 30s
+  timeout and report a generic timeout error whenever the model responded
+  with plain text instead of calling `propose_tool` (e.g. asking a
+  clarifying question because the description was too vague). It now
+  surfaces that text immediately below the input so the developer can see
+  why nothing was proposed and try a clearer description.
+
+UX:
+
+- The four field-editor sheets nested inside a tool's edit sheet
+  (`ToolNameSheet`, `ToolDescriptionSheet`, `ToolParametersSheet`,
+  `ToolReturnsSheet`) relabel their save button from "Save" to "Done" — it
+  only ever wrote the field back into the parent `ToolEditSheet`'s own
+  local draft, not to the backend; "Save" was misleading about what tapping
+  it actually did. The parent sheet's own header button (the one that does
+  reach the backend) is unchanged.
+
+Internal:
+
+- Extract the WebSocket handshake/dispatch logic `Playground.tsx` and
+  `aiToolGenerator.ts` had each implemented separately into a shared
+  `apps/console/src/playgroundProtocol.ts` module. The two callers still
+  each own their connection's lifecycle (`Playground.tsx` keeps one stable,
+  reconnect-persistent connection per app; `aiToolGenerator.ts` opens and
+  closes a fresh one per "Generate" click) — `playgroundProtocol.ts` is
+  deliberately agnostic to that difference.
+- `backend/internal/console/playground.go`: the tool-builder app now gets a
+  random suffix appended to its session id on every connection
+  (`PG-<userID>-tool-builder-<hex>`, via a new `randomSuffix()` helper),
+  instead of the stable `PG-<userID>-<appID>` every other Playground
+  session gets. Each "Generate" click is meant to be an independent,
+  stateless request; without this, every past attempt's turns accumulated
+  into one ever-growing conversation, wasting tokens and risking
+  accumulated context nudging the model away from tool-builder's own
+  instruction to always call `propose_tool`.
+- `aiToolGenerator.ts`'s exported `generateToolFromDescription` now returns
+  `Promise<GenerateResult>` (`{kind:'tool',tool}` or
+  `{kind:'message',text}`) instead of `Promise<Tool>`, to carry the
+  plain-text-reply case above. Its only caller, `AiToolGeneratorSheet.tsx`,
+  is updated in the same change; this module isn't consumed outside
+  `apps/console`.
+- Merge `docs/known-issues-pending-discussion.md` into `docs/audit-
+  functional.md` (its two confirmed, tracked findings) and a new
+  `docs/notes-product-ideas.md` (its two open, undecided proposals); delete
+  the original file and fix the resulting stale links in
+  `backend/internal/db/schema_integration_test.go`,
+  `backend/internal/quota/quota.go`, and
+  `backend/internal/quota/quota_integration_test.go`.
+
 ## v0.4.1
 
 Breaking changes:

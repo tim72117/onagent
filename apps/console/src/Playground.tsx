@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { BASE } from './api'
 import type { Tool } from './schema'
 import { MOCK_TEMPLATE_KEYS, useMockRuntimes } from './playgroundMocks'
 import { randomRequestId } from './randomRequestId'
+import { connectPlayground, send } from './playgroundProtocol'
+import type { ToolCallPayload, ToolResultPayload } from './playgroundProtocol'
 import styles from './Playground.module.css'
 
 type ConnectionState = 'connecting' | 'open' | 'closed'
@@ -11,52 +12,6 @@ interface ChatMessage {
   id: number
   role: 'user' | 'assistant' | 'tool_call' | 'tool_query' | 'error'
   text: string
-}
-
-// Mirrors backend/internal/protocol/message.go's Envelope/*Payload shapes —
-// this is now the real wire protocol (see this file's header comment below),
-// not a hand-rolled subset, so these types intentionally track that package
-// rather than diverging from it.
-type MessageType =
-  | 'hello'
-  | 'ack'
-  | 'prompt'
-  | 'tool_call'
-  | 'tool_query'
-  | 'tool_result'
-  | 'assistant_message'
-  | 'error'
-
-interface Envelope {
-  type: MessageType
-  requestId?: string
-  payload?: unknown
-}
-
-interface AckPayload {
-  sessionId: string
-  toolNames: string[]
-}
-
-interface ToolCallPayload {
-  toolName: string
-  args?: unknown
-}
-
-interface ToolResultPayload {
-  toolName: string
-  ok: boolean
-  result?: unknown
-  error?: string
-}
-
-interface AssistantMessagePayload {
-  text: string
-}
-
-interface ErrorPayload {
-  message: string
-  code?: string
 }
 
 // How long Playground waits before giving up on a tool_call/tool_query that
@@ -142,59 +97,34 @@ export function Playground({ appId, tools }: { appId: string; tools: Tool[] }) {
     setState('connecting')
     setReady(false)
 
-    const wsUrl = BASE.replace(/^http/, 'ws') + `/console/apps/${encodeURIComponent(appId)}/playground`
-    const ws = new WebSocket(wsUrl)
+    // connectPlayground sends hello itself the moment the socket opens
+    // (see playgroundProtocol.ts) — this session is stable across
+    // reconnects/reloads ("PG-<userID>-<appId>", no random suffix, unlike
+    // aiToolGenerator.ts's one-shot connections — see that module's own
+    // header comment on why the two differ), so the whole conversation
+    // transcript persists across reconnects for the same appId.
+    const ws = connectPlayground(appId, {
+      onOpen: () => setState('open'),
+      onClose: () => {
+        setState('closed')
+        setReady(false)
+      },
+      onConnectionError: () => setState('closed'),
+      // toolNames isn't currently rendered anywhere in this UI —
+      // acknowledged only to flip readiness, same as the real SDK's ready
+      // flag.
+      onAck: () => setReady(true),
+      onAssistantMessage: (payload) => {
+        appendMessage('assistant', payload?.text ?? '')
+        setSending(false)
+      },
+      onToolMessage: (socket, type, requestId, payload) => handleToolMessage(socket, type, requestId, payload),
+      onError: (payload) => {
+        appendMessage('error', payload?.message ?? 'Unknown error')
+        setSending(false)
+      },
+    })
     wsRef.current = ws
-
-    ws.addEventListener('open', () => {
-      setState('open')
-      // Mirrors packages/bridge/src/client.ts's own connect(): hello must
-      // go first, and nothing else (prompt) is sent until ack comes back
-      // with this session's tool set.
-      send(ws, 'hello', randomRequestId(), { appId })
-    })
-    ws.addEventListener('close', () => {
-      setState('closed')
-      setReady(false)
-    })
-    ws.addEventListener('error', () => setState('closed'))
-    ws.addEventListener('message', (event) => {
-      let env: Envelope
-      try {
-        env = JSON.parse(event.data)
-      } catch {
-        return
-      }
-
-      switch (env.type) {
-        case 'ack': {
-          // toolNames (env.payload as AckPayload) isn't currently rendered
-          // anywhere in this UI — acknowledged only to flip readiness, same
-          // as the real SDK's ready flag.
-          void (env.payload as AckPayload | undefined)
-          setReady(true)
-          break
-        }
-        case 'assistant_message': {
-          const text = (env.payload as AssistantMessagePayload | undefined)?.text ?? ''
-          appendMessage('assistant', text)
-          setSending(false)
-          break
-        }
-        case 'tool_call':
-        case 'tool_query': {
-          const p = env.payload as ToolCallPayload | undefined
-          if (p) handleToolMessage(ws, env.type, env.requestId, p)
-          break
-        }
-        case 'error': {
-          const err = env.payload as ErrorPayload | undefined
-          appendMessage('error', err?.message ?? 'Unknown error')
-          setSending(false)
-          break
-        }
-      }
-    })
 
     return () => ws.close()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reconnect only when the app changes, not on every render
@@ -206,10 +136,6 @@ export function Playground({ appId, tools }: { appId: string; tools: Tool[] }) {
 
   function appendMessage(role: ChatMessage['role'], text: string) {
     setMessages((cur) => [...cur, { id: nextId.current++, role, text }])
-  }
-
-  function send(ws: WebSocket, type: MessageType, requestId: string | undefined, payload: unknown) {
-    ws.send(JSON.stringify({ type, requestId, payload } satisfies Envelope))
   }
 
   // handleToolMessage answers a tool_call (ToolKindAction) or tool_query

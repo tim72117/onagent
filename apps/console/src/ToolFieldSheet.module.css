@@ -44,3 +44,16 @@
   font-size: 12.5px;
   color: var(--ink-dim);
 }
+
+/* The AI's own reply when it responds with plain text instead of proposing
+   a tool (AiToolGeneratorSheet.tsx) — a distinct background sets it apart
+   from .intro's static instructional copy above the input, since this is
+   dynamic content the developer needs to actually read and act on. */
+.assistantReply {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  font-size: 13px;
+  line-height: 1.4;
+}

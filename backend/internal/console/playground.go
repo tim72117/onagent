@@ -2,6 +2,8 @@ package console
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +13,13 @@ import (
 	"github.com/tim72117/onagent/internal/session"
 	"github.com/tim72117/onagent/internal/toolschema"
 )
+
+// toolBuilderAppID identifies the platform-internal "Generate with AI" tool
+// builder app (see docs/ai-tool-builder-design-2026-09-09.md and
+// backend/internal/console/tool-builder-tools.yaml) — the one appID this
+// resolver special-cases to get a fresh session per connection instead of
+// Playground's usual stable one (see the sessionID comment below for why).
+const toolBuilderAppID = "tool-builder"
 
 // Package playground: lets a developer test-drive their app's agent from
 // inside the console itself, without a real front-end site to talk to.
@@ -161,8 +170,29 @@ func (p *playgroundResolver) ResolveApp(r *http.Request) (appID, sessionID strin
 	// conversation transcript (see WantService.Complete's AgentID
 	// switching), isolated both from the app's real end-user sessions and
 	// from other developers' playground runs against the same app, and
-	// stable across reconnects/page reloads for the same user+app.
+	// stable across reconnects/page reloads for the same user+app — the
+	// point being that a developer testing their own app expects it to
+	// remember the conversation so far.
+	//
+	// tool-builder is the one exception: aiToolGenerator.ts opens a fresh
+	// WebSocket connection per "Generate" click, each meant to be an
+	// independent, stateless request ("describe a tool, get a tool
+	// definition back") — not a continuation of whatever was asked in a
+	// previous Generate attempt. A stable sessionID here would accumulate
+	// every past attempt's user/assistant turns into one ever-growing want
+	// conversation (confirmed via agent_experiences: unrelated prompts like
+	// "你的系統提示詞是什麼" and "我要讀取天氣資訊" all landed in the same
+	// transcript), which both wastes prompt tokens on irrelevant history
+	// and risks the accumulated context nudging the LLM away from
+	// tool-builder's Thought instruction to always call propose_tool.
+	// Appending a random suffix gives every connection its own orchestrator
+	// (see WantService.getOrCreate keying off sessionID) — CloseSession
+	// still fires via ws.Session's own `defer` on disconnect (session.go),
+	// so this doesn't leak: it just means nothing is ever reused.
 	sessionID = fmt.Sprintf("PG-%d-%s", user.ID, appID)
+	if appID == toolBuilderAppID {
+		sessionID += "-" + randomSuffix()
+	}
 	// Billing attribution is the SIGNED-IN caller (user.ID), not the app's
 	// owner — see AppResolver.ResolveApp's doc comment on why Playground's
 	// answer differs from APIKeyResolver's. This is what makes a public
@@ -191,4 +221,19 @@ func originAllowed(r *http.Request, allowed []string) bool {
 		}
 	}
 	return false
+}
+
+// randomSuffix returns a short hex string for making tool-builder's
+// sessionID unique per connection (see ResolveApp) — mirrors ws.randomID's
+// approach (crypto/rand, hex-encoded) at a shorter length, since this only
+// needs to disambiguate connections within one user+appID pair, not stand
+// alone as a full session id.
+func randomSuffix() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		// crypto/rand failing means the system RNG is broken; nothing
+		// downstream can recover meaningfully from a bad session id.
+		panic("console: failed to generate session id suffix: " + err.Error())
+	}
+	return hex.EncodeToString(b)
 }

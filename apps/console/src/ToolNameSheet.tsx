@@ -68,7 +68,7 @@ export function ToolNameSheet({
     <BottomSheet open={open} onClose={onClose} fullscreen disableBackdropClose>
       <form className={styles.form} onSubmit={handleSubmit}>
         <div className={styles.header}>
-          <SheetHeader title="Name" onClose={onClose} saveLabel="Save" saveDisabled={saveDisabled} />
+          <SheetHeader title="Name" onClose={onClose} saveLabel="Done" saveDisabled={saveDisabled} />
         </div>
         <div className={styles.body}>
           <input

@@ -85,7 +85,8 @@ func makeTestApp(t *testing.T, conn *sql.DB, appID string, ownerID int64) {
 // schema_integration_test.go's TestSchemaApplyIsIdempotent, which inserts
 // raw SQL to pin the DB constraint itself): eventID is no longer a dedup
 // key (see Record's doc comment and
-// docs/known-issues-pending-discussion.md's "用量記錄機制" section), so
+// docs/audit-functional.md's "Playground 頁面重新整理後 requestId 歸零，
+// 導致用量遺漏" entry), so
 // three Record calls sharing one (appID, eventID) — the shape
 // WantService.Complete now produces for a single prompt's multiple internal
 // provider round-trips (see want.go's "agent.inference" subscription) —

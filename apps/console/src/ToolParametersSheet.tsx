@@ -38,7 +38,7 @@ export function ToolParametersSheet({
   return (
     <BottomSheet open={open} onClose={onClose} fullscreen disableBackdropClose>
       <div className={styles.header}>
-        <SheetHeader title="Parameters" onClose={onClose} saveType="button" saveLabel="Save" saveDisabled={!dirty} onSave={handleSave} />
+        <SheetHeader title="Parameters" onClose={onClose} saveType="button" saveLabel="Done" saveDisabled={!dirty} onSave={handleSave} />
       </div>
       <div className={styles.body}>
         <SchemaEditor schema={draft} onChange={setDraft} hideRootHeader lockedPropertyNames={lockedPropertyNames} />

@@ -569,29 +569,38 @@ export default function App() {
     }
   }
 
-  function appendTool(tool: Tool) {
-    if (!draft) return
-    updateDraft({ ...draft, tools: [...draft.tools, tool] })
-    setView({ kind: 'tool', index: draft.tools.length })
-  }
-
-  function addTool() {
-    appendTool(emptyTool())
-  }
-
-  // A tool built through the guided wizard saves immediately — it went
-  // through a multi-step review already, so unlike the blank "+ New tool"
-  // form (which waits for the user's own explicit Save, since a
-  // freshly-appended empty tool fails validation until named/described
-  // anyway), there's no half-finished state to wait out here.
-  function addToolFromWizard(tool: Tool) {
-    setShowToolWizard(false)
+  // persist:false is for addTool's blank-tool case below — the user still
+  // has to fill in name/description before anything is valid to save, so
+  // only local state updates and the user's own explicit Save (see saveTool)
+  // does the real persisting.
+  //
+  // persist:true is for two callers that both already have a complete,
+  // confirmed tool by the time this runs, so there's no half-finished state
+  // to wait out: MobileWorkspaceCards.tsx's isNew ToolEditSheet instance
+  // (its own Save button is the one and only place its onChange ever fires)
+  // and addToolFromWizard below (the guided wizard is itself a multi-step
+  // review). Fixes a real bug in the mobile case: onCreateTool used to be
+  // wired straight to a persist:false append, so every mobile-created tool
+  // (blank, wizard-built, or AI-generated) looked saved in the UI (it's in
+  // draft.tools, the workspace switches to it) but silently never reached
+  // the backend — reloading the page, or switching apps and back, made it
+  // vanish with no error anywhere.
+  function appendTool(tool: Tool, persist: boolean) {
     if (!draft) return
     const tools = [...draft.tools, tool]
     const index = tools.length - 1
     updateDraft({ ...draft, tools })
     setView({ kind: 'tool', index })
-    persistTool(draft.appId, index, tool)
+    if (persist) persistTool(draft.appId, index, tool)
+  }
+
+  function addTool() {
+    appendTool(emptyTool(), false)
+  }
+
+  function addToolFromWizard(tool: Tool) {
+    setShowToolWizard(false)
+    appendTool(tool, true)
   }
 
   // Updates local display state only; persisting happens only when the
@@ -923,7 +932,7 @@ export default function App() {
               onSaveThought={saveThought}
               onChangeTool={updateAndSaveTool}
               onRemoveTool={removeTool}
-              onCreateTool={appendTool}
+              onCreateTool={(tool) => appendTool(tool, true)}
               onConfirmDiscard={confirmDiscard}
               onAddToolWizard={() => setShowToolWizard(true)}
             />

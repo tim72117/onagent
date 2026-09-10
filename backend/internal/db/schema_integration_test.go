@@ -22,7 +22,8 @@ var dsn = flag.String("dsn", "postgres://platform:platform@localhost:5434/platfo
 // quota tables/indexes exist and that the (app_id, event_id) idempotency
 // index that used to collapse duplicate inserts to one row is gone —
 // event_id is no longer a dedup key (see quota.Record's doc comment and
-// docs/known-issues-pending-discussion.md's "用量記錄機制" section), so
+// docs/audit-functional.md's "Playground 頁面重新整理後 requestId 歸零，
+// 導致用量遺漏" entry), so
 // three inserts of the same event_id must now leave three rows, not one.
 func TestSchemaApplyIsIdempotent(t *testing.T) {
 	database, err := Open(*dsn)

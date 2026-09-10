@@ -24,6 +24,11 @@ export function AiToolGeneratorSheet({
   const [description, setDescription] = useState('')
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Set when the AI responds with plain text instead of proposing a tool
+  // (e.g. it asks a clarifying question because the description was too
+  // vague) — shown below the input so the developer knows why nothing was
+  // generated, instead of only finding out via the 30s timeout.
+  const [assistantMessage, setAssistantMessage] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Resets to a blank draft every time this sheet opens — same "start
@@ -34,6 +39,7 @@ export function AiToolGeneratorSheet({
     if (open) {
       setDescription('')
       setError(null)
+      setAssistantMessage(null)
       setGenerating(false)
       focusAndReveal(textareaRef.current)
     }
@@ -45,10 +51,20 @@ export function AiToolGeneratorSheet({
     if (!trimmed || generating) return
     setGenerating(true)
     setError(null)
+    setAssistantMessage(null)
     try {
-      const tool = await generateToolFromDescription(trimmed)
-      onGenerated(tool)
-      onClose()
+      const result = await generateToolFromDescription(trimmed)
+      if (result.kind === 'tool') {
+        onGenerated(result.tool)
+        onClose()
+      } else {
+        // The AI responded but didn't propose a tool — stop waiting and
+        // show what it said instead, so the developer can reply with a
+        // clearer description (a fresh Generate, not a reply in-thread —
+        // this sheet has no ongoing conversation state to reply into).
+        setAssistantMessage(result.text)
+        setGenerating(false)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate a tool.')
       setGenerating(false)
@@ -80,6 +96,7 @@ export function AiToolGeneratorSheet({
             onChange={(e) => setDescription(e.target.value)}
             disabled={generating}
           />
+          {assistantMessage && <p className={styles.assistantReply}>{assistantMessage}</p>}
           {error && <p className={styles.nameError}>{error}</p>}
         </div>
       </form>
