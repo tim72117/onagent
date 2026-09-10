@@ -27,4 +27,4 @@ cpSync(source, target, { recursive: true })
 
 console.log(`Installed onagent-cli-setup skill to ${target}`)
 console.log('Bundled binaries: windows-amd64, darwin-amd64, darwin-arm64, linux-amd64, linux-arm64.')
-console.log('On any other platform, follow SKILL.md\'s fallback instructions (go install / build from source).')
+console.log('On any other platform, there is no bundled binary — see SKILL.md.')
