@@ -86,7 +86,7 @@ func makeTestApp(t *testing.T, database *gorm.DB, appID string, ownerID int64) *
 	if err != nil {
 		t.Fatalf("toolschema.NewRegistry: %v", err)
 	}
-	if err := reg.Create(appID, ownerID); err != nil {
+	if err := reg.Create(appID, ownerID, false); err != nil {
 		t.Fatalf("toolschema.Registry.Create(%s): %v", appID, err)
 	}
 	t.Cleanup(func() {
@@ -546,7 +546,7 @@ func TestSaveTool_HandlerUpsertsAndReturnsAppSummary(t *testing.T) {
 	const appID = "test-console-savetool-handler-app"
 	makeTestUser(t, conn, ownerID, "console-savetool-handler@example.com")
 	reg := makeTestApp(t, database, appID, ownerID)
-	if err := reg.SaveTool(appID, toolschema.Tool{
+	if _, err := reg.SaveTool(appID, toolschema.Tool{
 		Name: "existing_tool", Description: "already here",
 		Parameters: toolschema.ParameterSchema{Type: "object"}, Kind: toolschema.ToolKindAction,
 	}); err != nil {
@@ -630,12 +630,12 @@ func TestDeleteTool_HandlerRemovesAndReturnsAppSummary(t *testing.T) {
 	const appID = "test-console-deletetool-handler-app"
 	makeTestUser(t, conn, ownerID, "console-deletetool-handler@example.com")
 	reg := makeTestApp(t, database, appID, ownerID)
-	if err := reg.SaveTool(appID, toolschema.Tool{
+	if _, err := reg.SaveTool(appID, toolschema.Tool{
 		Name: "keep_me", Description: "d", Parameters: toolschema.ParameterSchema{Type: "object"}, Kind: toolschema.ToolKindAction,
 	}); err != nil {
 		t.Fatalf("seed SaveTool(keep_me): %v", err)
 	}
-	if err := reg.SaveTool(appID, toolschema.Tool{
+	if _, err := reg.SaveTool(appID, toolschema.Tool{
 		Name: "remove_me", Description: "d", Parameters: toolschema.ParameterSchema{Type: "object"}, Kind: toolschema.ToolKindAction,
 	}); err != nil {
 		t.Fatalf("seed SaveTool(remove_me): %v", err)

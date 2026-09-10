@@ -145,8 +145,30 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /console/apps", h.withAuth(h.listApps))
 	mux.HandleFunc("POST /console/apps", h.withAuth(h.createApp))
 	mux.HandleFunc("GET /console/apps/{appId}", h.withOwnedApp(h.getApp))
+	// Two addressing schemes for the same underlying Registry.SaveTool/
+	// DeleteTool (see those methods' own doc comments): {toolName} is the
+	// CLI's route (`onagent tool create` writes a hand-authored tool.yaml
+	// that has no id, so it upserts by name) and also covers a
+	// brand-new tool from the console editor that has never been saved
+	// (Tool.ID == 0 both ways). id/{toolId} is the console editor's route
+	// once a tool has been saved at least once and the editor holds onto
+	// its id — this is what makes a rename a single atomic UPDATE instead
+	// of the old delete-old-name-then-insert-new-name two-step (see
+	// toolschema.saveTool's doc comment for the bug that motivated this).
+	// Registered as a literal path segment ("tools/id/...") rather than a
+	// second {toolId} wildcard segment directly under "tools/" — Go's
+	// ServeMux forbids two patterns that could both match the same request
+	// path (tools/{toolName} and tools/{toolId} are indistinguishable to
+	// the router), so "id" has to be a fixed prefix a real tool name can
+	// never collide with (nameRE requires the first character be a letter
+	// or underscore, and "id" itself is a valid name — but the ROUTE
+	// segment "id" is fixed text, not a wildcard, so this is unambiguous:
+	// PUT .../tools/id/42 always means "id 42", never "a tool literally
+	// named id").
 	mux.HandleFunc("PUT /console/apps/{appId}/tools/{toolName}", h.withOwnedApp(h.saveTool))
 	mux.HandleFunc("DELETE /console/apps/{appId}/tools/{toolName}", h.withOwnedApp(h.deleteTool))
+	mux.HandleFunc("PUT /console/apps/{appId}/tools/id/{toolId}", h.withOwnedApp(h.saveToolByID))
+	mux.HandleFunc("DELETE /console/apps/{appId}/tools/id/{toolId}", h.withOwnedApp(h.deleteToolByID))
 	mux.HandleFunc("PUT /console/apps/{appId}/origin", h.withOwnedApp(h.setOrigin))
 	mux.HandleFunc("PUT /console/apps/{appId}/thought", h.withOwnedApp(h.setThought))
 	mux.HandleFunc("DELETE /console/apps/{appId}", h.withOwnedApp(h.deleteApp))
@@ -519,6 +541,11 @@ func (h *Handler) getApp(w http.ResponseWriter, r *http.Request, user *session.U
 
 type createAppRequest struct {
 	AppID string `json:"appId"`
+	// Public, if true, marks the new app Public at creation time (see
+	// toolschema.App.Public's doc comment for what that unlocks) instead of
+	// requiring a separate call to make it so afterward. Defaults to false
+	// (private) when omitted, same as the schema's own default.
+	Public bool `json:"public,omitempty"`
 }
 
 func (h *Handler) createApp(w http.ResponseWriter, r *http.Request, user *session.User) {
@@ -527,7 +554,7 @@ func (h *Handler) createApp(w http.ResponseWriter, r *http.Request, user *sessio
 		return
 	}
 
-	if err := h.Apps.Create(req.AppID, user.ID); err != nil {
+	if err := h.Apps.Create(req.AppID, user.ID, req.Public); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -596,16 +623,38 @@ func (h *Handler) setThought(w http.ResponseWriter, r *http.Request, user *sessi
 	})
 }
 
-// saveTool upserts one tool (PUT /console/apps/{appId}/tools/{toolName}) —
-// see toolschema.Registry.SaveTool's doc comment for why this replaced the
-// old replace-all saveTools/Save: neither the console editor's per-tool
-// autosave nor the CLI's `onagent tool create` has (or should need) the
-// app's whole current tool list in hand just to add or edit one.
+// toolSaveResponse is what both saveTool and saveToolByID return — the
+// usual appSummary fields, plus the id of the tool that was just written.
+// The console editor needs this id back the moment a brand-new tool (no id
+// yet) is first saved, so every subsequent save of that same tool can go
+// through saveToolByID (an atomic in-place UPDATE, including on rename)
+// instead of saveTool's name-based upsert.
+type toolSaveResponse struct {
+	appSummary
+	ToolID int64 `json:"toolId"`
+}
+
+// saveTool upserts one tool by NAME (PUT /console/apps/{appId}/tools/
+// {toolName}) — see toolschema.Registry.SaveTool's doc comment for why this
+// replaced the old replace-all saveTools/Save: neither the CLI's `onagent
+// tool create` (a hand-authored tool.yaml has no id to give) nor the
+// console editor creating a brand-new tool (nothing to have an id for yet)
+// has a tool id in hand here. Once the console editor DOES have an id (the
+// ToolID this handler's response carries back), it switches to
+// saveToolByID for every subsequent save of that same tool — see that
+// handler's own doc comment for why: this route can upsert-by-name but
+// can NOT rename a tool in place (its only key IS the name), so a client
+// still addressing an existing tool by this route on every edit would be
+// back to the old delete-then-insert rename bug this whole id column
+// exists to fix.
 //
 // The path's {toolName} and the decoded body's Tool.Name must agree — a
 // mismatch is caller confusion (or a client bug), not something to resolve
 // by silently trusting one over the other, so it's rejected with 400
-// before anything is written.
+// before anything is written. Tool.ID, if present in the body, is ignored —
+// this route only ever upserts by name (see toolschema.saveTool's ID==0
+// branch); a caller that already knows an id should be calling
+// saveToolByID instead.
 func (h *Handler) saveTool(w http.ResponseWriter, r *http.Request, user *session.User) {
 	appID := r.PathValue("appId")
 	toolName := r.PathValue("toolName")
@@ -618,24 +667,80 @@ func (h *Handler) saveTool(w http.ResponseWriter, r *http.Request, user *session
 		http.Error(w, fmt.Sprintf("tool name %q in the request body does not match %q in the URL", tool.Name, toolName), http.StatusBadRequest)
 		return
 	}
+	tool.ID = 0
 
-	if err := h.Apps.SaveTool(appID, tool); err != nil {
+	toolID, err := h.Apps.SaveTool(appID, tool)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	h.syncWantRole(appID)
 	app, _ := h.Apps.Get(appID) // SaveTool's own Reload already refreshed this
-	writeJSON(w, http.StatusOK, appSummary{
-		AppID:          appID,
-		ToolCount:      len(app.Tools),
-		HasKey:         h.Auth.HasKey(appID),
-		AllowedOrigins: h.Auth.OriginsFor(appID),
-		Thought:        app.Thought,
+	writeJSON(w, http.StatusOK, toolSaveResponse{
+		appSummary: appSummary{
+			AppID:          appID,
+			ToolCount:      len(app.Tools),
+			HasKey:         h.Auth.HasKey(appID),
+			AllowedOrigins: h.Auth.OriginsFor(appID),
+			Thought:        app.Thought,
+		},
+		ToolID: toolID,
 	})
 }
 
-// deleteTool removes one tool (DELETE /console/apps/{appId}/tools/{toolName}) —
-// see saveTool's doc comment for the per-tool write model this belongs to.
+// saveToolByID upserts one tool by ID (PUT /console/apps/{appId}/tools/id/
+// {toolId}) — the console editor's route once a tool has been saved at
+// least once and it holds onto that id (see saveTool's doc comment). This
+// is the route that actually fixes the rename bug: an id-scoped UPDATE
+// (toolschema.saveTool's ID!=0 branch) changes name in place, atomically,
+// with no window where the tool exists under neither its old nor new name —
+// contrast the name-based route above, whose ON CONFLICT (app_id, name)
+// upsert has no way to change its own conflict target.
+//
+// The path's {toolId} and the decoded body's Tool.ID must agree, mirroring
+// saveTool's name-match check — same rationale: a mismatch is caller
+// confusion, not something to silently resolve by trusting one over the
+// other.
+func (h *Handler) saveToolByID(w http.ResponseWriter, r *http.Request, user *session.User) {
+	appID := r.PathValue("appId")
+	toolID, err := strconv.ParseInt(r.PathValue("toolId"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid toolId in URL", http.StatusBadRequest)
+		return
+	}
+
+	var tool toolschema.Tool
+	if !decodeJSON(w, r, &tool) {
+		return
+	}
+	if tool.ID != 0 && tool.ID != toolID {
+		http.Error(w, fmt.Sprintf("tool id %d in the request body does not match %d in the URL", tool.ID, toolID), http.StatusBadRequest)
+		return
+	}
+	tool.ID = toolID
+
+	savedID, err := h.Apps.SaveTool(appID, tool)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	h.syncWantRole(appID)
+	app, _ := h.Apps.Get(appID) // SaveTool's own Reload already refreshed this
+	writeJSON(w, http.StatusOK, toolSaveResponse{
+		appSummary: appSummary{
+			AppID:          appID,
+			ToolCount:      len(app.Tools),
+			HasKey:         h.Auth.HasKey(appID),
+			AllowedOrigins: h.Auth.OriginsFor(appID),
+			Thought:        app.Thought,
+		},
+		ToolID: savedID,
+	})
+}
+
+// deleteTool removes one tool by NAME (DELETE /console/apps/{appId}/tools/
+// {toolName}) — the CLI's `onagent tool delete` route; see saveTool's doc
+// comment for the addressing split this belongs to.
 func (h *Handler) deleteTool(w http.ResponseWriter, r *http.Request, user *session.User) {
 	appID := r.PathValue("appId")
 	toolName := r.PathValue("toolName")
@@ -646,6 +751,32 @@ func (h *Handler) deleteTool(w http.ResponseWriter, r *http.Request, user *sessi
 	}
 	h.syncWantRole(appID)
 	app, _ := h.Apps.Get(appID) // DeleteTool's own Reload already refreshed this
+	writeJSON(w, http.StatusOK, appSummary{
+		AppID:          appID,
+		ToolCount:      len(app.Tools),
+		HasKey:         h.Auth.HasKey(appID),
+		AllowedOrigins: h.Auth.OriginsFor(appID),
+		Thought:        app.Thought,
+	})
+}
+
+// deleteToolByID removes one tool by ID (DELETE /console/apps/{appId}/
+// tools/id/{toolId}) — the console editor's route; see saveToolByID's doc
+// comment for the addressing split this belongs to.
+func (h *Handler) deleteToolByID(w http.ResponseWriter, r *http.Request, user *session.User) {
+	appID := r.PathValue("appId")
+	toolID, err := strconv.ParseInt(r.PathValue("toolId"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid toolId in URL", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Apps.DeleteToolByID(appID, toolID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	h.syncWantRole(appID)
+	app, _ := h.Apps.Get(appID) // DeleteToolByID's own Reload already refreshed this
 	writeJSON(w, http.StatusOK, appSummary{
 		AppID:          appID,
 		ToolCount:      len(app.Tools),

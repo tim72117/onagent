@@ -10,19 +10,23 @@ export function ToolForm({
   tool,
   issues,
   busy,
+  dirty,
   saveError,
   onChange,
+  onSave,
   onRemove,
 }: {
   tool: Tool
   issues: ValidationIssue[]
-  // Reflects App.tsx's per-tool debounced autosave (persistTool) — there's
-  // no manual Save button here, edits save on their own shortly after the
-  // user stops typing, so this is the only UI signal that a save is
-  // actually in flight or failed.
+  // Reflects App.tsx's per-tool save (persistTool) being in flight.
   busy?: boolean
+  // Whether tool has local edits not yet saved — gates the Save button
+  // below (nothing to send if unchanged) the same way ToolEditSheet.tsx's
+  // mobile equivalent gates its own Save.
+  dirty?: boolean
   saveError?: string | null
   onChange: (next: Tool) => void
+  onSave: () => void
   onRemove: () => void
 }) {
   const templateLabel = tool.sourceTemplate
@@ -31,7 +35,13 @@ export function ToolForm({
   const lockedParamNames = tool.sourceTemplate ? (MOCK_LOCKED_PARAM_NAMES[tool.sourceTemplate] ?? []) : []
 
   return (
-    <div className={styles.toolForm}>
+    <form
+      className={styles.toolForm}
+      onSubmit={(e) => {
+        e.preventDefault()
+        onSave()
+      }}
+    >
       <div className={styles.toolFormHeader}>
         <div className={styles.toolNameField}>
           <label className="micro-label" htmlFor="tool-name">
@@ -50,11 +60,9 @@ export function ToolForm({
             </span>
           )}
         </div>
-        {busy && (
-          <span className={styles.sourceTemplate} aria-live="polite">
-            Saving…
-          </span>
-        )}
+        <button type="submit" className="primary" disabled={busy || !dirty || issues.length > 0}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
       </div>
 
       {issues.length > 0 && (
@@ -116,6 +124,6 @@ export function ToolForm({
           Delete tool
         </button>
       </div>
-    </div>
+    </form>
   )
 }

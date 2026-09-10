@@ -167,6 +167,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS apps_api_key_hash_idx
     ON apps (api_key_hash) WHERE api_key_hash IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS tools (
+    id               BIGSERIAL PRIMARY KEY, -- surrogate key; see the migration below for why this replaced (app_id, name) as PK
     app_id           TEXT NOT NULL REFERENCES apps (app_id) ON DELETE CASCADE,
     name             TEXT NOT NULL,
     description      TEXT NOT NULL,
@@ -175,8 +176,51 @@ CREATE TABLE IF NOT EXISTS tools (
     kind             TEXT NOT NULL DEFAULT 'action', -- toolschema.ToolKind: "action" (default) or "query"
     backend_dispatch JSONB,          -- toolschema.BackendDispatch, serialized; NULL if this tool dispatches to the browser (the default)
     position         INTEGER NOT NULL, -- preserves declaration order within an app
-    PRIMARY KEY (app_id, name)
+    UNIQUE (app_id, name)
 );
+
+-- Idempotent migration for a database created before `id` existed (when
+-- (app_id, name) was still the primary key): add the column, backfill it,
+-- then swap the primary key from (app_id, name) to id alone, keeping
+-- (app_id, name) as a UNIQUE constraint instead (names must still be
+-- unique within an app) rather than dropping that guarantee.
+--
+-- Why: (app_id, name) as the PK meant renaming a tool had no
+-- "UPDATE this row's name" available — a rename with a new name changes
+-- the primary key itself, which SaveTool used to implement as
+-- ON CONFLICT (app_id, name) upsert, i.e. the caller had to DELETE the old
+-- name and INSERT the new one as two separate statements (see
+-- console/App.tsx's old persistTool). If the INSERT failed after the
+-- DELETE succeeded, the tool vanished with no trace. A surrogate id lets
+-- SaveTool do a single UPDATE ... WHERE id = $1 that changes the name
+-- in place, atomically, with no window where the tool doesn't exist.
+ALTER TABLE tools ADD COLUMN IF NOT EXISTS id BIGSERIAL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+         WHERE table_name = 'tools' AND constraint_type = 'PRIMARY KEY'
+           AND constraint_name = 'tools_pkey'
+           AND EXISTS (
+               SELECT 1 FROM information_schema.key_column_usage
+                WHERE constraint_name = 'tools_pkey' AND column_name = 'id'
+           )
+    ) THEN
+        -- Drop whatever the current primary key is (either the original
+        -- (app_id, name) composite, or none at all on a table that already
+        -- ran ADD COLUMN above but not yet this block).
+        IF EXISTS (
+            SELECT 1 FROM information_schema.table_constraints
+             WHERE table_name = 'tools' AND constraint_type = 'PRIMARY KEY'
+        ) THEN
+            ALTER TABLE tools DROP CONSTRAINT tools_pkey;
+        END IF;
+        ALTER TABLE tools ADD PRIMARY KEY (id);
+    END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS tools_app_id_name_idx ON tools (app_id, name);
 
 -- CREATE TABLE IF NOT EXISTS is a no-op against an already-existing table,
 -- so a column added after the table's first deployment (like `kind` above)

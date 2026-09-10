@@ -44,10 +44,10 @@ export function ToolNameSheet({
   // (see toolschema.Tool.Name's own doc comment), and it's half of the
   // backend's app_id+name primary key, not just a display label. Blocking
   // Save on an invalid/empty name here (not just "unchanged from the
-  // original") matters because App.tsx's autosave effect separately
-  // refuses to persist the draft at all while any tool fails this same
-  // TOOL_NAME_RE check (see validate.ts) — without this, tapping Save with
-  // an empty/invalid name still closed this sheet and looked like it
+  // original") matters because App.tsx's saveTool separately refuses to
+  // persist the draft at all while any tool fails this same TOOL_NAME_RE
+  // check (see validate.ts) — without this, tapping Save with an
+  // empty/invalid name still closed this sheet and looked like it
   // "worked", leaving the edit silently stuck dirty and never saved, with
   // nothing here explaining why.
   const isValidName = TOOL_NAME_RE.test(trimmed)

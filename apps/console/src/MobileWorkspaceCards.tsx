@@ -28,9 +28,9 @@ import styles from './MobileWorkspaceCards.module.css'
 // No page-level "Unsaved changes"/"Saving…" banner here (an earlier
 // version had one at the top of .root) — it ate into the scarce mobile
 // viewport with an empty bar most of the time, and the busy/dirty state
-// only actually matters to the Tools card (autosave only ever touches
-// draft.tools), so the indicator lives there instead, next to its own
-// title, same dirtyDot treatment as the Agent thought card's above.
+// only actually matters to the Tools card (tool edits are the only thing
+// that touches draft.tools), so the indicator lives there instead, next to
+// its own title, same dirtyDot treatment as the Agent thought card's above.
 export function MobileWorkspaceCards({
   draft,
   dirty,
@@ -58,6 +58,10 @@ export function MobileWorkspaceCards({
   thoughtDirty: boolean
   onThoughtChange: (value: string) => void
   onSaveThought: (e: React.FormEvent) => void
+  // App.tsx's updateAndSaveTool — saves immediately, since ToolEditSheet.tsx
+  // only ever calls this once, from its own internal Save button (it holds
+  // its own local draft across however many field edits happened inside
+  // it), not per keystroke.
   onChangeTool: (index: number, next: Tool) => void
   onRemoveTool: (index: number) => void
   // Appends straight to draft.tools (App.tsx's appendTool) — called only
@@ -65,8 +69,8 @@ export function MobileWorkspaceCards({
   // "+ New tool" itself. Unlike the old onAddTool this replaces (which
   // appended an emptyTool() immediately, before any field was even open),
   // the new tool doesn't exist in draft.tools — and can't dirty this app's
-  // save/autosave machinery, or show up mid-creation in the Tools list
-  // above — until the user actually saves it.
+  // save machinery, or show up mid-creation in the Tools list above —
+  // until the user actually saves it.
   onCreateTool: (tool: Tool) => void
   onConfirmDiscard: (message: string, onConfirm: () => void) => void
   onAddToolWizard: () => void

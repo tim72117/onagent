@@ -66,7 +66,7 @@ var resources = []resource{
 		name: "app",
 		commands: []resourceCommand{
 			{verb: "list", run: runListApps, usage: "onagent app list [-api <url>]"},
-			{verb: "create", run: runCreateApp, usage: "onagent app create <appId> [-api <url>]"},
+			{verb: "create", run: runCreateApp, usage: "onagent app create <appId> [-public] [-api <url>]"},
 			{verb: "delete", run: runDeleteApp, usage: "onagent app delete <appId> [-api <url>]"},
 			{verb: "origin", requireSet: true, run: runAppOrigin, usage: "onagent app origin set <appId> <origin> [-api <url>]"},
 			{verb: "thought", requireSet: true, run: runAppThought, usage: "onagent app thought set <appId> <thought> [-api <url>]"},
@@ -474,8 +474,9 @@ func runListApps(args []string) error {
 
 func runCreateApp(args []string) error {
 	base, rest := apiFlag(args)
+	public, rest := extractBoolFlag(rest, "-public")
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: onagent app create <appId> [-api <url>]")
+		return fmt.Errorf("usage: onagent app create <appId> [-public] [-api <url>]")
 	}
 	appID := rest[0]
 
@@ -484,11 +485,15 @@ func runCreateApp(args []string) error {
 		return err
 	}
 
-	if _, err := client.createApp(appID); err != nil {
+	if _, err := client.createApp(appID, public); err != nil {
 		return fmt.Errorf("create app: %w", err)
 	}
 
-	fmt.Printf("Created app %q.\n", appID)
+	if public {
+		fmt.Printf("Created app %q (public — any signed-in user can try it in the console Playground).\n", appID)
+	} else {
+		fmt.Printf("Created app %q.\n", appID)
+	}
 	return nil
 }
 
@@ -865,8 +870,8 @@ func (c *apiClient) exchangeCliAuth(id string) (token string, err error) {
 	return out.Token, nil
 }
 
-func (c *apiClient) createApp(appID string) (appSummary, error) {
-	body, err := json.Marshal(map[string]string{"appId": appID})
+func (c *apiClient) createApp(appID string, public bool) (appSummary, error) {
+	body, err := json.Marshal(map[string]any{"appId": appID, "public": public})
 	if err != nil {
 		return appSummary{}, err
 	}
@@ -1191,6 +1196,23 @@ func extractFlag(args []string, name string) (value string, rest []string) {
 		rest = append(rest, args[i])
 	}
 	return value, rest
+}
+
+// extractBoolFlag removes every occurrence of a value-less flag (e.g.
+// -public) found anywhere in args, mirroring extractFlag's "anywhere, not
+// just leading position" search but for a flag that takes no value of its
+// own — same rationale as runLogin's ad hoc --web handling, pulled out here
+// so a second value-less flag doesn't need its own one-off loop.
+func extractBoolFlag(args []string, name string) (present bool, rest []string) {
+	rest = make([]string, 0, len(args))
+	for _, a := range args {
+		if a == name {
+			present = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+	return present, rest
 }
 
 func readLine(prompt string) (string, error) {

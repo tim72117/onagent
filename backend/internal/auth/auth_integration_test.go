@@ -71,7 +71,7 @@ func makeTestApp(t *testing.T, database *gorm.DB, appID string, ownerID int64) *
 	if err != nil {
 		t.Fatalf("toolschema.NewRegistry: %v", err)
 	}
-	if err := reg.Create(appID, ownerID); err != nil {
+	if err := reg.Create(appID, ownerID, false); err != nil {
 		t.Fatalf("toolschema.Registry.Create(%s): %v", appID, err)
 	}
 	t.Cleanup(func() {
@@ -250,7 +250,7 @@ func TestToolschemaWritesDoNotOverwriteAuthFields(t *testing.T) {
 	if err := reg.SetThought(appID, "another prompt"); err != nil {
 		t.Fatalf("SetThought: %v", err)
 	}
-	if err := reg.SaveTool(appID, toolschema.Tool{
+	if _, err := reg.SaveTool(appID, toolschema.Tool{
 		Name:        "some_tool",
 		Description: "a tool",
 		Parameters:  toolschema.ParameterSchema{Type: "object"},

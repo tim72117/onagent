@@ -15,6 +15,16 @@ export interface ParameterSchema {
 }
 
 export interface Tool {
+  // Database surrogate key (tools.id) — absent for a tool that has never
+  // been saved yet (a brand-new tool the editor is about to create).
+  // Present (and truthy) once the backend has assigned one, which is what
+  // lets api.saveToolByID address this exact row for every subsequent
+  // save, including a rename, as a single atomic update — see api.ts's
+  // saveTool/saveToolByID split and App.tsx's persistTool for the bug this
+  // replaced (rename used to be delete-old-name-then-insert-new-name, two
+  // separate requests with a window where a failure between them lost the
+  // tool entirely).
+  id?: number
   name: string
   description: string
   parameters: ParameterSchema

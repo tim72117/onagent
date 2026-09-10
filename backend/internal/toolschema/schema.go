@@ -11,6 +11,18 @@ import "encoding/json"
 
 // Tool is one developer-defined capability exposed to the LLM.
 type Tool struct {
+	// ID is the database surrogate key (tools.id) — the actual identity of
+	// this row, independent of Name. Zero for a tool that has never been
+	// saved yet (a brand-new tool the console/CLI is about to create).
+	// Deliberately NOT part of the LLM-facing schema or codegen (see
+	// codegen.ToLLMTools/typescript.go, which key off Name, never ID) —
+	// this exists purely so Registry.SaveTool can update an existing row's
+	// Name in place (see saveTool's doc comment) instead of the old
+	// delete-then-insert dance a name-only identifier forced. Omitted from
+	// YAML (hand-written tool.yaml files have no reason to know it) but
+	// included in JSON so the console API can round-trip it.
+	ID int64 `yaml:"-" json:"id,omitempty"`
+
 	// Name is the tool's identifier as seen by the LLM. Must be unique
 	// within an app and match ^[a-zA-Z_][a-zA-Z0-9_]*$.
 	Name string `yaml:"name" json:"name"`

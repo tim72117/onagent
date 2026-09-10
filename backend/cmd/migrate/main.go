@@ -100,12 +100,12 @@ func main() {
 				fatal(fmt.Sprintf("create app %s", appID),
 					fmt.Errorf("app doesn't exist yet and no -owner-email given; a newly created app needs an owner"))
 			}
-			if err := registry.Create(appID, ownerID); err != nil {
+			if err := registry.Create(appID, ownerID, false); err != nil {
 				fatal(fmt.Sprintf("create app %s", appID), err)
 			}
 		}
 		for _, tool := range app.Tools {
-			if err := registry.SaveTool(appID, tool); err != nil {
+			if _, err := registry.SaveTool(appID, tool); err != nil {
 				fatal(fmt.Sprintf("save tool %s.%s", appID, tool.Name), err)
 			}
 		}

@@ -43,10 +43,11 @@ function paramSummary(schema: Tool['parameters']): string {
 // This sheet's own header Save is what finally calls `onChange`, once,
 // for every field edited across however many of those row-sheets were
 // visited in this session — editing Name then Description then coming
-// back here used to autosave twice (once per field's own Save), each
-// hitting App.tsx's 1.2s-debounced saveDraft independently; now it's one
-// deliberate Save the user can also just back out of (via the outer ✕)
-// without any of the in-between edits having reached draft.tools at all.
+// back here saves once, here, for the whole batch (App.tsx's
+// updateAndSaveTool), rather than each field's own row-sheet Save
+// separately reaching the backend; it's one deliberate Save the user can
+// also just back out of (via the outer ✕) without any of the in-between
+// edits having reached draft.tools at all.
 export function ToolEditSheet({
   open,
   onClose,
@@ -114,13 +115,16 @@ export function ToolEditSheet({
   }
 
   // Discard-confirm only applies to the isNew instance — an in-progress
-  // "+ New tool" draft that's never touched draft.tools has real, easy-to-
-  // lose typing behind it (name, description, a parameter or two) with no
-  // autosave net underneath, unlike the existing-tool instance, which
-  // edits something already safely sitting in draft.tools. Routes every
-  // close path (✕, BottomSheet's own Escape-key handler) through the same
-  // check, not just the ✕ button, since BottomSheet forwards its onClose
-  // prop to both.
+  // "+ New tool" draft never touches draft.tools at all until this sheet's
+  // own Save runs, so closing without saving loses it with no trace
+  // anywhere (not even a dirty tools[index] entry an app-level "unsaved
+  // changes" check could catch — see App.tsx's refreshDraftForSwitch). The
+  // existing-tool instance doesn't need this: its edits already live in
+  // draft.tools the moment this sheet's Save runs, so a dirty tools[index]
+  // is what backs its "unsaved changes" story instead. Routes every close
+  // path (✕, BottomSheet's own Escape-key handler) through the same check,
+  // not just the ✕ button, since BottomSheet forwards its onClose prop to
+  // both.
   function handleClose() {
     if (isNew && dirty && onConfirmDiscard) {
       onConfirmDiscard('Discard this new tool?', onClose)

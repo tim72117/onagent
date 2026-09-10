@@ -124,10 +124,11 @@ export default function App() {
   const [quota, setQuota] = useState<Quota | null>(null)
 
   // draft is the full definition of the app being edited. There is no
-  // batch "Save" anymore — every tool add/edit/delete calls its own
-  // api.saveTool/deleteTool immediately (see updateTool/appendTool/
-  // removeTool below); draft.tools here is purely local display state kept
-  // in sync with what's been persisted, not an unsaved-changes buffer.
+  // draft-wide batch "Save" — each tool saves independently via its own
+  // explicit Save action (see saveTool/updateAndSaveTool, appendTool,
+  // removeTool below) rather than one shared Save committing every tool at
+  // once. Unlike before, draft.tools IS an unsaved-changes buffer per tool
+  // until that tool's own Save runs — see isToolDirty.
   const [draft, setDraft] = useState<AppSchema | null>(null)
   const [view, setView] = useState<View>(null)
 
@@ -470,7 +471,7 @@ export default function App() {
   // blank tool that still fails validation). Positions are stable across
   // edits within a session — add/remove/wizard-create all go through
   // setDraft synchronously, so an index here always lines up with the same
-  // slot in draft.tools — which is what lets the debounced effect below
+  // slot in draft.tools — which is what lets isToolDirty/saveTool below
   // tell "this tool changed since it was last saved" apart from "this tool
   // was just re-rendered". Keyed on appId so switching apps doesn't confuse
   // one app's saved snapshot for another's.
@@ -529,22 +530,35 @@ export default function App() {
     })
   }
 
-  // Persists tools[index] via api.saveTool, or — if its name changed since
-  // the last persisted version — deletes the old name first (the backend
-  // upserts by name in the URL, so a rename isn't expressible as a single
-  // PUT; it would otherwise leave the old-named tool behind alongside the
-  // new one). Updates savedToolsRef on success so the next debounce pass
-  // sees this tool as clean, and refreshes the summaries list (tool count
-  // etc.) the same way every other mutation here does.
+  // Persists tools[index] — via api.saveToolByID (a single atomic update,
+  // rename included) once this tool has an id from a previous save, or
+  // api.saveTool (upsert by name) for a brand-new tool that doesn't yet.
+  // This replaced an older two-step rename (delete the old name, then
+  // saveTool under the new one) that had a real failure window: if the
+  // second call failed after the first succeeded, the tool vanished
+  // entirely, under neither name. saveToolByID's single request has no such
+  // window — see backend/internal/toolschema's saveTool doc comment for the
+  // same story on the server side.
+  //
+  // Either way, the response's toolId is written into both draft.tools
+  // (so a subsequent edit of the same tool already carries its id) and
+  // savedToolsRef (so isToolDirty sees this tool as clean). Also refreshes
+  // the summaries list (tool count etc.) the same way every other mutation
+  // here does.
   async function persistTool(appId: string, index: number, tool: Tool) {
-    const prev = savedToolsRef.current.tools[index]
     markToolBusy(index, true)
     try {
-      if (prev && prev.name !== tool.name) {
-        await api.deleteTool(appId, prev.name)
-      }
-      await api.saveTool(appId, tool)
-      savedToolsRef.current.tools[index] = tool
+      const result = tool.id
+        ? await api.saveToolByID(appId, tool.id, tool)
+        : await api.saveTool(appId, tool)
+      const saved = { ...tool, id: result.toolId }
+      savedToolsRef.current.tools[index] = saved
+      setDraft((d) => {
+        if (!d || d.appId !== appId) return d
+        const tools = d.tools.slice()
+        if (tools[index]?.name === tool.name) tools[index] = saved
+        return { ...d, tools }
+      })
       setToolError(index, null)
       await refreshSummaries()
     } catch (err) {
@@ -567,7 +581,7 @@ export default function App() {
 
   // A tool built through the guided wizard saves immediately — it went
   // through a multi-step review already, so unlike the blank "+ New tool"
-  // form (which waits for the debounced autosave below, since a
+  // form (which waits for the user's own explicit Save, since a
   // freshly-appended empty tool fails validation until named/described
   // anyway), there's no half-finished state to wait out here.
   function addToolFromWizard(tool: Tool) {
@@ -580,10 +594,10 @@ export default function App() {
     persistTool(draft.appId, index, tool)
   }
 
-  // Updates local display state only; persisting happens via the debounced
-  // effect below (same 1.2s-after-last-keystroke pattern the old
-  // draft-wide autosave used), so rapid edits (e.g. typing a tool name)
-  // don't fire a request per character.
+  // Updates local display state only; persisting happens only when the
+  // user explicitly saves (see saveTool below) — this used to feed a
+  // 1.2s-after-last-keystroke autosave, which silently dropped edits made
+  // just before switching views if the timer hadn't fired yet.
   function updateTool(index: number, next: Tool) {
     if (!draft) return
     const tools = draft.tools.slice()
@@ -591,38 +605,55 @@ export default function App() {
     updateDraft({ ...draft, tools })
   }
 
-  // Debounced per-tool autosave: 1.2s after the last edit to any given
-  // tool, if that tool has no validation issues and differs from what was
-  // last persisted for its index, save it. Runs once per render against
-  // every tool index rather than one effect per tool, since the number of
-  // tools itself changes — a fixed-size array of hooks isn't an option
-  // here. Each index gets its own timer/skip logic, so editing tool A
-  // doesn't reset or delay tool B's pending save.
-  useEffect(() => {
+  // Whether tools[index] has local edits not yet persisted — the only
+  // signal ToolForm/ToolEditSheet need to enable their own Save button, now
+  // that saving is a deliberate action instead of a 1.2s-after-last-
+  // keystroke autosave (see saveTool below). undefined in savedToolsRef
+  // means "never saved" (e.g. a brand-new tool), which is also dirty.
+  function isToolDirty(index: number): boolean {
+    if (!draft) return false
+    const tool = draft.tools[index]
+    const prev = savedToolsRef.current.tools[index]
+    if (!tool) return false
+    return !prev || JSON.stringify(prev) !== JSON.stringify(tool)
+  }
+
+  // Explicit, user-triggered save for tools[index] — replaces the former
+  // 1.2s-after-last-keystroke autosave. That debounce silently lost edits
+  // whenever a switch to another view (refreshDraftForSwitch) landed inside
+  // its window: the switch's own getApp() refetch overwrote draft with the
+  // server's still-stale copy before the pending timer ever fired, with no
+  // indication anything was lost. A save the user explicitly asks for has
+  // no such race — it either finishes (or visibly fails) before the user
+  // moves on.
+  function saveTool(index: number) {
     if (!draft) return
-    const appId = draft.appId
-    const timers = draft.tools.map((tool, index) => {
-      if (toolBusy.has(index)) return undefined
-      const toolIssues = issuesByTool.get(index)
-      if (toolIssues && toolIssues.length > 0) return undefined
-      const prev = savedToolsRef.current.tools[index]
-      if (prev && JSON.stringify(prev) === JSON.stringify(tool)) return undefined
-      return setTimeout(() => {
-        persistTool(appId, index, tool)
-      }, 1200)
-    })
-    return () => {
-      for (const t of timers) if (t) clearTimeout(t)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- persistTool/issuesByTool close over draft/reportError themselves; keying on draft.tools (not toolBusy's Set identity) is what makes this fire only after an actual edit, not after every busy/error state change.
-  }, [draft, issuesByTool])
+    const tool = draft.tools[index]
+    if (!tool) return
+    const toolIssues = issuesByTool.get(index)
+    if (toolIssues && toolIssues.length > 0) return
+    persistTool(draft.appId, index, tool)
+  }
+
+  // Combines updateTool + saveTool for callers whose own UI already gates
+  // the commit point (mobile's ToolEditSheet.tsx holds its own local draft
+  // across possibly several field edits and only ever calls onChange once,
+  // from ITS OWN Save button) — saveTool alone would read draft.tools[index]
+  // before the setDraft from updateTool has applied, so this saves `next`
+  // directly instead of relying on that state update having landed yet.
+  function updateAndSaveTool(index: number, next: Tool) {
+    if (!draft) return
+    updateTool(index, next)
+    persistTool(draft.appId, index, next)
+  }
 
   // Deletes immediately (behind a confirmation, since it's destructive) —
   // "Delete tool" is itself a deliberate, named action, not an in-progress
   // edit someone might want to back out of before it's persisted.
   function removeTool(index: number) {
     if (!draft) return
-    const toolName = draft.tools[index]?.name || 'this tool'
+    const tool = draft.tools[index]
+    const toolName = tool?.name || 'this tool'
     const appId = draft.appId
     setPendingConfirm({
       message: `Delete "${toolName}"? This can't be undone.`,
@@ -635,9 +666,14 @@ export default function App() {
         try {
           // Only the backend actually has this tool if it was ever
           // persisted (savedToolsRef) — a brand-new tool deleted before its
-          // first save has nothing to delete server-side.
-          if (savedToolsRef.current.tools[index]) {
-            await api.deleteTool(appId, toolName)
+          // first save has nothing to delete server-side. Prefer the id
+          // once known (matches saveToolByID's addressing) — falls back to
+          // name only for a tool saved before this app ever assigned ids.
+          const saved = savedToolsRef.current.tools[index]
+          if (saved?.id) {
+            await api.deleteToolByID(appId, saved.id)
+          } else if (saved) {
+            await api.deleteTool(appId, saved.name)
           }
           savedToolsRef.current.tools.splice(index, 1)
           shiftToolIndicesAfterRemoval(index)
@@ -653,13 +689,22 @@ export default function App() {
   // Re-fetches draft (and, via refreshSummaries, the thought/origin/key
   // fields selectApp's fetch doesn't cover) before switching sub-views
   // within the same app — so e.g. a Thought edit saved from another tab
-  // shows up here without a full app reselect. No discard confirmation
-  // gate here anymore: every tool edit already saves on its own (debounced
-  // autosave or immediate, depending on the action), so there's nothing
-  // unsaved left to lose by switching views.
+  // shows up here without a full app reselect.
+  //
+  // Guards on unsaved tool edits first: now that tool saves are a
+  // deliberate user action (see saveTool) rather than a debounced
+  // autosave, there IS real local state a switch could discard —
+  // confirmDiscard gives the user a chance to back out instead of silently
+  // overwriting draft.tools with refetched server data the moment
+  // switchView() below runs.
   function refreshDraftForSwitch(switchView: () => void) {
     if (!draft) {
       switchView()
+      return
+    }
+    const anyDirty = draft.tools.some((_, i) => isToolDirty(i))
+    if (anyDirty) {
+      confirmDiscard('Discard unsaved tool changes?', () => refreshDraftForSwitch(switchView))
       return
     }
     switchView()
@@ -768,6 +813,11 @@ export default function App() {
   // draft-wide dirty/busy pair now that saves happen per tool.
   const anyToolBusy = toolBusy.size > 0
   const anyToolError = toolErrors.size > 0
+  // Whether any tool has local edits not yet saved — now a real,
+  // meaningful state (saves are a deliberate action, not an autosave), so
+  // MobileWorkspaceCards' Tools card dot needs to reflect it, not just
+  // busy/error.
+  const anyToolDirty = draft ? draft.tools.some((_, i) => isToolDirty(i)) : false
 
   return (
     <AppShell
@@ -862,7 +912,7 @@ export default function App() {
           isMobile ? (
             <MobileWorkspaceCards
               draft={draft}
-              dirty={anyToolBusy || anyToolError}
+              dirty={anyToolDirty || anyToolError}
               busy={anyToolBusy}
               appLevelIssues={appLevelIssues}
               issuesByTool={issuesByTool}
@@ -871,7 +921,7 @@ export default function App() {
               thoughtDirty={thoughtDraft.trim() !== (activeSummary?.thought ?? '')}
               onThoughtChange={setThoughtDraft}
               onSaveThought={saveThought}
-              onChangeTool={updateTool}
+              onChangeTool={updateAndSaveTool}
               onRemoveTool={removeTool}
               onCreateTool={appendTool}
               onConfirmDiscard={confirmDiscard}
@@ -942,8 +992,10 @@ export default function App() {
                       tool={selectedTool}
                       issues={issuesByTool.get(activeToolIndex!) ?? []}
                       busy={toolBusy.has(activeToolIndex!)}
+                      dirty={isToolDirty(activeToolIndex!)}
                       saveError={toolErrors.get(activeToolIndex!) ?? null}
                       onChange={(next) => updateTool(activeToolIndex!, next)}
+                      onSave={() => saveTool(activeToolIndex!)}
                       onRemove={() => removeTool(activeToolIndex!)}
                     />
                   ) : (

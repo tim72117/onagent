@@ -74,7 +74,7 @@ func TestApiClient_CreateApp_RequestShape(t *testing.T) {
 	srv, captured := recordingServer(t, http.StatusCreated, `{"appId":"myapp","toolCount":0,"hasKey":false}`)
 	c := &apiClient{base: srv.URL, token: "tok-123"}
 
-	if _, err := c.createApp("myapp"); err != nil {
+	if _, err := c.createApp("myapp", false); err != nil {
 		t.Fatalf("createApp: %v", err)
 	}
 
@@ -91,8 +91,28 @@ func TestApiClient_CreateApp_RequestShape(t *testing.T) {
 	if body["appId"] != "myapp" {
 		t.Errorf("body[appId] = %v, want %q", body["appId"], "myapp")
 	}
-	if len(body) != 1 {
-		t.Errorf("body has extra fields: %v, want only appId", body)
+	if body["public"] != false {
+		t.Errorf("body[public] = %v, want false", body["public"])
+	}
+	if len(body) != 2 {
+		t.Errorf("body has extra fields: %v, want only appId and public", body)
+	}
+}
+
+// TestApiClient_CreateApp_PublicFlag confirms -public actually threads
+// through to the request body as true, rather than the field only ever
+// existing in the false/omitted case above.
+func TestApiClient_CreateApp_PublicFlag(t *testing.T) {
+	srv, captured := recordingServer(t, http.StatusCreated, `{"appId":"myapp","toolCount":0,"hasKey":false}`)
+	c := &apiClient{base: srv.URL, token: "tok-123"}
+
+	if _, err := c.createApp("myapp", true); err != nil {
+		t.Fatalf("createApp: %v", err)
+	}
+
+	body := decodeBody(t, captured.body)
+	if body["public"] != true {
+		t.Errorf("body[public] = %v, want true", body["public"])
 	}
 }
 
@@ -305,7 +325,7 @@ func TestApiClient_ErrorResponse_SurfacesBody(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c := &apiClient{base: srv.URL, token: "tok-123"}
 
-	_, err := c.createApp("myapp")
+	_, err := c.createApp("myapp", false)
 	if err == nil {
 		t.Fatal("createApp returned nil error for a 409 response")
 	}

@@ -24,6 +24,14 @@ export interface AppSummary {
   thought: string
 }
 
+// What both saveTool and saveToolByID return: the usual AppSummary fields,
+// plus the id of the tool that was just written — the console needs this
+// the moment a brand-new tool is first saved, so every later save of that
+// same tool can switch to saveToolByID (see that function's own comment).
+export interface ToolSaveResponse extends AppSummary {
+  toolId: number
+}
+
 export interface IssuedKey {
   appId: string
   /** Plaintext key — the backend stores only its hash, so this is the one
@@ -137,16 +145,32 @@ export const api = {
   createApp: (appId: string): Promise<AppSummary> =>
     request('POST', '/console/apps', { appId }).then((r) => r.json()),
 
-  // Upserts a single tool by name (replacing the old batch PUT .../tools,
+  // Upserts a single tool BY NAME (replacing the old batch PUT .../tools,
   // which took the whole tools[] array and has been removed backend-side).
-  // tool.name is the URL key — renaming a tool is therefore a delete of the
-  // old name plus a saveTool under the new one, not a single call; see
-  // App.tsx's updateTool for how that's sequenced.
-  saveTool: (appId: string, tool: Tool): Promise<AppSummary> =>
+  // Only for a brand-new tool (tool.id is absent/0) — this route's only key
+  // is the name, so it can create or re-save-under-the-same-name, but can't
+  // rename in place. Once the backend has assigned an id (this call's own
+  // response.toolId), every subsequent save of that tool must go through
+  // saveToolByID instead, including any rename — see this file's own
+  // toolSaveResponse doc comment and App.tsx's persistTool for the bug
+  // this split fixes (renaming used to be a delete of the old name plus a
+  // saveTool under the new one, two separate requests with a window where
+  // a failure between them lost the tool entirely).
+  saveTool: (appId: string, tool: Tool): Promise<ToolSaveResponse> =>
     request('PUT', `/console/apps/${id(appId)}/tools/${id(tool.name)}`, tool).then((r) => r.json()),
+
+  // Upserts by ID — the only route that can change a tool's name without a
+  // separate delete, since it addresses the row by its stable id rather
+  // than by the very field being changed. See saveTool's doc comment for
+  // when to use which.
+  saveToolByID: (appId: string, toolId: number, tool: Tool): Promise<ToolSaveResponse> =>
+    request('PUT', `/console/apps/${id(appId)}/tools/id/${id(String(toolId))}`, tool).then((r) => r.json()),
 
   deleteTool: (appId: string, toolName: string): Promise<AppSummary> =>
     request('DELETE', `/console/apps/${id(appId)}/tools/${id(toolName)}`).then((r) => r.json()),
+
+  deleteToolByID: (appId: string, toolId: number): Promise<AppSummary> =>
+    request('DELETE', `/console/apps/${id(appId)}/tools/id/${id(String(toolId))}`).then((r) => r.json()),
 
   setOrigins: (appId: string, origins: string[]): Promise<AppSummary> =>
     request('PUT', `/console/apps/${id(appId)}/origin`, { origins }).then((r) => r.json()),

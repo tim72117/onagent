@@ -61,10 +61,10 @@ func TestRegistryBackendDispatch_WriteReadBack(t *testing.T) {
 	makeTestUser(t, sqlDB, ownerID, "backend-dispatch-roundtrip@example.com")
 	t.Cleanup(func() { deleteTestApp(t, reg, appID) })
 
-	if err := reg.Create(appID, ownerID); err != nil {
+	if err := reg.Create(appID, ownerID, false); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := reg.SaveTool(appID, Tool{
+	if _, err := reg.SaveTool(appID, Tool{
 		Name:        "recommend_nearby",
 		Description: "Recommend nearby places",
 		Parameters: ParameterSchema{
@@ -115,10 +115,10 @@ func TestRegistryBackendDispatch_NonDispatchToolUnaffected(t *testing.T) {
 	makeTestUser(t, sqlDB, ownerID, "backend-dispatch-mixed@example.com")
 	t.Cleanup(func() { deleteTestApp(t, reg, appID) })
 
-	if err := reg.Create(appID, ownerID); err != nil {
+	if err := reg.Create(appID, ownerID, false); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := reg.SaveTool(appID, Tool{
+	if _, err := reg.SaveTool(appID, Tool{
 		Name:        "dispatch_tool",
 		Description: "Uses backend dispatch",
 		Parameters:  ParameterSchema{Type: "object"},
@@ -129,7 +129,7 @@ func TestRegistryBackendDispatch_NonDispatchToolUnaffected(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveTool(dispatch_tool): %v", err)
 	}
-	if err := reg.SaveTool(appID, Tool{
+	if _, err := reg.SaveTool(appID, Tool{
 		Name:        "plain_tool",
 		Description: "Ordinary browser-dispatched action tool",
 		Parameters:  ParameterSchema{Type: "object"},
@@ -187,10 +187,10 @@ func TestRegistryBackendDispatch_UpdateClearsDispatchWhenOmitted(t *testing.T) {
 	makeTestUser(t, sqlDB, ownerID, "backend-dispatch-update-clears@example.com")
 	t.Cleanup(func() { deleteTestApp(t, reg, appID) })
 
-	if err := reg.Create(appID, ownerID); err != nil {
+	if err := reg.Create(appID, ownerID, false); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := reg.SaveTool(appID, Tool{
+	if _, err := reg.SaveTool(appID, Tool{
 		Name:        "recommend_nearby",
 		Description: "Recommend nearby places",
 		Parameters:  ParameterSchema{Type: "object"},
@@ -207,7 +207,7 @@ func TestRegistryBackendDispatch_UpdateClearsDispatchWhenOmitted(t *testing.T) {
 		t.Fatalf("setup failed: BackendDispatch not present after first SaveTool")
 	}
 
-	if err := reg.SaveTool(appID, Tool{
+	if _, err := reg.SaveTool(appID, Tool{
 		Name:        "recommend_nearby",
 		Description: "No backend dispatch this time",
 		Parameters:  ParameterSchema{Type: "object"},

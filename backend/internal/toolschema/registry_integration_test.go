@@ -87,7 +87,7 @@ func TestRegistryCRUDLifecycle(t *testing.T) {
 		t.Fatalf("NewRegistry: %v", err)
 	}
 
-	if err := reg.Create(appID, ownerID); err != nil {
+	if err := reg.Create(appID, ownerID, false); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if owner, ok := reg.OwnerOf(appID); !ok || owner != ownerID {
@@ -103,10 +103,10 @@ func TestRegistryCRUDLifecycle(t *testing.T) {
 	}
 
 	// SaveTool each tool and confirm they round-trip through Get.
-	if err := reg.SaveTool(appID, sampleTool("tool_a")); err != nil {
+	if _, err := reg.SaveTool(appID, sampleTool("tool_a")); err != nil {
 		t.Fatalf("SaveTool(tool_a): %v", err)
 	}
-	if err := reg.SaveTool(appID, sampleTool("tool_b")); err != nil {
+	if _, err := reg.SaveTool(appID, sampleTool("tool_b")); err != nil {
 		t.Fatalf("SaveTool(tool_b): %v", err)
 	}
 	got, ok := reg.Get(appID)
@@ -195,17 +195,17 @@ func TestSaveTool_AddsWithoutTouchingOthers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRegistry: %v", err)
 	}
-	if err := reg.Create(appID, ownerID); err != nil {
+	if err := reg.Create(appID, ownerID, false); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := reg.SaveTool(appID, sampleTool("existing_1")); err != nil {
+	if _, err := reg.SaveTool(appID, sampleTool("existing_1")); err != nil {
 		t.Fatalf("seed SaveTool(existing_1): %v", err)
 	}
-	if err := reg.SaveTool(appID, sampleTool("existing_2")); err != nil {
+	if _, err := reg.SaveTool(appID, sampleTool("existing_2")); err != nil {
 		t.Fatalf("seed SaveTool(existing_2): %v", err)
 	}
 
-	if err := reg.SaveTool(appID, sampleTool("new_tool")); err != nil {
+	if _, err := reg.SaveTool(appID, sampleTool("new_tool")); err != nil {
 		t.Fatalf("SaveTool: %v", err)
 	}
 
@@ -242,19 +242,19 @@ func TestSaveTool_UpdatesExistingToolInPlace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRegistry: %v", err)
 	}
-	if err := reg.Create(appID, ownerID); err != nil {
+	if err := reg.Create(appID, ownerID, false); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := reg.SaveTool(appID, sampleTool("other_tool")); err != nil {
+	if _, err := reg.SaveTool(appID, sampleTool("other_tool")); err != nil {
 		t.Fatalf("seed SaveTool(other_tool): %v", err)
 	}
-	if err := reg.SaveTool(appID, sampleTool("target_tool")); err != nil {
+	if _, err := reg.SaveTool(appID, sampleTool("target_tool")); err != nil {
 		t.Fatalf("seed SaveTool(target_tool): %v", err)
 	}
 
 	updated := sampleTool("target_tool")
 	updated.Description = "an updated description"
-	if err := reg.SaveTool(appID, updated); err != nil {
+	if _, err := reg.SaveTool(appID, updated); err != nil {
 		t.Fatalf("SaveTool: %v", err)
 	}
 
@@ -280,6 +280,94 @@ func TestSaveTool_UpdatesExistingToolInPlace(t *testing.T) {
 	}
 }
 
+// TestSaveTool_RenameByIDUpdatesInPlace is the regression test for the bug
+// that motivated adding tools.id at all (see this package's saveTool doc
+// comment and apps/console/src/App.tsx's old persistTool): renaming a tool
+// by passing its existing ID with a new Name must be a single atomic
+// UPDATE — the row's id, position, and every other field stay unchanged,
+// and there is no point in time where a caller re-reading the app would
+// see neither the old name nor the new one (the failure mode the old
+// delete-old-name-then-insert-new-name two-step could hit if the insert
+// half failed after the delete half committed).
+func TestSaveTool_RenameByIDUpdatesInPlace(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, _ := database.DB()
+	conn := sqlDB
+
+	const ownerID = 999807
+	const appID = "test-toolschema-savetool-rename-app"
+	makeTestUser(t, conn, ownerID, "toolschema-savetool-rename@example.com")
+	t.Cleanup(func() {
+		_, _ = conn.Exec(`DELETE FROM apps WHERE app_id = $1`, appID)
+	})
+
+	reg, err := NewRegistry(database)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if err := reg.Create(appID, ownerID, false); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := reg.SaveTool(appID, sampleTool("sibling_tool")); err != nil {
+		t.Fatalf("seed SaveTool(sibling_tool): %v", err)
+	}
+	id, err := reg.SaveTool(appID, sampleTool("old_name"))
+	if err != nil {
+		t.Fatalf("seed SaveTool(old_name): %v", err)
+	}
+	if id == 0 {
+		t.Fatal("SaveTool returned id 0 for a brand-new tool, want a real assigned id")
+	}
+
+	renamed := sampleTool("old_name")
+	renamed.ID = id
+	renamed.Name = "new_name"
+	renamed.Description = "renamed via id"
+	gotID, err := reg.SaveTool(appID, renamed)
+	if err != nil {
+		t.Fatalf("SaveTool (rename by id): %v", err)
+	}
+	if gotID != id {
+		t.Errorf("SaveTool (rename) returned id %d, want the same id %d — a rename must not change the row's identity", gotID, id)
+	}
+
+	app, ok := reg.Get(appID)
+	if !ok {
+		t.Fatal("app not found after rename")
+	}
+	if len(app.Tools) != 2 {
+		t.Fatalf("Tools after rename = %v, want exactly 2 (renamed tool + sibling_tool) — a broken rename could leave 1 (old row deleted, insert failed) or 3 (both old and new names present)", app.Tools)
+	}
+	var found bool
+	for _, tool := range app.Tools {
+		if tool.Name == "old_name" {
+			t.Errorf("old_name still present after rename — this is exactly the delete-then-insert failure mode the id column exists to prevent")
+		}
+		if tool.Name == "new_name" {
+			found = true
+			if tool.ID != id {
+				t.Errorf("new_name's ID = %d, want unchanged %d", tool.ID, id)
+			}
+			if tool.Description != "renamed via id" {
+				t.Errorf("new_name's Description = %q, want %q", tool.Description, "renamed via id")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("new_name missing after rename")
+	}
+
+	// The row's id itself never changed at the database level either — not
+	// just "a tool with this name and these fields exists somewhere."
+	var dbName string
+	if err := conn.QueryRow(`SELECT name FROM tools WHERE id = $1`, id).Scan(&dbName); err != nil {
+		t.Fatalf("query tools by id: %v", err)
+	}
+	if dbName != "new_name" {
+		t.Errorf("tools.name for id %d = %q, want %q — the SAME row must have been updated, not a new row inserted under a new id", id, dbName, "new_name")
+	}
+}
+
 // TestSaveTool_UnknownAppErrors — SaveTool must refuse to write a tool row
 // for an app_id that was never created via Registry.Create, the same "app
 // must already exist" invariant the old saveApp enforced (see
@@ -293,7 +381,7 @@ func TestSaveTool_UnknownAppErrors(t *testing.T) {
 		t.Fatalf("NewRegistry: %v", err)
 	}
 
-	err = reg.SaveTool("test-toolschema-savetool-no-such-app", sampleTool("t1"))
+	_, err = reg.SaveTool("test-toolschema-savetool-no-such-app", sampleTool("t1"))
 	if err == nil {
 		t.Fatal("SaveTool against a nonexistent app returned nil error, want an error")
 	}
@@ -320,11 +408,11 @@ func TestSaveTool_InvalidToolErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRegistry: %v", err)
 	}
-	if err := reg.Create(appID, ownerID); err != nil {
+	if err := reg.Create(appID, ownerID, false); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	err = reg.SaveTool(appID, Tool{Name: "", Description: "missing a name"})
+	_, err = reg.SaveTool(appID, Tool{Name: "", Description: "missing a name"})
 	if err == nil {
 		t.Fatal("SaveTool with an empty tool name returned nil error, want a validation error")
 	}
@@ -352,14 +440,14 @@ func TestSaveTool_DoesNotOverwriteExistingOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRegistry: %v", err)
 	}
-	if err := reg.Create(appID, ownerID); err != nil {
+	if err := reg.Create(appID, ownerID, false); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if owner, ok := reg.OwnerOf(appID); !ok || owner != ownerID {
 		t.Fatalf("OwnerOf after Create = (%d, %v), want (%d, true)", owner, ok, ownerID)
 	}
 
-	if err := reg.SaveTool(appID, sampleTool("t1")); err != nil {
+	if _, err := reg.SaveTool(appID, sampleTool("t1")); err != nil {
 		t.Fatalf("SaveTool: %v", err)
 	}
 
@@ -389,16 +477,16 @@ func TestDeleteTool_RemovesOnlyThatTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRegistry: %v", err)
 	}
-	if err := reg.Create(appID, ownerID); err != nil {
+	if err := reg.Create(appID, ownerID, false); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := reg.SaveTool(appID, sampleTool("keep_1")); err != nil {
+	if _, err := reg.SaveTool(appID, sampleTool("keep_1")); err != nil {
 		t.Fatalf("seed SaveTool(keep_1): %v", err)
 	}
-	if err := reg.SaveTool(appID, sampleTool("to_delete")); err != nil {
+	if _, err := reg.SaveTool(appID, sampleTool("to_delete")); err != nil {
 		t.Fatalf("seed SaveTool(to_delete): %v", err)
 	}
-	if err := reg.SaveTool(appID, sampleTool("keep_2")); err != nil {
+	if _, err := reg.SaveTool(appID, sampleTool("keep_2")); err != nil {
 		t.Fatalf("seed SaveTool(keep_2): %v", err)
 	}
 
@@ -439,10 +527,10 @@ func TestDeleteTool_UnknownToolIsNoOp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRegistry: %v", err)
 	}
-	if err := reg.Create(appID, ownerID); err != nil {
+	if err := reg.Create(appID, ownerID, false); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if err := reg.SaveTool(appID, sampleTool("kept")); err != nil {
+	if _, err := reg.SaveTool(appID, sampleTool("kept")); err != nil {
 		t.Fatalf("seed SaveTool: %v", err)
 	}
 
