@@ -1,6 +1,7 @@
 package inference
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"runtime"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/tim72117/want/config"
 	"github.com/tim72117/want/orchestrator"
+	"github.com/tim72117/want/types"
 )
 
 // writeEmptyScenario creates a minimal, valid mock-provider scenario file —
@@ -34,7 +36,7 @@ func writeEmptyScenario(t *testing.T, path string) {
 func TestGetOrCreate_DifferentSessionsGetDistinctOrchestrators(t *testing.T) {
 	scenario := t.TempDir() + "/scenario.json"
 	writeEmptyScenario(t, scenario)
-	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil)
+	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil, nil)
 
 	orchA, err := s.getOrCreate("session-a", "")
 	if err != nil {
@@ -67,7 +69,7 @@ func TestGetOrCreate_DifferentSessionsGetDistinctOrchestrators(t *testing.T) {
 func TestGetOrCreate_SameSessionReturnsSameOrchestrator(t *testing.T) {
 	scenario := t.TempDir() + "/scenario.json"
 	writeEmptyScenario(t, scenario)
-	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil)
+	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil, nil)
 
 	first, err := s.getOrCreate("session-a", "")
 	if err != nil {
@@ -93,7 +95,7 @@ func TestGetOrCreate_SameSessionReturnsSameOrchestrator(t *testing.T) {
 func TestCloseSession_ReleasesAndReclaimsGoroutine(t *testing.T) {
 	scenario := t.TempDir() + "/scenario.json"
 	writeEmptyScenario(t, scenario)
-	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil)
+	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil, nil)
 
 	before := runtime.NumGoroutine()
 
@@ -146,7 +148,7 @@ func TestCloseSession_ReleasesAndReclaimsGoroutine(t *testing.T) {
 func TestGetOrCreate_ConcurrentSessionsAreRaceFree(t *testing.T) {
 	scenario := t.TempDir() + "/scenario.json"
 	writeEmptyScenario(t, scenario)
-	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil)
+	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil, nil)
 
 	const n = 50
 	var wg sync.WaitGroup
@@ -175,6 +177,91 @@ func TestGetOrCreate_ConcurrentSessionsAreRaceFree(t *testing.T) {
 			t.Errorf("session-%d and session-%d resolved to the same orchestrator instance", prev, i)
 		}
 		seen[orch] = i
+	}
+}
+
+// noopTool is a synchronous, non-blocking types.ToolInterface — unlike
+// agent_roles.go's forwardingTool/queryTool, which both block on askPage
+// waiting for a connected page that doesn't exist in this test. Used only to
+// give TestComplete_SumsUsageAcrossToolUseRounds' scenario a real tool to
+// call, forcing want's internal query loop (want internal/query.go: a round
+// containing tool_use keeps the loop going for another GenerateStream call)
+// through a second real round-trip within one Submit.
+type noopTool struct{ types.BaseToolConfig }
+
+func (noopTool) Call(types.ToolArguments, types.ToolContext) ([]types.ResultContentBlock, error) {
+	return []types.ResultContentBlock{types.TextBlock("done")}, nil
+}
+func (noopTool) ValidateInput(types.ToolArguments, types.ToolContext) error { return nil }
+func (noopTool) RenderToolUse(types.ToolArguments) string                  { return "using noop" }
+func (noopTool) RenderToolUseError(error) string                           { return "noop failed" }
+func (noopTool) RenderToolResult(map[string]interface{}) string            { return "noop done" }
+
+// noopToolProvider declares exactly one callable tool, "noop" — enough for
+// the scenario's round 1 tool_use to resolve to a real, non-blocking
+// factory via GetFactory (want internal/agent_tool.go's DispatchToolCall).
+type noopToolProvider struct{}
+
+func (noopToolProvider) Declarations() []types.ToolDeclaration {
+	return []types.ToolDeclaration{{Name: "noop", Type: "sync", Parameters: map[string]interface{}{"type": "object", "properties": map[string]interface{}{}}}}
+}
+
+func (noopToolProvider) GetFactory(name string) (types.ToolFactory, bool) {
+	if name != "noop" {
+		return nil, false
+	}
+	return func() types.ToolInterface { return noopTool{} }, true
+}
+
+// writeToolUseThenTextScenario creates a mock-provider scenario with two
+// rounds, each carrying its own usage: round 1 calls the "noop" tool (which
+// keeps want's query loop going for a second round — see noopTool's doc
+// comment), round 2 replies with plain text (no tool_use, which ends the
+// loop). This is what actually drives two real provider round-trips inside
+// one Submit call, unlike two independent Complete calls, which build no
+// evidence about summation within a single turn.
+func writeToolUseThenTextScenario(t *testing.T, path string) {
+	t.Helper()
+	const scenario = `{"rounds":[
+		{"contents":[{"type":"tool_use","tool_use":{"name":"noop","input":{}}}],
+		 "usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120}},
+		{"contents":[{"type":"text","text":"done"}],
+		 "usage":{"prompt_tokens":140,"completion_tokens":10,"total_tokens":150}}
+	]}`
+	if err := os.WriteFile(path, []byte(scenario), 0644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", path, err)
+	}
+}
+
+// TestComplete_SumsUsageAcrossToolUseRounds is the acceptance check for the
+// token-usage feature added to Result/want.go: a single Complete call whose
+// want run makes two real provider round-trips (a tool-use round, then the
+// reply that follows it) must return their usage SUMMED via types.Usage.Add
+// — see inference.go's Result.Usage doc comment — not just the last round's
+// numbers, and not nil despite two separate usage events arriving on the
+// "agent.inference" topic.
+func TestComplete_SumsUsageAcrossToolUseRounds(t *testing.T) {
+	scenario := t.TempDir() + "/scenario.json"
+	writeToolUseThenTextScenario(t, scenario)
+	s := NewWant(&config.Settings{Provider: "mock", MockScenario: scenario}, nil, nil, nil)
+	t.Cleanup(func() { s.CloseSession("session-usage") })
+
+	orch, err := s.getOrCreate("session-usage", "")
+	if err != nil {
+		t.Fatalf("getOrCreate: %v", err)
+	}
+	orch.Toolbox = noopToolProvider{}
+
+	result, err := s.Complete(context.Background(), Request{Prompt: "go", SessionID: "session-usage"})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if result.Usage == nil {
+		t.Fatal("Result.Usage is nil, want the two rounds' usage summed")
+	}
+	wantUsage := types.Usage{PromptTokens: 240, CompletionTokens: 30, TotalTokens: 270}
+	if *result.Usage != wantUsage {
+		t.Errorf("Result.Usage = %+v, want %+v (sum of both rounds' usage, not just the last one)", *result.Usage, wantUsage)
 	}
 }
 

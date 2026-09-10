@@ -38,6 +38,16 @@ type Session struct {
 	// (ws.Handler.Auth), or "" if auth is disabled. When set, it overrides
 	// whatever appId the client's hello message claims — see handleHello.
 	authAppID string
+	// userID is who this connection's usage bills to — resolved once at
+	// handshake time by the AppResolver (see AppResolver.ResolveApp's own
+	// doc comment for what it means per resolver) and passed unchanged into
+	// every inference.Request this connection's prompts produce (see
+	// handlePrompt). Zero when auth is disabled (no resolver ran) — harmless
+	// since quota.Service.Record is only ever reached through a resolver
+	// path that supplies a real userID; a from-scratch dev/mock server with
+	// no resolver has no quota.Service either (see quota.Service's nil
+	// doc comment), so Record never runs to observe the zero value.
+	userID int64
 
 	writeMu sync.Mutex
 
@@ -79,7 +89,11 @@ func resolveSessionID(id string) string {
 // choice, pulled out so it's testable without a real *websocket.Conn (which
 // NewSession itself can't avoid — s.run blocks on it until the connection
 // closes).
-func NewSession(ctx context.Context, conn *websocket.Conn, apps *toolschema.Registry, infer inference.Service, log *slog.Logger, authAppID string, quotaSvc *quota.Service, sessionID string) {
+//
+// userID is the resolver's billing-attribution answer for this connection
+// (see AppResolver.ResolveApp's own doc comment) — stored unchanged on
+// Session.userID and threaded into every prompt's inference.Request.UserID.
+func NewSession(ctx context.Context, conn *websocket.Conn, apps *toolschema.Registry, infer inference.Service, log *slog.Logger, authAppID string, quotaSvc *quota.Service, sessionID string, userID int64) {
 	s := &Session{
 		id:           resolveSessionID(sessionID),
 		conn:         conn,
@@ -88,6 +102,7 @@ func NewSession(ctx context.Context, conn *websocket.Conn, apps *toolschema.Regi
 		quota:        quotaSvc,
 		log:          log,
 		authAppID:    authAppID,
+		userID:       userID,
 		pendingCalls: make(map[string]chan protocol.ToolResultPayload),
 	}
 	s.writeMessage = func(data []byte) error {
@@ -295,21 +310,12 @@ func (s *Session) handlePrompt(ctx context.Context, env protocol.Envelope) {
 		Tools:     codegen.ToLLMTools(app),
 		AppID:     app.AppID,
 		SessionID: s.id,
+		RequestID: env.RequestID,
+		UserID:    s.userID,
 	})
 	if err != nil {
 		s.sendError(env.RequestID, "inference error: "+err.Error())
 		return
-	}
-
-	// Record usage only after inference succeeded — a failed call cost no
-	// billable LLM turn, so it must not consume quota. event_id is the
-	// prompt's RequestID, making the insert idempotent (quota.Record uses
-	// ON CONFLICT DO NOTHING): a client that retries the same RequestID
-	// after a dropped response is not charged twice. Recording failure is
-	// logged but not surfaced to the user — the work already happened; the
-	// worst case is one uncounted prompt, which favors the user.
-	if err := s.quota.Record(ctx, app.AppID, env.RequestID); err != nil {
-		s.log.Warn("failed to record usage event", "session", s.id, "app", app.AppID, "err", err)
 	}
 
 	for _, tc := range result.ToolCalls {

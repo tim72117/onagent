@@ -23,6 +23,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/tim72117/onagent/internal/adminauth"
 	"github.com/tim72117/onagent/internal/db"
 )
@@ -79,12 +80,13 @@ type cliAuthSessionsFull struct {
 func (cliAuthSessionsFull) TableName() string { return "cli_auth_sessions" }
 
 type appsFull struct {
-	AppID         string    `gorm:"column:app_id;primaryKey"`
-	OwnerID       *int64    `gorm:"column:owner_id"`
-	APIKeyHash    *string   `gorm:"column:api_key_hash"`
-	AllowedOrigin *string   `gorm:"column:allowed_origin"`
-	Thought       *string   `gorm:"column:thought"`
-	CreatedAt     time.Time `gorm:"column:created_at"`
+	AppID          string         `gorm:"column:app_id;primaryKey"`
+	OwnerID        *int64         `gorm:"column:owner_id"`
+	APIKeyHash     *string        `gorm:"column:api_key_hash"`
+	AllowedOrigins pq.StringArray `gorm:"column:allowed_origins;type:text[]"`
+	Thought        *string        `gorm:"column:thought"`
+	Public         bool           `gorm:"column:public"`
+	CreatedAt      time.Time      `gorm:"column:created_at"`
 }
 
 func (appsFull) TableName() string { return "apps" }
@@ -114,12 +116,15 @@ type subscriptionsFull struct {
 func (subscriptionsFull) TableName() string { return "subscriptions" }
 
 type usageEventsFull struct {
-	ID        int64     `gorm:"column:id;primaryKey"`
-	AppID     *string   `gorm:"column:app_id"`
-	OwnerID   *int64    `gorm:"column:owner_id"`
-	EventID   string    `gorm:"column:event_id"`
-	Kind      string    `gorm:"column:kind"`
-	CreatedAt time.Time `gorm:"column:created_at"`
+	ID               int64     `gorm:"column:id;primaryKey"`
+	AppID            *string   `gorm:"column:app_id"`
+	OwnerID          *int64    `gorm:"column:owner_id"`
+	EventID          string    `gorm:"column:event_id"`
+	Kind             string    `gorm:"column:kind"`
+	PromptTokens     *int      `gorm:"column:prompt_tokens"`
+	CompletionTokens *int      `gorm:"column:completion_tokens"`
+	TotalTokens      *int      `gorm:"column:total_tokens"`
+	CreatedAt        time.Time `gorm:"column:created_at"`
 }
 
 func (usageEventsFull) TableName() string { return "usage_events" }

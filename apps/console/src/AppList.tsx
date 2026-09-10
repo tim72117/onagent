@@ -51,11 +51,11 @@ export function AppList({
               onClick={() => onSelectApp(s.appId)}
             >
               <span className={styles.itemLabel}>{s.appId}</span>
-              {s.hasKey && !s.allowedOrigin && (
+              {s.hasKey && s.allowedOrigins.length === 0 && (
                 <span className={`${styles.statusDot} ${styles.error}`} title="Key issued but no origin set — all connections blocked" />
               )}
-              {s.hasKey && s.allowedOrigin && (
-                <span className={`${styles.statusDot} ${styles.ok}`} title={`Accepting connections from ${s.allowedOrigin}`} />
+              {s.hasKey && s.allowedOrigins.length > 0 && (
+                <span className={`${styles.statusDot} ${styles.ok}`} title={`Accepting connections from ${s.allowedOrigins.join(', ')}`} />
               )}
             </button>
           </li>

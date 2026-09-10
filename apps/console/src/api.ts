@@ -13,10 +13,12 @@ export interface AppSummary {
   appId: string
   toolCount: number
   hasKey: boolean
-  /** Exact Origin header this app's connections must present. "" means
-   * unset — the backend rejects every WebSocket connection for this app
-   * until it's set (fail-closed; see backend's ws.Handler.ServeHTTP). */
-  allowedOrigin: string
+  /** Exact Origin header values this app's connections may present — a
+   * connection is accepted if its Origin matches any one of these. Empty
+   * means unset — the backend rejects every WebSocket connection for this
+   * app until at least one is set (fail-closed; see backend's
+   * ws.Handler.ServeHTTP). */
+  allowedOrigins: string[]
   /** Custom want agent system prompt for this app. "" means the platform
    * default applies. */
   thought: string
@@ -48,6 +50,11 @@ export interface Quota {
   planName?: string
   limit?: number
   used?: number
+  // Backend-computed Used/Limit*100, rounded to the nearest integer (see
+  // console.go's getQuota) — read this instead of dividing used/limit
+  // client-side, since it already carries the same rounding and
+  // divide-by-zero handling the backend uses.
+  usedPercent?: number
   periodStart?: string // RFC 3339
   periodEnd?: string // RFC 3339
 }
@@ -130,11 +137,19 @@ export const api = {
   createApp: (appId: string): Promise<AppSummary> =>
     request('POST', '/console/apps', { appId }).then((r) => r.json()),
 
-  saveTools: (appId: string, tools: Tool[]): Promise<AppSummary> =>
-    request('PUT', `/console/apps/${id(appId)}/tools`, tools).then((r) => r.json()),
+  // Upserts a single tool by name (replacing the old batch PUT .../tools,
+  // which took the whole tools[] array and has been removed backend-side).
+  // tool.name is the URL key — renaming a tool is therefore a delete of the
+  // old name plus a saveTool under the new one, not a single call; see
+  // App.tsx's updateTool for how that's sequenced.
+  saveTool: (appId: string, tool: Tool): Promise<AppSummary> =>
+    request('PUT', `/console/apps/${id(appId)}/tools/${id(tool.name)}`, tool).then((r) => r.json()),
 
-  setOrigin: (appId: string, origin: string): Promise<AppSummary> =>
-    request('PUT', `/console/apps/${id(appId)}/origin`, { origin }).then((r) => r.json()),
+  deleteTool: (appId: string, toolName: string): Promise<AppSummary> =>
+    request('DELETE', `/console/apps/${id(appId)}/tools/${id(toolName)}`).then((r) => r.json()),
+
+  setOrigins: (appId: string, origins: string[]): Promise<AppSummary> =>
+    request('PUT', `/console/apps/${id(appId)}/origin`, { origins }).then((r) => r.json()),
 
   setThought: (appId: string, thought: string): Promise<AppSummary> =>
     request('PUT', `/console/apps/${id(appId)}/thought`, { thought }).then((r) => r.json()),

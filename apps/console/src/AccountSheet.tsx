@@ -33,9 +33,7 @@ export function AccountSheet({
       {quota?.enabled && (
         <div className={styles.planRow}>
           <span className={styles.planName}>{quota.planName} plan</span>
-          <span className={styles.planUsage}>
-            {quota.used} / {quota.limit} requests used this month
-          </span>
+          <span className={styles.planUsage}>{quota.usedPercent}% used this month</span>
         </div>
       )}
 

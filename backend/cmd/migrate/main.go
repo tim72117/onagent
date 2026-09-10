@@ -104,8 +104,10 @@ func main() {
 				fatal(fmt.Sprintf("create app %s", appID), err)
 			}
 		}
-		if err := registry.Save(app); err != nil {
-			fatal(fmt.Sprintf("save app %s", appID), err)
+		for _, tool := range app.Tools {
+			if err := registry.SaveTool(appID, tool); err != nil {
+				fatal(fmt.Sprintf("save tool %s.%s", appID, tool.Name), err)
+			}
 		}
 		fmt.Printf("Migrated app %-20s %d tool(s)\n", appID, len(app.Tools))
 	}

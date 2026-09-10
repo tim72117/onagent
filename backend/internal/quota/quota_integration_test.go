@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/tim72117/onagent/internal/db"
+	"github.com/tim72117/want/types"
 	"gorm.io/gorm"
 )
 
@@ -79,18 +80,22 @@ func makeTestApp(t *testing.T, conn *sql.DB, appID string, ownerID int64) {
 	})
 }
 
-// TestRecordCountsEveryCallEvenWithTheSameEventID exercises Record's
-// current semantics via the exported API (unlike
+// TestRecordSumsEveryCallEvenWithTheSameEventID exercises Record's current
+// semantics via the exported API (unlike
 // schema_integration_test.go's TestSchemaApplyIsIdempotent, which inserts
 // raw SQL to pin the DB constraint itself): eventID is no longer a dedup
 // key (see Record's doc comment and
 // docs/known-issues-pending-discussion.md's "用量記錄機制" section), so
-// three Record calls with the same (appID, eventID) must count three
-// times, not once. This test used to assert the opposite (Used == 1) back
-// when Record used ON CONFLICT (app_id, event_id) DO NOTHING — that
-// dedup logic was removed after it silently swallowed real, distinct
-// Playground prompts whose caller-supplied requestId happened to collide
-// across page loads.
+// three Record calls sharing one (appID, eventID) — the shape
+// WantService.Complete now produces for a single prompt's multiple internal
+// provider round-trips (see want.go's "agent.inference" subscription) —
+// must all contribute to Used, not just the first or the last. This test
+// used to assert Used == 1 (a bare count) back when Record used
+// ON CONFLICT (app_id, event_id) DO NOTHING — that dedup logic was removed
+// after it silently swallowed real, distinct Playground prompts whose
+// caller-supplied requestId happened to collide across page loads. Used is
+// now a token sum (see usageSince), so this asserts the three calls' tokens
+// are all present in the total, not merely that three rows exist.
 //
 // Needs an explicit subscriptions row with started_at safely in the past:
 // with no row at all, StandingFor/ownerStanding COALESCE started_at to
@@ -101,7 +106,7 @@ func makeTestApp(t *testing.T, conn *sql.DB, appID string, ownerID int64) {
 // it, which is exactly what TestStandingForDefaultsWhenNoSubscriptionRow
 // exists to test instead (it only asserts Used==0 for a fresh user with no
 // usage at all, so the race there is harmless).
-func TestRecordCountsEveryCallEvenWithTheSameEventID(t *testing.T) {
+func TestRecordSumsEveryCallEvenWithTheSameEventID(t *testing.T) {
 	database := openTestDB(t)
 	sqlDB, _ := database.DB()
 	conn := sqlDB
@@ -119,8 +124,14 @@ func TestRecordCountsEveryCallEvenWithTheSameEventID(t *testing.T) {
 		t.Fatalf("backdate started_at: %v", err)
 	}
 
-	for i := 0; i < 3; i++ {
-		if err := svc.Record(ctx, appID, "req-dedup-1"); err != nil {
+	// Each call carries its own distinct token cost — matching what three
+	// round-trips within one Submit actually look like (each round-trip's
+	// own usage event, not a running total) — so a wrong implementation
+	// that de-duplicated by eventID (keeping just one round's tokens)
+	// would produce a total other than their sum.
+	for i, tokens := range []int{100, 140, 30} {
+		usage := &types.Usage{PromptTokens: tokens, CompletionTokens: 1, TotalTokens: tokens + 1}
+		if err := svc.Record(ctx, appID, userID, "req-dedup-1", usage); err != nil {
 			t.Fatalf("Record call %d: %v", i+1, err)
 		}
 	}
@@ -129,23 +140,40 @@ func TestRecordCountsEveryCallEvenWithTheSameEventID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StandingFor: %v", err)
 	}
-	if st.Used != 3 {
-		t.Errorf("Used after 3 Records of the same event_id = %d, want 3 (eventID is no longer a dedup key)", st.Used)
+	const wantUsed = (100 + 1) + (140 + 1) + (30 + 1)
+	if st.Used != wantUsed {
+		t.Errorf("Used after 3 Records of the same event_id = %d, want %d (eventID is no longer a dedup key — every round-trip's tokens must be summed)", st.Used, wantUsed)
 	}
 }
 
-// TestRecordAgainstUnknownAppIsANoOp confirms Record's insert-select never
-// creates an orphaned usage_events row for an app_id that doesn't exist: the
-// SELECT ... FROM apps WHERE app_id = $1 clause finds no matching row, so
-// the INSERT has nothing to insert.
-func TestRecordAgainstUnknownAppIsANoOp(t *testing.T) {
+// TestRecordAgainstUnknownAppNowErrors documents a deliberate behavior
+// change from this package's earlier insert-select design (see this test's
+// former name, TestRecordAgainstUnknownAppIsANoOp): Record used to resolve
+// owner_id itself via `SELECT ... FROM apps WHERE app_id = $1`, so calling
+// it for an app_id with no matching row silently inserted nothing. Record
+// now takes userID directly from the caller instead of looking it up (see
+// Record's doc comment on why — billing must follow the connecting user,
+// not always the app's owner), so the INSERT is a plain one against a
+// usage_events.app_id column that still has a foreign key to apps(app_id).
+// A nonexistent app_id is now a genuine FK violation, not a silent no-op.
+//
+// This is acceptable, not a regression: every real caller (ws.APIKeyResolver,
+// internal/console's playgroundResolver) already verifies the app exists at
+// WebSocket handshake time, before a Session/AgentID/RequestID exists to
+// ever reach WantService.Complete's Record call — see both resolvers'
+// ResolveApp. A Record call against an unknown app_id can only happen if a
+// caller bypasses that handshake entirely, which is exactly the kind of bug
+// an FK error should surface loudly instead of swallowing.
+func TestRecordAgainstUnknownAppNowErrors(t *testing.T) {
 	database := openTestDB(t)
 	sqlDB, _ := database.DB()
 	conn := sqlDB
 	svc := New(database)
 	ctx := context.Background()
 
+	const userID = 999902
 	const appID = "quota-nonexistent-app-999902"
+	makeTestUser(t, conn, userID, "quota-record-unknown-app@example.com")
 	// Belt-and-suspenders: make sure nothing pre-existing shares this app_id.
 	if _, err := conn.Exec(`DELETE FROM usage_events WHERE app_id = $1`, appID); err != nil {
 		t.Fatalf("pre-cleanup: %v", err)
@@ -156,8 +184,8 @@ func TestRecordAgainstUnknownAppIsANoOp(t *testing.T) {
 		}
 	})
 
-	if err := svc.Record(ctx, appID, "req-orphan-1"); err != nil {
-		t.Fatalf("Record against unknown app returned an error: %v", err)
+	if err := svc.Record(ctx, appID, userID, "req-orphan-1", nil); err == nil {
+		t.Fatal("Record against an unknown app returned nil error, want a foreign-key violation")
 	}
 
 	var n int
@@ -165,7 +193,61 @@ func TestRecordAgainstUnknownAppIsANoOp(t *testing.T) {
 		t.Fatalf("count usage_events: %v", err)
 	}
 	if n != 0 {
-		t.Errorf("Record against an unknown app wrote %d usage_events rows, want 0", n)
+		t.Errorf("Record against an unknown app wrote %d usage_events rows, want 0 (the failed INSERT should not have committed anything)", n)
+	}
+}
+
+// TestRecordPersistsTokenUsage confirms Record's usage parameter (added
+// alongside inference.Result.Usage — see want.go's Complete) actually lands
+// in the usage_events row's prompt_tokens/completion_tokens/total_tokens
+// columns, and that passing nil (the MockService / no-usage-reported case)
+// leaves them NULL rather than zero — a real 0-token event and "this
+// provider reported nothing" must stay distinguishable in the ledger.
+func TestRecordPersistsTokenUsage(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, _ := database.DB()
+	conn := sqlDB
+	svc := New(database)
+	ctx := context.Background()
+
+	const userID = 999903
+	const appID = "quota-record-usage-app"
+	makeTestUser(t, conn, userID, "quota-record-usage@example.com")
+	makeTestApp(t, conn, appID, userID)
+
+	if err := svc.Record(ctx, appID, userID, "req-usage-1", &types.Usage{PromptTokens: 100, CompletionTokens: 20, TotalTokens: 120}); err != nil {
+		t.Fatalf("Record with usage: %v", err)
+	}
+	if err := svc.Record(ctx, appID, userID, "req-usage-2", nil); err != nil {
+		t.Fatalf("Record with nil usage: %v", err)
+	}
+
+	var promptTokens, completionTokens, totalTokens sql.NullInt64
+	if err := conn.QueryRow(
+		`SELECT prompt_tokens, completion_tokens, total_tokens FROM usage_events WHERE app_id = $1 AND event_id = $2`,
+		appID, "req-usage-1",
+	).Scan(&promptTokens, &completionTokens, &totalTokens); err != nil {
+		t.Fatalf("query req-usage-1 row: %v", err)
+	}
+	if !promptTokens.Valid || promptTokens.Int64 != 100 {
+		t.Errorf("req-usage-1 prompt_tokens = %+v, want 100", promptTokens)
+	}
+	if !completionTokens.Valid || completionTokens.Int64 != 20 {
+		t.Errorf("req-usage-1 completion_tokens = %+v, want 20", completionTokens)
+	}
+	if !totalTokens.Valid || totalTokens.Int64 != 120 {
+		t.Errorf("req-usage-1 total_tokens = %+v, want 120", totalTokens)
+	}
+
+	if err := conn.QueryRow(
+		`SELECT prompt_tokens, completion_tokens, total_tokens FROM usage_events WHERE app_id = $1 AND event_id = $2`,
+		appID, "req-usage-2",
+	).Scan(&promptTokens, &completionTokens, &totalTokens); err != nil {
+		t.Fatalf("query req-usage-2 row: %v", err)
+	}
+	if promptTokens.Valid || completionTokens.Valid || totalTokens.Valid {
+		t.Errorf("req-usage-2 (nil usage) token columns = prompt:%+v completion:%+v total:%+v, want all NULL",
+			promptTokens, completionTokens, totalTokens)
 	}
 }
 
@@ -194,8 +276,8 @@ func TestStandingForDefaultsWhenNoSubscriptionRow(t *testing.T) {
 	if st.PlanName != wantPlan.Name {
 		t.Errorf("PlanName = %q, want %q", st.PlanName, wantPlan.Name)
 	}
-	if st.Limit != wantPlan.MonthlyPrompts {
-		t.Errorf("Limit = %d, want %d (no per-user override, so the plan's own value)", st.Limit, wantPlan.MonthlyPrompts)
+	if st.Limit != wantPlan.MonthlyTokens {
+		t.Errorf("Limit = %d, want %d (no per-user override, so the plan's own value)", st.Limit, wantPlan.MonthlyTokens)
 	}
 	if st.Used != 0 {
 		t.Errorf("Used for a brand-new user = %d, want 0", st.Used)
@@ -311,7 +393,7 @@ func TestCountUsersAndListUsers(t *testing.T) {
 	// Give userB a non-default tier and an app with recorded usage, so
 	// ListUsers' join and its per-row usageSince call are both exercised
 	// with non-trivial values. started_at is backdated for the same reason
-	// TestRecordCountsEveryCallEvenWithTheSameEventID backdates it: with no
+	// TestRecordSumsEveryCallEvenWithTheSameEventID backdates it: with no
 	// subscriptions row (or one whose started_at is "now" at query time),
 	// the period boundary can land after the usage rows just recorded and
 	// exclude them by a race, not by design.
@@ -323,10 +405,10 @@ func TestCountUsersAndListUsers(t *testing.T) {
 	}
 	const appID = "quota-list-app-999907"
 	makeTestApp(t, conn, appID, userB)
-	if err := svc.Record(ctx, appID, "req-list-1"); err != nil {
+	if err := svc.Record(ctx, appID, userB, "req-list-1", &types.Usage{TotalTokens: 30}); err != nil {
 		t.Fatalf("Record for userB: %v", err)
 	}
-	if err := svc.Record(ctx, appID, "req-list-2"); err != nil {
+	if err := svc.Record(ctx, appID, userB, "req-list-2", &types.Usage{TotalTokens: 12}); err != nil {
 		t.Fatalf("Record for userB: %v", err)
 	}
 
@@ -385,10 +467,10 @@ func TestCountUsersAndListUsers(t *testing.T) {
 	if foundB.Tier != TierFree {
 		t.Errorf("userB Tier = %q, want %q", foundB.Tier, TierFree)
 	}
-	if foundB.Used != 2 {
-		t.Errorf("userB Used = %d, want 2 (two distinct Record calls)", foundB.Used)
+	if foundB.Used != 42 {
+		t.Errorf("userB Used = %d, want 42 (30 + 12 tokens summed across two Record calls)", foundB.Used)
 	}
-	wantLimit := PlanFor(TierFree).MonthlyPrompts
+	wantLimit := PlanFor(TierFree).MonthlyTokens
 	if foundB.Limit != wantLimit {
 		t.Errorf("userB Limit = %d, want %d", foundB.Limit, wantLimit)
 	}

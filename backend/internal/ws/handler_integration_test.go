@@ -127,7 +127,7 @@ func TestAPIKeyResolver_MissingOrInvalidToken(t *testing.T) {
 		"garbage token": "not-a-real-key",
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, _, ok, _, code := resolver.ResolveApp(newResolveRequest(token, "https://example.com"))
+			_, _, _, ok, _, code := resolver.ResolveApp(newResolveRequest(token, "https://example.com"))
 			if ok {
 				t.Fatalf("ResolveApp(%s) ok = true, want false", name)
 			}
@@ -170,8 +170,8 @@ func TestAPIKeyResolver_TokenResolvesToUnknownApp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	if err := authStore.SetOrigin(appID, "https://example.com"); err != nil {
-		t.Fatalf("SetOrigin: %v", err)
+	if err := authStore.SetOrigins(appID, []string{"https://example.com"}); err != nil {
+		t.Fatalf("SetOrigins: %v", err)
 	}
 
 	if _, known := staleRegistry.Get(appID); known {
@@ -185,7 +185,7 @@ func TestAPIKeyResolver_TokenResolvesToUnknownApp(t *testing.T) {
 		Log:   testLogger(),
 	}
 
-	_, _, ok, _, code := resolver.ResolveApp(newResolveRequest(key, "https://example.com"))
+	_, _, _, ok, _, code := resolver.ResolveApp(newResolveRequest(key, "https://example.com"))
 	if ok {
 		t.Fatalf("ResolveApp ok = true, want false (app absent from this resolver's Registry)")
 	}
@@ -220,7 +220,7 @@ func TestAPIKeyResolver_AppHasNoAllowedOrigin(t *testing.T) {
 		Log:   testLogger(),
 	}
 
-	_, _, ok, _, code := resolver.ResolveApp(newResolveRequest(key, "https://example.com"))
+	_, _, _, ok, _, code := resolver.ResolveApp(newResolveRequest(key, "https://example.com"))
 	if ok {
 		t.Fatalf("ResolveApp ok = true, want false (no allowed origin configured)")
 	}
@@ -245,8 +245,8 @@ func TestAPIKeyResolver_OriginMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	if err := authStore.SetOrigin(appID, "https://allowed.example.com"); err != nil {
-		t.Fatalf("SetOrigin: %v", err)
+	if err := authStore.SetOrigins(appID, []string{"https://allowed.example.com"}); err != nil {
+		t.Fatalf("SetOrigins: %v", err)
 	}
 
 	resolver := &APIKeyResolver{
@@ -262,7 +262,7 @@ func TestAPIKeyResolver_OriginMismatch(t *testing.T) {
 		"subdomain differs": "https://sub.allowed.example.com",
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, _, ok, _, code := resolver.ResolveApp(newResolveRequest(key, origin))
+			_, _, _, ok, _, code := resolver.ResolveApp(newResolveRequest(key, origin))
 			if ok {
 				t.Fatalf("ResolveApp(origin=%q) ok = true, want false", origin)
 			}
@@ -271,6 +271,55 @@ func TestAPIKeyResolver_OriginMismatch(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestAPIKeyResolver_MultipleAllowedOrigins covers an app configured with
+// more than one allowed origin: a connection from any one of them succeeds,
+// and one from neither is still rejected.
+func TestAPIKeyResolver_MultipleAllowedOrigins(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, _ := database.DB()
+
+	const ownerID = 999807
+	const appID = "test-ws-resolver-multiorigin-app"
+	makeTestUser(t, sqlDB, ownerID, "ws-resolver-multiorigin@example.com")
+	makeTestApp(t, database, appID, ownerID)
+
+	authStore := auth.New(database)
+	key, err := authStore.Issue(appID)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	origins := []string{"https://first.example.com", "https://second.example.com"}
+	if err := authStore.SetOrigins(appID, origins); err != nil {
+		t.Fatalf("SetOrigins: %v", err)
+	}
+
+	resolver := &APIKeyResolver{
+		Auth:  authStore,
+		Apps:  mustRegistry(t, database),
+		Quota: quota.New(database),
+		Log:   testLogger(),
+	}
+
+	for _, origin := range origins {
+		t.Run("accepts "+origin, func(t *testing.T) {
+			_, _, _, ok, msg, code := resolver.ResolveApp(newResolveRequest(key, origin))
+			if !ok {
+				t.Fatalf("ResolveApp(origin=%q) ok = false (msg=%q, code=%d), want true", origin, msg, code)
+			}
+		})
+	}
+
+	t.Run("rejects an origin not on the list", func(t *testing.T) {
+		_, _, _, ok, _, code := resolver.ResolveApp(newResolveRequest(key, "https://third.example.com"))
+		if ok {
+			t.Fatalf("ResolveApp ok = true, want false")
+		}
+		if code != http.StatusForbidden {
+			t.Errorf("ResolveApp code = %d, want %d", code, http.StatusForbidden)
+		}
+	})
 }
 
 // TestAPIKeyResolver_SuccessPath is the golden path: valid token, known app,
@@ -293,8 +342,8 @@ func TestAPIKeyResolver_SuccessPath(t *testing.T) {
 		t.Fatalf("Issue: %v", err)
 	}
 	const origin = "https://allowed.example.com"
-	if err := authStore.SetOrigin(appID, origin); err != nil {
-		t.Fatalf("SetOrigin: %v", err)
+	if err := authStore.SetOrigins(appID, []string{origin}); err != nil {
+		t.Fatalf("SetOrigins: %v", err)
 	}
 
 	resolver := &APIKeyResolver{
@@ -304,7 +353,7 @@ func TestAPIKeyResolver_SuccessPath(t *testing.T) {
 		Log:   testLogger(),
 	}
 
-	gotAppID, gotSessionID, ok, msg, code := resolver.ResolveApp(newResolveRequest(key, origin))
+	gotAppID, gotSessionID, _, ok, msg, code := resolver.ResolveApp(newResolveRequest(key, origin))
 	if !ok {
 		t.Fatalf("ResolveApp ok = false (msg=%q, code=%d), want true", msg, code)
 	}
@@ -341,8 +390,8 @@ func TestAPIKeyResolver_OverQuotaRejectsHandshake(t *testing.T) {
 		t.Fatalf("Issue: %v", err)
 	}
 	const origin = "https://allowed.example.com"
-	if err := authStore.SetOrigin(appID, origin); err != nil {
-		t.Fatalf("SetOrigin: %v", err)
+	if err := authStore.SetOrigins(appID, []string{origin}); err != nil {
+		t.Fatalf("SetOrigins: %v", err)
 	}
 
 	quotaSvc := quota.New(database)
@@ -360,7 +409,7 @@ func TestAPIKeyResolver_OverQuotaRejectsHandshake(t *testing.T) {
 		Log:   testLogger(),
 	}
 
-	_, _, ok, _, code := resolver.ResolveApp(newResolveRequest(key, origin))
+	_, _, _, ok, _, code := resolver.ResolveApp(newResolveRequest(key, origin))
 	if ok {
 		t.Fatalf("ResolveApp ok = true, want false (owner is over quota)")
 	}

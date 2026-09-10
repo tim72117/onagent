@@ -87,17 +87,17 @@ type playgroundResolver struct {
 // own notion of "allowed origin" is the console's origin allowlist, not any
 // per-app one, so it has to be enforced inside this method rather than left
 // to Handler.AllowedOrigins.
-func (p *playgroundResolver) ResolveApp(r *http.Request) (appID, sessionID string, ok bool, msg string, code int) {
+func (p *playgroundResolver) ResolveApp(r *http.Request) (appID, sessionID string, userID int64, ok bool, msg string, code int) {
 	// Defense-in-depth, not a documented mode: NewHandler always sets both
 	// sessions and log (see console.go), so this shouldn't be reachable in
 	// practice — but p.log.Warn/Info below would otherwise panic on a nil
 	// *slog.Logger receiver, and p.sessions is dereferenced immediately
 	// after. Fail closed with a generic message instead.
 	if p.sessions == nil || p.log == nil {
-		return "", "", false, "playground unavailable", http.StatusServiceUnavailable
+		return "", "", 0, false, "playground unavailable", http.StatusServiceUnavailable
 	}
 	if !originAllowed(r, p.consoleOrigins) {
-		return "", "", false, "origin not allowed", http.StatusForbidden
+		return "", "", 0, false, "origin not allowed", http.StatusForbidden
 	}
 
 	// Cookie-only, no bearer-token fallback (unlike withAuth) — Playground is
@@ -108,15 +108,19 @@ func (p *playgroundResolver) ResolveApp(r *http.Request) (appID, sessionID strin
 	// instead of two that must be kept in sync by hand.
 	user, verified := verifyUser(p.sessions, nil, r)
 	if !verified {
-		return "", "", false, "not authenticated", http.StatusUnauthorized
+		return "", "", 0, false, "not authenticated", http.StatusUnauthorized
 	}
 
 	appID = r.PathValue("appId")
-	if !ownedAppOrNotFound(p.apps, user.ID, appID) {
-		// 404, not 403 — see withOwnedApp's comment on why an app that
-		// exists but belongs to someone else must look identical to one
-		// that doesn't exist at all.
-		return "", "", false, "unknown appId", http.StatusNotFound
+	// ownedOrPublicApp, not ownedAppOrNotFound: Playground additionally
+	// admits a non-owner when the app is marked Public (toolschema.App.
+	// Public) — see ownedOrPublicApp's own doc comment for why that
+	// widening is scoped to Playground alone and must never leak into
+	// withOwnedApp/the REST API. A nonexistent app and a private app owned
+	// by someone else still both produce 404 — see withOwnedApp's comment
+	// on why that's 404, not 403.
+	if !ownedOrPublicApp(p.apps, user.ID, appID) {
+		return "", "", 0, false, "unknown appId", http.StatusNotFound
 	}
 
 	// Cheap early gate, mirroring APIKeyResolver.ResolveApp: refuse to even
@@ -129,6 +133,22 @@ func (p *playgroundResolver) ResolveApp(r *http.Request) (appID, sessionID strin
 	// must not block an owner from testing their own app. Deliberately not
 	// r.Context() for the same reason APIKeyResolver isn't either — see its
 	// comment on quick-reconnect "context canceled" false positives.
+	//
+	// KNOWN GAP: this check is still scoped to the APP'S OWNER
+	// (quota.Service.Check resolves appID -> owner internally), not to
+	// user — the caller ownedOrPublicApp just admitted, who for a public
+	// app may be a completely different, non-owner visitor. A non-owner
+	// exercising someone else's over-quota public app is therefore still
+	// let through the handshake gate (or blocked by it) based on the
+	// OWNER's standing, not their own. This is acceptable for now: it's
+	// purely a cheaper, earlier rejection layered in front of the real
+	// enforcement point below (per-prompt, via ws.Session.handlePrompt ->
+	// WantService.Complete -> quota.Record), which DOES bill correctly to
+	// the connecting user (see userID threading in ws/handler.go and
+	// ws/session.go) once this task's Record(userID) change lands. Fixing
+	// Check itself to be visitor-scoped would mean widening quota.Service's
+	// whole model from per-app-owner to per-connecting-user, which is a
+	// larger change out of scope here.
 	checkCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	dec, err := p.quota.Check(checkCtx, appID)
 	cancel()
@@ -136,7 +156,7 @@ func (p *playgroundResolver) ResolveApp(r *http.Request) (appID, sessionID strin
 		p.log.Warn("playground handshake: quota check failed, allowing (fail-open)", "appId", appID, "err", err)
 	} else if !dec.Allowed {
 		p.log.Info("playground handshake rejected: owner over quota", "appId", appID, "used", dec.Used, "limit", dec.Limit)
-		return "", "", false, "monthly quota exceeded for this app's plan", http.StatusTooManyRequests
+		return "", "", 0, false, "monthly quota exceeded for this app's plan", http.StatusTooManyRequests
 	}
 
 	// PG-<userID>-<appID> gives this playground run its own want
@@ -145,7 +165,12 @@ func (p *playgroundResolver) ResolveApp(r *http.Request) (appID, sessionID strin
 	// from other developers' playground runs against the same app, and
 	// stable across reconnects/page reloads for the same user+app.
 	sessionID = fmt.Sprintf("PG-%d-%s", user.ID, appID)
-	return appID, sessionID, true, "", 0
+	// Billing attribution is the SIGNED-IN caller (user.ID), not the app's
+	// owner — see AppResolver.ResolveApp's doc comment on why Playground's
+	// answer differs from APIKeyResolver's. This is what makes a public
+	// app's Playground usage bill correctly to whoever is actually trying
+	// it, not silently to the app's owner.
+	return appID, sessionID, user.ID, true, "", 0
 }
 
 // originAllowed reports whether r's Origin header matches one of allowed

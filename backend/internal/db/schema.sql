@@ -101,21 +101,62 @@ CREATE TABLE IF NOT EXISTS cli_auth_sessions (
 );
 
 CREATE TABLE IF NOT EXISTS apps (
-    app_id         TEXT PRIMARY KEY,
-    owner_id       BIGINT REFERENCES users (id) ON DELETE CASCADE, -- NULL only for apps migrated before multi-user existed
-    api_key_hash   TEXT,              -- sha256 hex, NULL until a key is issued
-    allowed_origin TEXT,              -- exact Origin header a connection must present; NULL = no site configured yet, so every WS handshake for this app is rejected (fail-closed) — see ws.Handler.ServeHTTP
-    thought        TEXT,              -- per-app want agent system prompt; NULL = use the platform default (want_tools.go's defaultThought)
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    app_id          TEXT PRIMARY KEY,
+    owner_id        BIGINT REFERENCES users (id) ON DELETE CASCADE, -- NULL only for apps migrated before multi-user existed
+    api_key_hash    TEXT,              -- sha256 hex, NULL until a key is issued
+    allowed_origins TEXT[],            -- exact Origin headers a connection may present (any one matching is enough); NULL or empty = no site configured yet, so every WS handshake for this app is rejected (fail-closed) — see ws.Handler.ServeHTTP
+    thought         TEXT,              -- per-app want agent system prompt; NULL = use the platform default (want_tools.go's defaultThought)
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ALTER ... ADD COLUMN IF NOT EXISTS so this stays idempotent for databases
 -- created before these columns existed (CREATE TABLE IF NOT EXISTS above is
 -- a no-op against an existing table and would silently skip new columns
 -- otherwise).
-ALTER TABLE apps ADD COLUMN IF NOT EXISTS allowed_origin TEXT;
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS allowed_origins TEXT[];
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES users (id) ON DELETE CASCADE;
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS thought TEXT;
+
+-- owner_id tightens from optional to required: every code path that creates
+-- an app now always supplies an owner (toolschema.Registry.Create takes
+-- ownerID as a required parameter, and saveApp's own OnConflict-DoNothing
+-- upsert never inserts a fresh row — see registry.go), so a NULL owner_id
+-- can now only be leftover from before multi-user existed (the comment this
+-- column originally shipped with). Backfilling to user id 1 before adding
+-- the constraint is what makes this safe to re-run on a database that still
+-- has such a row: id 1 is tim72117@gmail.com, this deployment's sole real
+-- account, so an orphaned app becomes owned by an actual person rather than
+-- left dangling or deleted. Both statements are idempotent — the UPDATE
+-- matches zero rows once every app has an owner, and SET NOT NULL is a
+-- no-op if the column is already constrained.
+UPDATE apps SET owner_id = 1 WHERE owner_id IS NULL;
+ALTER TABLE apps ALTER COLUMN owner_id SET NOT NULL;
+
+-- public marks an app as reachable in the console Playground by any signed-in
+-- user, not just its owner (see console/playground.go's ResolveApp) — REST
+-- API operations (edit tools, change origin, delete, ...) stay owner-only
+-- regardless of this flag; see console.go's ownedAppOrNotFound, which this
+-- column intentionally does NOT affect. Defaults false so every existing app
+-- stays private until its owner opts in.
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS public BOOLEAN NOT NULL DEFAULT false;
+
+-- Migrate any pre-existing single-origin column (allowed_origin TEXT) into
+-- the new array column, then drop it. Wrapped in a column-existence check so
+-- this stays idempotent: a fresh database never had allowed_origin at all,
+-- and re-running this block after the drop must be a no-op, not an error.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'apps' AND column_name = 'allowed_origin'
+    ) THEN
+        UPDATE apps
+           SET allowed_origins = ARRAY[allowed_origin]
+         WHERE allowed_origin IS NOT NULL
+           AND allowed_origins IS NULL;
+        ALTER TABLE apps DROP COLUMN allowed_origin;
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS apps_owner_id_idx ON apps (owner_id);
 
@@ -154,18 +195,18 @@ ALTER TABLE tools ADD COLUMN IF NOT EXISTS source_template TEXT;
 -- written at signup (session.Register) with just a tier; readers still
 -- treat a missing row as the default (free) tier so a user created before
 -- this table existed, or by any path that skips the insert, is never
--- rejected for lack of a row. The prompt allowance is NOT stored here — it
+-- rejected for lack of a row. The token allowance is NOT stored here — it
 -- is derived from the tier's plan at query time (internal/quota.PlanFor),
 -- so changing a plan's number applies to every user on that tier with no
--- migration. monthly_quota is an OPTIONAL per-user override (NULL for
--- almost everyone) that wins over the plan value when set — the manual
+-- migration. monthly_quota is an OPTIONAL per-user override, in tokens (NULL
+-- for almost everyone) that wins over the plan value when set — the manual
 -- "grant this one user more" lever. Period boundaries are DERIVED from
 -- started_at at query time, not reset by a scheduled job — that is what
 -- avoids a reset-boundary race on a mutable counter.
 CREATE TABLE IF NOT EXISTS subscriptions (
     user_id       BIGINT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
     tier          TEXT NOT NULL DEFAULT 'free', -- 'free' | 'pro' | ... ; free text, not an enum, so a new tier needs no migration
-    monthly_quota INTEGER,                       -- OPTIONAL per-user override of the tier plan's allowance; NULL = use the plan value (internal/quota.PlanFor)
+    monthly_quota INTEGER,                       -- OPTIONAL per-user override of the tier plan's token allowance; NULL = use the plan value (internal/quota.PlanFor)
     started_at    TIMESTAMPTZ NOT NULL DEFAULT now(), -- billing-cycle anchor: the "day of month" this user's period boundary is computed from, mirroring Stripe's billing_cycle_anchor
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -195,8 +236,17 @@ CREATE TABLE IF NOT EXISTS usage_events (
     owner_id   BIGINT REFERENCES users (id) ON DELETE CASCADE,   -- who this is billed to; denormalized from apps.owner_id at write time so the ledger no longer depends on the app still existing
     event_id   TEXT NOT NULL,                   -- caller-supplied idempotency key (the WebSocket RequestID); prevents double-counting on retry, mirroring Stripe's meter event identifier
     kind       TEXT NOT NULL DEFAULT 'prompt',  -- 'prompt' today; room for 'tool_call' or token-based units later without a schema change
+    prompt_tokens     INT,  -- LLM provider's own token accounting for this event (inference.Result.Usage, from want's "agent.inference" usage events); NULL when the provider reported none, e.g. MockService
+    completion_tokens INT,
+    total_tokens      INT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Idempotent migration for databases created before the token columns
+-- existed.
+ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS prompt_tokens INT;
+ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS completion_tokens INT;
+ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS total_tokens INT;
 
 -- Idempotent migration for databases created before owner_id existed. The
 -- backfill resolves each existing row's owner through the app it was

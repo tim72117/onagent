@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"regexp"
 
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -38,14 +39,14 @@ var appIDRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 // coupling to keep in sync. This independence is also why every write in
 // this file uses Model(&appAuthRow{}).Where(...).Update/Updates(...) and
 // NEVER a bare Save() — Save() would write every column this struct
-// declares (just api_key_hash/allowed_origin here, so it's safe today), but
+// declares (just api_key_hash/allowed_origins here, so it's safe today), but
 // the moment this struct grows a field, a bare Save() risks clobbering a
 // column toolschema owns. Scoped Updates() calls stay safe regardless of
 // how either struct's field set evolves.
 type appAuthRow struct {
-	AppID         string  `gorm:"column:app_id;primaryKey"`
-	APIKeyHash    *string `gorm:"column:api_key_hash"`
-	AllowedOrigin *string `gorm:"column:allowed_origin"`
+	AppID          string         `gorm:"column:app_id;primaryKey"`
+	APIKeyHash     *string        `gorm:"column:api_key_hash"`
+	AllowedOrigins pq.StringArray `gorm:"column:allowed_origins;type:text[]"`
 }
 
 func (appAuthRow) TableName() string { return "apps" }
@@ -80,16 +81,18 @@ func (s *Store) Count() int {
 
 // VerifyResult is what a successful Verify reveals about the key's app —
 // bundled together so ws.Handler makes exactly one query per handshake
-// instead of Verify-then-OriginFor as two round trips.
+// instead of Verify-then-OriginsFor as two round trips.
 type VerifyResult struct {
 	AppID string
-	// AllowedOrigin is the exact Origin header this app's connections must
-	// present, or "" if the app has none configured yet. ws.Handler treats
-	// "" as fail-closed — reject every handshake — rather than "no
-	// restriction", since a freshly created app having no origin bound is
-	// far more likely to mean "the developer hasn't set it up yet" than
-	// "intentionally open to any site". See SetOrigin.
-	AllowedOrigin string
+	// AllowedOrigins is the set of exact Origin header values this app's
+	// connections may present — a connection is accepted if its Origin
+	// matches any one of these. Empty if the app has none configured yet.
+	// ws.Handler treats an empty set as fail-closed — reject every
+	// handshake — rather than "no restriction", since a freshly created app
+	// having no origin bound is far more likely to mean "the developer
+	// hasn't set it up yet" than "intentionally open to any site". See
+	// SetOrigins.
+	AllowedOrigins []string
 }
 
 // Verify checks a plaintext API key and returns the appId it's bound to,
@@ -107,15 +110,11 @@ func (s *Store) Verify(apiKey string) (result VerifyResult, ok bool) {
 	hash := HashKey(apiKey)
 
 	var row appAuthRow
-	res := s.db.Select("app_id, allowed_origin").Where("api_key_hash = ?", hash).Take(&row)
+	res := s.db.Select("app_id, allowed_origins").Where("api_key_hash = ?", hash).Take(&row)
 	if res.Error != nil {
 		return VerifyResult{}, false
 	}
-	var origin string
-	if row.AllowedOrigin != nil {
-		origin = *row.AllowedOrigin
-	}
-	return VerifyResult{AppID: row.AppID, AllowedOrigin: origin}, true
+	return VerifyResult{AppID: row.AppID, AllowedOrigins: []string(row.AllowedOrigins)}, true
 }
 
 // HasKey reports whether appID currently has an active key, without
@@ -176,21 +175,25 @@ func (s *Store) Revoke(appID string) error {
 	return nil
 }
 
-// SetOrigin sets or clears (origin == "") the exact Origin header appID's
-// WebSocket connections must present. An app with no origin set rejects
-// every connection regardless of API key — see VerifyResult.AllowedOrigin.
-// Fails if appID has no row in `apps` yet, same as Issue.
-func (s *Store) SetOrigin(appID, origin string) error {
+// SetOrigins sets or clears (len(origins) == 0) the set of exact Origin
+// header values appID's WebSocket connections may present — a connection is
+// accepted if its Origin matches any one of them. An app with no origins set
+// rejects every connection regardless of API key — see
+// VerifyResult.AllowedOrigins. Fails if appID has no row in `apps` yet, same
+// as Issue. Empty strings and duplicates are dropped before saving, since
+// neither is a meaningful distinct origin.
+func (s *Store) SetOrigins(appID string, origins []string) error {
 	if !appIDRE.MatchString(appID) {
 		return fmt.Errorf("auth: invalid appId %q", appID)
 	}
-	var val *string
-	if origin != "" {
-		val = &origin
+	cleaned := dedupeNonEmpty(origins)
+	var val pq.StringArray
+	if len(cleaned) > 0 {
+		val = pq.StringArray(cleaned)
 	}
-	res := s.db.Model(&appAuthRow{}).Where("app_id = ?", appID).Update("allowed_origin", val)
+	res := s.db.Model(&appAuthRow{}).Where("app_id = ?", appID).Update("allowed_origins", val)
 	if res.Error != nil {
-		return fmt.Errorf("auth: set origin for %s: %w", appID, res.Error)
+		return fmt.Errorf("auth: set origins for %s: %w", appID, res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return fmt.Errorf("auth: no such app %q", appID)
@@ -198,14 +201,29 @@ func (s *Store) SetOrigin(appID, origin string) error {
 	return nil
 }
 
-// OriginFor returns appID's configured allowed origin, or "" if unset.
-func (s *Store) OriginFor(appID string) string {
+// OriginsFor returns appID's configured allowed origins, or nil if unset.
+func (s *Store) OriginsFor(appID string) []string {
 	var row appAuthRow
-	_ = s.db.Select("allowed_origin").Where("app_id = ?", appID).Take(&row).Error
-	if row.AllowedOrigin == nil {
-		return ""
+	_ = s.db.Select("allowed_origins").Where("app_id = ?", appID).Take(&row).Error
+	if len(row.AllowedOrigins) == 0 {
+		return nil
 	}
-	return *row.AllowedOrigin
+	return []string(row.AllowedOrigins)
+}
+
+// dedupeNonEmpty drops empty strings and duplicate entries from origins,
+// preserving first-seen order.
+func dedupeNonEmpty(origins []string) []string {
+	seen := make(map[string]bool, len(origins))
+	out := make([]string, 0, len(origins))
+	for _, o := range origins {
+		if o == "" || seen[o] {
+			continue
+		}
+		seen[o] = true
+		out = append(out, o)
+	}
+	return out
 }
 
 // HashKey computes the sha256 hex digest of a plaintext key — what's

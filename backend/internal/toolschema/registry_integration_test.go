@@ -102,24 +102,26 @@ func TestRegistryCRUDLifecycle(t *testing.T) {
 		t.Fatalf("Get after Create: Tools = %v, want empty", app.Tools)
 	}
 
-	// Save a tool list and confirm it round-trips through Get.
-	app.Tools = []Tool{sampleTool("tool_a"), sampleTool("tool_b")}
-	if err := reg.Save(app); err != nil {
-		t.Fatalf("Save: %v", err)
+	// SaveTool each tool and confirm they round-trip through Get.
+	if err := reg.SaveTool(appID, sampleTool("tool_a")); err != nil {
+		t.Fatalf("SaveTool(tool_a): %v", err)
+	}
+	if err := reg.SaveTool(appID, sampleTool("tool_b")); err != nil {
+		t.Fatalf("SaveTool(tool_b): %v", err)
 	}
 	got, ok := reg.Get(appID)
 	if !ok {
-		t.Fatalf("Get after Save: app not found")
+		t.Fatalf("Get after SaveTool: app not found")
 	}
 	if len(got.Tools) != 2 {
-		t.Fatalf("Get after Save: len(Tools) = %d, want 2", len(got.Tools))
+		t.Fatalf("Get after SaveTool: len(Tools) = %d, want 2", len(got.Tools))
 	}
 	names := map[string]bool{}
 	for _, tl := range got.Tools {
 		names[tl.Name] = true
 	}
 	if !names["tool_a"] || !names["tool_b"] {
-		t.Fatalf("Get after Save: tool names = %v, want tool_a and tool_b", names)
+		t.Fatalf("Get after SaveTool: tool names = %v, want tool_a and tool_b", names)
 	}
 
 	// SetThought.
@@ -162,20 +164,154 @@ func TestRegistryCRUDLifecycle(t *testing.T) {
 	}
 }
 
-// TestSaveReplacesToolSet confirms Save has replace-all semantics: saving a
-// smaller tool list must remove the tools that were dropped, not merge with
-// or diff against the previous set. This is the core regression test for
-// saveApp's "DELETE then INSERT inside one transaction" strategy — a naive
-// GORM rewrite using upsert-only (no delete of the old rows) would leave
-// stale tools behind and this test would catch it.
-func TestSaveReplacesToolSet(t *testing.T) {
+// --- SaveTool/DeleteTool (single-tool upsert/delete, backing the CLI's
+// `onagent tool create` and the console front-end's per-tool editor — see
+// PUT/DELETE /console/apps/{appId}/tools/{toolName}) ---
+//
+// The console tool editor and the CLI used to share Save/saveApp's
+// replace-all semantics (send the whole intended tool list, the backend
+// deletes everything and reinserts it) — removed along with these tests
+// once both callers moved to per-tool writes: neither the console's
+// immediate-write editor nor a CLI user describing "add one tool" via
+// `onagent tool create <appId> <tool.yaml>` has (or wants) the rest of the
+// app's current tool set in hand just to avoid clobbering it via a
+// replace-all write.
+
+// TestSaveTool_AddsWithoutTouchingOthers confirms SaveTool only ever
+// touches the one named tool, never any other tool already on the app.
+func TestSaveTool_AddsWithoutTouchingOthers(t *testing.T) {
 	database := openTestDB(t)
 	sqlDB, _ := database.DB()
 	conn := sqlDB
 
-	const ownerID = 999802
-	const appID = "test-toolschema-replace-app"
-	makeTestUser(t, conn, ownerID, "toolschema-replace@example.com")
+	const ownerID = 999804
+	const appID = "test-toolschema-savetool-add-app"
+	makeTestUser(t, conn, ownerID, "toolschema-savetool-add@example.com")
+	t.Cleanup(func() {
+		_, _ = conn.Exec(`DELETE FROM apps WHERE app_id = $1`, appID)
+	})
+
+	reg, err := NewRegistry(database)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if err := reg.Create(appID, ownerID); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := reg.SaveTool(appID, sampleTool("existing_1")); err != nil {
+		t.Fatalf("seed SaveTool(existing_1): %v", err)
+	}
+	if err := reg.SaveTool(appID, sampleTool("existing_2")); err != nil {
+		t.Fatalf("seed SaveTool(existing_2): %v", err)
+	}
+
+	if err := reg.SaveTool(appID, sampleTool("new_tool")); err != nil {
+		t.Fatalf("SaveTool: %v", err)
+	}
+
+	got, ok := reg.Get(appID)
+	if !ok {
+		t.Fatal("app not found after SaveTool")
+	}
+	names := make(map[string]bool, len(got.Tools))
+	for _, tool := range got.Tools {
+		names[tool.Name] = true
+	}
+	if len(got.Tools) != 3 || !names["existing_1"] || !names["existing_2"] || !names["new_tool"] {
+		t.Fatalf("Tools after SaveTool = %v, want existing_1, existing_2, and new_tool all present (3 total)", got.Tools)
+	}
+}
+
+// TestSaveTool_UpdatesExistingToolInPlace confirms calling SaveTool again
+// with the same tool name overwrites that one tool's fields (description
+// here) without duplicating it or disturbing any other tool — the "create
+// or update" half of upsert.
+func TestSaveTool_UpdatesExistingToolInPlace(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, _ := database.DB()
+	conn := sqlDB
+
+	const ownerID = 999805
+	const appID = "test-toolschema-savetool-update-app"
+	makeTestUser(t, conn, ownerID, "toolschema-savetool-update@example.com")
+	t.Cleanup(func() {
+		_, _ = conn.Exec(`DELETE FROM apps WHERE app_id = $1`, appID)
+	})
+
+	reg, err := NewRegistry(database)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if err := reg.Create(appID, ownerID); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := reg.SaveTool(appID, sampleTool("other_tool")); err != nil {
+		t.Fatalf("seed SaveTool(other_tool): %v", err)
+	}
+	if err := reg.SaveTool(appID, sampleTool("target_tool")); err != nil {
+		t.Fatalf("seed SaveTool(target_tool): %v", err)
+	}
+
+	updated := sampleTool("target_tool")
+	updated.Description = "an updated description"
+	if err := reg.SaveTool(appID, updated); err != nil {
+		t.Fatalf("SaveTool: %v", err)
+	}
+
+	got, ok := reg.Get(appID)
+	if !ok {
+		t.Fatal("app not found after SaveTool")
+	}
+	if len(got.Tools) != 2 {
+		t.Fatalf("Tools after SaveTool = %v, want exactly 2 (target_tool updated in place, other_tool untouched)", got.Tools)
+	}
+	var found bool
+	for _, tool := range got.Tools {
+		if tool.Name != "target_tool" {
+			continue
+		}
+		found = true
+		if tool.Description != "an updated description" {
+			t.Errorf("target_tool.Description = %q, want %q", tool.Description, "an updated description")
+		}
+	}
+	if !found {
+		t.Fatal("target_tool missing after SaveTool — update must not have removed and failed to reinsert it")
+	}
+}
+
+// TestSaveTool_UnknownAppErrors — SaveTool must refuse to write a tool row
+// for an app_id that was never created via Registry.Create, the same "app
+// must already exist" invariant the old saveApp enforced (see
+// apps.owner_id being NOT NULL: a tool row for a nonexistent app_id would
+// either violate the tools.app_id foreign key or, worse on an older schema,
+// silently create orphaned data).
+func TestSaveTool_UnknownAppErrors(t *testing.T) {
+	database := openTestDB(t)
+	reg, err := NewRegistry(database)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+
+	err = reg.SaveTool("test-toolschema-savetool-no-such-app", sampleTool("t1"))
+	if err == nil {
+		t.Fatal("SaveTool against a nonexistent app returned nil error, want an error")
+	}
+}
+
+// TestSaveTool_InvalidToolErrors confirms SaveTool validates the tool it's
+// given (Tool's own validation, whatever App.Validate used to apply
+// per-tool) — a malformed single tool (empty name) from a hand-edited CLI
+// tool.yaml or a console editor bug must be rejected with a clear error,
+// not silently written or left to fail obscurely at the database layer.
+func TestSaveTool_InvalidToolErrors(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, _ := database.DB()
+	conn := sqlDB
+
+	const ownerID = 999806
+	const appID = "test-toolschema-savetool-invalid-app"
+	makeTestUser(t, conn, ownerID, "toolschema-savetool-invalid@example.com")
 	t.Cleanup(func() {
 		_, _ = conn.Exec(`DELETE FROM apps WHERE app_id = $1`, appID)
 	})
@@ -188,50 +324,26 @@ func TestSaveReplacesToolSet(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	// First save: 3 tools.
-	app := &App{AppID: appID, Tools: []Tool{
-		sampleTool("tool_1"), sampleTool("tool_2"), sampleTool("tool_3"),
-	}}
-	if err := reg.Save(app); err != nil {
-		t.Fatalf("first Save: %v", err)
-	}
-	got, ok := reg.Get(appID)
-	if !ok || len(got.Tools) != 3 {
-		t.Fatalf("after first Save: len(Tools) = %d, ok=%v, want 3, true", len(got.Tools), ok)
-	}
-
-	// Second save: only 1 tool, none of which overlaps the first 3.
-	app2 := &App{AppID: appID, Tools: []Tool{sampleTool("tool_only")}}
-	if err := reg.Save(app2); err != nil {
-		t.Fatalf("second Save: %v", err)
-	}
-	got, ok = reg.Get(appID)
-	if !ok {
-		t.Fatalf("after second Save: app not found")
-	}
-	if len(got.Tools) != 1 {
-		t.Fatalf("after second Save: len(Tools) = %d, want 1 (replace-all should have dropped tool_1..3)", len(got.Tools))
-	}
-	if got.Tools[0].Name != "tool_only" {
-		t.Fatalf("after second Save: Tools = %v, want just tool_only", got.Tools)
+	err = reg.SaveTool(appID, Tool{Name: "", Description: "missing a name"})
+	if err == nil {
+		t.Fatal("SaveTool with an empty tool name returned nil error, want a validation error")
 	}
 }
 
-// TestSaveDoesNotOverwriteExistingOwner confirms saveApp's
-// `INSERT ... ON CONFLICT (app_id) DO NOTHING` really is a no-op for an app
-// that already exists: calling Save (which upserts the app row before
-// replacing tools) on an app created with Create(appID, ownerID) must never
-// clear or change owner_id. A GORM rewrite that swaps this upsert for a
-// blind Save()/full-row-write would zero out owner_id here, and this test
-// would catch it.
-func TestSaveDoesNotOverwriteExistingOwner(t *testing.T) {
+// TestSaveTool_DoesNotOverwriteExistingOwner confirms SaveTool (which, like
+// the old saveApp, may need to touch the apps row on a first-ever write to
+// establish e.g. updated_at bookkeeping) never clears or changes owner_id
+// on an app created with Create(appID, ownerID) — the same owner-preserving
+// guarantee saveApp's own ON CONFLICT DO NOTHING used to provide, now
+// re-pinned against SaveTool since that's the only write path left.
+func TestSaveTool_DoesNotOverwriteExistingOwner(t *testing.T) {
 	database := openTestDB(t)
 	sqlDB, _ := database.DB()
 	conn := sqlDB
 
-	const ownerID = 999803
-	const appID = "test-toolschema-ownerpreserve-app"
-	makeTestUser(t, conn, ownerID, "toolschema-ownerpreserve@example.com")
+	const ownerID = 999807
+	const appID = "test-toolschema-savetool-ownerpreserve-app"
+	makeTestUser(t, conn, ownerID, "toolschema-savetool-ownerpreserve@example.com")
 	t.Cleanup(func() {
 		_, _ = conn.Exec(`DELETE FROM apps WHERE app_id = $1`, appID)
 	})
@@ -247,12 +359,99 @@ func TestSaveDoesNotOverwriteExistingOwner(t *testing.T) {
 		t.Fatalf("OwnerOf after Create = (%d, %v), want (%d, true)", owner, ok, ownerID)
 	}
 
-	app := &App{AppID: appID, Tools: []Tool{sampleTool("t1")}}
-	if err := reg.Save(app); err != nil {
-		t.Fatalf("Save: %v", err)
+	if err := reg.SaveTool(appID, sampleTool("t1")); err != nil {
+		t.Fatalf("SaveTool: %v", err)
 	}
 
 	if owner, ok := reg.OwnerOf(appID); !ok || owner != ownerID {
-		t.Fatalf("OwnerOf after Save = (%d, %v), want (%d, true) — Save must not clear owner_id", owner, ok, ownerID)
+		t.Fatalf("OwnerOf after SaveTool = (%d, %v), want (%d, true) — SaveTool must not clear owner_id", owner, ok, ownerID)
+	}
+}
+
+// TestDeleteTool_RemovesOnlyThatTool confirms DeleteTool removes exactly
+// the named tool and leaves every other tool on the app untouched — the
+// delete counterpart to SaveTool's upsert, needed now that the console
+// editor's "remove a tool" action can no longer ride along with a
+// replace-all Save.
+func TestDeleteTool_RemovesOnlyThatTool(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, _ := database.DB()
+	conn := sqlDB
+
+	const ownerID = 999808
+	const appID = "test-toolschema-deletetool-app"
+	makeTestUser(t, conn, ownerID, "toolschema-deletetool@example.com")
+	t.Cleanup(func() {
+		_, _ = conn.Exec(`DELETE FROM apps WHERE app_id = $1`, appID)
+	})
+
+	reg, err := NewRegistry(database)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if err := reg.Create(appID, ownerID); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := reg.SaveTool(appID, sampleTool("keep_1")); err != nil {
+		t.Fatalf("seed SaveTool(keep_1): %v", err)
+	}
+	if err := reg.SaveTool(appID, sampleTool("to_delete")); err != nil {
+		t.Fatalf("seed SaveTool(to_delete): %v", err)
+	}
+	if err := reg.SaveTool(appID, sampleTool("keep_2")); err != nil {
+		t.Fatalf("seed SaveTool(keep_2): %v", err)
+	}
+
+	if err := reg.DeleteTool(appID, "to_delete"); err != nil {
+		t.Fatalf("DeleteTool: %v", err)
+	}
+
+	got, ok := reg.Get(appID)
+	if !ok {
+		t.Fatal("app not found after DeleteTool")
+	}
+	names := make(map[string]bool, len(got.Tools))
+	for _, tool := range got.Tools {
+		names[tool.Name] = true
+	}
+	if len(got.Tools) != 2 || !names["keep_1"] || !names["keep_2"] || names["to_delete"] {
+		t.Fatalf("Tools after DeleteTool = %v, want keep_1 and keep_2 only (to_delete removed)", got.Tools)
+	}
+}
+
+// TestDeleteTool_UnknownToolIsNoOp mirrors Registry.Delete's own "deleting
+// something already gone is the caller's desired end state either way"
+// convention (see Delete's doc comment) — deleting a tool name that never
+// existed on the app must not error.
+func TestDeleteTool_UnknownToolIsNoOp(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, _ := database.DB()
+	conn := sqlDB
+
+	const ownerID = 999809
+	const appID = "test-toolschema-deletetool-noop-app"
+	makeTestUser(t, conn, ownerID, "toolschema-deletetool-noop@example.com")
+	t.Cleanup(func() {
+		_, _ = conn.Exec(`DELETE FROM apps WHERE app_id = $1`, appID)
+	})
+
+	reg, err := NewRegistry(database)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if err := reg.Create(appID, ownerID); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := reg.SaveTool(appID, sampleTool("kept")); err != nil {
+		t.Fatalf("seed SaveTool: %v", err)
+	}
+
+	if err := reg.DeleteTool(appID, "never_existed"); err != nil {
+		t.Fatalf("DeleteTool for a nonexistent tool name returned an error, want nil: %v", err)
+	}
+
+	got, ok := reg.Get(appID)
+	if !ok || len(got.Tools) != 1 || got.Tools[0].Name != "kept" {
+		t.Fatalf("Tools after no-op DeleteTool = %v, want just kept, untouched", got.Tools)
 	}
 }

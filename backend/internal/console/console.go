@@ -21,6 +21,7 @@ package console
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -144,7 +145,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /console/apps", h.withAuth(h.listApps))
 	mux.HandleFunc("POST /console/apps", h.withAuth(h.createApp))
 	mux.HandleFunc("GET /console/apps/{appId}", h.withOwnedApp(h.getApp))
-	mux.HandleFunc("PUT /console/apps/{appId}/tools", h.withOwnedApp(h.saveTools))
+	mux.HandleFunc("PUT /console/apps/{appId}/tools/{toolName}", h.withOwnedApp(h.saveTool))
+	mux.HandleFunc("DELETE /console/apps/{appId}/tools/{toolName}", h.withOwnedApp(h.deleteTool))
 	mux.HandleFunc("PUT /console/apps/{appId}/origin", h.withOwnedApp(h.setOrigin))
 	mux.HandleFunc("PUT /console/apps/{appId}/thought", h.withOwnedApp(h.setThought))
 	mux.HandleFunc("DELETE /console/apps/{appId}", h.withOwnedApp(h.deleteApp))
@@ -207,6 +209,12 @@ type tokenVerifier interface {
 }
 type appOwnerLookup interface {
 	OwnerOf(appID string) (ownerID int64, ok bool)
+	// Get is also on appOwnerLookup (rather than a separate interface) so
+	// ownedOrPublicApp can check App.Public through the same narrow surface
+	// ownedAppOrNotFound already uses — see ownedOrPublicApp's doc comment
+	// for why Playground needs this and withOwnedApp/ownedAppOrNotFound
+	// deliberately do not.
+	Get(appID string) (app *toolschema.App, ok bool)
 }
 
 // verifyUser resolves the caller's identity from r — a session cookie via
@@ -282,6 +290,23 @@ func ownedAppOrNotFound(apps appOwnerLookup, userID int64, appID string) bool {
 	return known && ownerID == userID
 }
 
+// ownedOrPublicApp reports whether userID owns appID OR appID is marked
+// Public (toolschema.App.Public) — the Playground's own ownership check
+// (playground.go's playgroundResolver.ResolveApp), deliberately separate
+// from ownedAppOrNotFound/withOwnedApp so marking an app public can never
+// accidentally loosen a REST API operation. Every REST route that edits an
+// app (save tools, set origin, delete, issue/revoke key — see Register)
+// stays behind withOwnedApp's strict ownedAppOrNotFound unconditionally: a
+// public app is one its owner has opted to let other signed-in users try in
+// Playground, not one anyone can edit. Only Playground calls this.
+func ownedOrPublicApp(apps appOwnerLookup, userID int64, appID string) bool {
+	if ownedAppOrNotFound(apps, userID, appID) {
+		return true
+	}
+	app, ok := apps.Get(appID)
+	return ok && app.Public
+}
+
 // withOwnedApp is withAuth plus an ownership check on the {appId} path
 // value: the request is rejected before the handler runs at all if the
 // session's user doesn't own that app. Handlers behind this are guaranteed
@@ -314,8 +339,7 @@ type authResponse struct {
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 	var req authRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -338,8 +362,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	var req authRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -395,6 +418,14 @@ type quotaResponse struct {
 	PlanName    string    `json:"planName,omitempty"`
 	Limit       int       `json:"limit"`
 	Used        int       `json:"used"`
+	// UsedPercent is Used/Limit*100, computed here so the console SPA
+	// doesn't each re-derive the same division (and doesn't need its own
+	// divide-by-zero guard for the Limit==0 edge case — an explicit
+	// per-user override of 0, or an unresolvable owner where Standing
+	// itself reports Limit 0). Rounded to the nearest integer; callers
+	// wanting sub-percent precision should compute it themselves from
+	// Used/Limit instead. 0 when Limit is 0, rather than NaN/Inf.
+	UsedPercent int       `json:"usedPercent"`
 	PeriodStart time.Time `json:"periodStart,omitempty"`
 	PeriodEnd   time.Time `json:"periodEnd,omitempty"`
 }
@@ -421,12 +452,21 @@ func (h *Handler) getQuota(w http.ResponseWriter, r *http.Request, user *session
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	var usedPercent int
+	if st.Limit > 0 {
+		// Integer rounding (not truncation): +Limit/2 before dividing shifts
+		// .5-and-up up to the next integer, matching how a percentage bar in
+		// the UI should read (e.g. 999_950/1_000_000 displays as "100%", not
+		// a truncated "99%", once past the halfway point of the last percent).
+		usedPercent = (st.Used*100 + st.Limit/2) / st.Limit
+	}
 	writeJSON(w, http.StatusOK, quotaResponse{
 		Enabled:     true,
 		Tier:        string(st.Tier),
 		PlanName:    st.PlanName,
 		Limit:       st.Limit,
 		Used:        st.Used,
+		UsedPercent: usedPercent,
 		PeriodStart: st.PeriodStart,
 		PeriodEnd:   st.PeriodEnd,
 	})
@@ -437,11 +477,11 @@ func (h *Handler) getQuota(w http.ResponseWriter, r *http.Request, user *session
 // appSummary is what listApps returns per app: enough for a dashboard list
 // view without shipping every tool's full schema.
 type appSummary struct {
-	AppID         string `json:"appId"`
-	ToolCount     int    `json:"toolCount"`
-	HasKey        bool   `json:"hasKey"`
-	AllowedOrigin string `json:"allowedOrigin"` // "" means unset (fail-closed — see ws.Handler.ServeHTTP)
-	Thought       string `json:"thought"`       // "" means the platform default applies (agent_roles.go's defaultThought)
+	AppID          string   `json:"appId"`
+	ToolCount      int      `json:"toolCount"`
+	HasKey         bool     `json:"hasKey"`
+	AllowedOrigins []string `json:"allowedOrigins"` // empty/nil means unset (fail-closed — see ws.Handler.ServeHTTP)
+	Thought        string   `json:"thought"`        // "" means the platform default applies (agent_roles.go's defaultThought)
 }
 
 func (h *Handler) listApps(w http.ResponseWriter, r *http.Request, user *session.User) {
@@ -458,11 +498,11 @@ func (h *Handler) listApps(w http.ResponseWriter, r *http.Request, user *session
 			continue // owner_id row exists but Registry cache hasn't caught up; skip rather than fake zero tools
 		}
 		out = append(out, appSummary{
-			AppID:         id,
-			ToolCount:     len(app.Tools),
-			HasKey:        h.Auth.HasKey(id),
-			AllowedOrigin: h.Auth.OriginFor(id),
-			Thought:       app.Thought,
+			AppID:          id,
+			ToolCount:      len(app.Tools),
+			HasKey:         h.Auth.HasKey(id),
+			AllowedOrigins: h.Auth.OriginsFor(id),
+			Thought:        app.Thought,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -483,8 +523,7 @@ type createAppRequest struct {
 
 func (h *Handler) createApp(w http.ResponseWriter, r *http.Request, user *session.User) {
 	var req createAppRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -497,33 +536,34 @@ func (h *Handler) createApp(w http.ResponseWriter, r *http.Request, user *sessio
 }
 
 type setOriginRequest struct {
-	// Origin is the exact value the site's Origin header must present, e.g.
-	// "https://demo.example.com" (no path, no trailing slash — that's what
-	// browsers actually send). Empty string clears it, returning the app to
-	// fail-closed (no connections accepted) until set again.
-	Origin string `json:"origin"`
+	// Origins is the set of exact values the site's Origin header may
+	// present — a connection is accepted if its Origin matches any one of
+	// these, e.g. "https://demo.example.com" (no path, no trailing slash —
+	// that's what browsers actually send). An empty list clears them,
+	// returning the app to fail-closed (no connections accepted) until set
+	// again.
+	Origins []string `json:"origins"`
 }
 
 func (h *Handler) setOrigin(w http.ResponseWriter, r *http.Request, user *session.User) {
 	appID := r.PathValue("appId")
 
 	var req setOriginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
-	if err := h.Auth.SetOrigin(appID, req.Origin); err != nil {
+	if err := h.Auth.SetOrigins(appID, req.Origins); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	app, _ := h.Apps.Get(appID)
 	writeJSON(w, http.StatusOK, appSummary{
-		AppID:         appID,
-		ToolCount:     len(app.Tools),
-		HasKey:        h.Auth.HasKey(appID),
-		AllowedOrigin: req.Origin,
-		Thought:       app.Thought,
+		AppID:          appID,
+		ToolCount:      len(app.Tools),
+		HasKey:         h.Auth.HasKey(appID),
+		AllowedOrigins: h.Auth.OriginsFor(appID),
+		Thought:        app.Thought,
 	})
 }
 
@@ -537,8 +577,7 @@ func (h *Handler) setThought(w http.ResponseWriter, r *http.Request, user *sessi
 	appID := r.PathValue("appId")
 
 	var req setThoughtRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -549,36 +588,70 @@ func (h *Handler) setThought(w http.ResponseWriter, r *http.Request, user *sessi
 	h.syncWantRole(appID)
 	app, _ := h.Apps.Get(appID)
 	writeJSON(w, http.StatusOK, appSummary{
-		AppID:         appID,
-		ToolCount:     len(app.Tools),
-		HasKey:        h.Auth.HasKey(appID),
-		AllowedOrigin: h.Auth.OriginFor(appID),
-		Thought:       req.Thought,
+		AppID:          appID,
+		ToolCount:      len(app.Tools),
+		HasKey:         h.Auth.HasKey(appID),
+		AllowedOrigins: h.Auth.OriginsFor(appID),
+		Thought:        req.Thought,
 	})
 }
 
-func (h *Handler) saveTools(w http.ResponseWriter, r *http.Request, user *session.User) {
+// saveTool upserts one tool (PUT /console/apps/{appId}/tools/{toolName}) —
+// see toolschema.Registry.SaveTool's doc comment for why this replaced the
+// old replace-all saveTools/Save: neither the console editor's per-tool
+// autosave nor the CLI's `onagent tool create` has (or should need) the
+// app's whole current tool list in hand just to add or edit one.
+//
+// The path's {toolName} and the decoded body's Tool.Name must agree — a
+// mismatch is caller confusion (or a client bug), not something to resolve
+// by silently trusting one over the other, so it's rejected with 400
+// before anything is written.
+func (h *Handler) saveTool(w http.ResponseWriter, r *http.Request, user *session.User) {
 	appID := r.PathValue("appId")
+	toolName := r.PathValue("toolName")
 
-	var tools []toolschema.Tool
-	if err := json.NewDecoder(r.Body).Decode(&tools); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	var tool toolschema.Tool
+	if !decodeJSON(w, r, &tool) {
+		return
+	}
+	if tool.Name != toolName {
+		http.Error(w, fmt.Sprintf("tool name %q in the request body does not match %q in the URL", tool.Name, toolName), http.StatusBadRequest)
 		return
 	}
 
-	app := &toolschema.App{AppID: appID, Tools: tools}
-	if err := h.Apps.Save(app); err != nil {
+	if err := h.Apps.SaveTool(appID, tool); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	h.syncWantRole(appID)
-	saved, _ := h.Apps.Get(appID) // Save's own Reload already refreshed this; existing thought is untouched by saveApp (see registry.go)
+	app, _ := h.Apps.Get(appID) // SaveTool's own Reload already refreshed this
 	writeJSON(w, http.StatusOK, appSummary{
-		AppID:         appID,
-		ToolCount:     len(tools),
-		HasKey:        h.Auth.HasKey(appID),
-		AllowedOrigin: h.Auth.OriginFor(appID),
-		Thought:       saved.Thought,
+		AppID:          appID,
+		ToolCount:      len(app.Tools),
+		HasKey:         h.Auth.HasKey(appID),
+		AllowedOrigins: h.Auth.OriginsFor(appID),
+		Thought:        app.Thought,
+	})
+}
+
+// deleteTool removes one tool (DELETE /console/apps/{appId}/tools/{toolName}) —
+// see saveTool's doc comment for the per-tool write model this belongs to.
+func (h *Handler) deleteTool(w http.ResponseWriter, r *http.Request, user *session.User) {
+	appID := r.PathValue("appId")
+	toolName := r.PathValue("toolName")
+
+	if err := h.Apps.DeleteTool(appID, toolName); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	h.syncWantRole(appID)
+	app, _ := h.Apps.Get(appID) // DeleteTool's own Reload already refreshed this
+	writeJSON(w, http.StatusOK, appSummary{
+		AppID:          appID,
+		ToolCount:      len(app.Tools),
+		HasKey:         h.Auth.HasKey(appID),
+		AllowedOrigins: h.Auth.OriginsFor(appID),
+		Thought:        app.Thought,
 	})
 }
 
@@ -636,8 +709,7 @@ type issueTokenResponse struct {
 
 func (h *Handler) issueToken(w http.ResponseWriter, r *http.Request, user *session.User) {
 	var req issueTokenRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 
@@ -693,8 +765,7 @@ type startCliAuthResponse struct {
 
 func (h *Handler) startCliAuth(w http.ResponseWriter, r *http.Request) {
 	var req startCliAuthRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	if !decodeJSON(w, r, &req) {
 		return
 	}
 	id, err := h.CliAuth.Start(req.RedirectURI, req.Name)
@@ -773,4 +844,25 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// decodeJSON decodes r's body into dst, rejecting any field dst doesn't
+// declare (DisallowUnknownFields) instead of the stdlib default of
+// silently ignoring it. That default is what let a stale/mistyped client
+// field (e.g. a CLI built against an older field name) look like a
+// successful request while actually writing nothing — see setOrigin's
+// history: the CLI once sent a JSON shape this handler's request struct
+// didn't have a field for, and the mismatch was invisible until the
+// allowed-origins list quietly emptied out. Every handler that decodes a
+// request body should call this instead of json.NewDecoder(...).Decode
+// directly, so a future field rename/removal fails loudly here rather
+// than reproducing that bug in a new shape.
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		http.Error(w, "invalid JSON body: "+err.Error(), http.StatusBadRequest)
+		return false
+	}
+	return true
 }

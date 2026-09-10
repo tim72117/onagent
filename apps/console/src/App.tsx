@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { App as AppSchema, Tool } from './schema'
 import { DEFAULT_THOUGHT, emptyTool } from './schema'
 import { api, ApiError } from './api'
@@ -123,11 +123,12 @@ export default function App() {
   // informational.
   const [quota, setQuota] = useState<Quota | null>(null)
 
-  // draft is the full definition of the app being edited; edits stay local
-  // until Save PUTs them to the backend, so half-finished schema changes
-  // never go live on keystroke.
+  // draft is the full definition of the app being edited. There is no
+  // batch "Save" anymore — every tool add/edit/delete calls its own
+  // api.saveTool/deleteTool immediately (see updateTool/appendTool/
+  // removeTool below); draft.tools here is purely local display state kept
+  // in sync with what's been persisted, not an unsaved-changes buffer.
   const [draft, setDraft] = useState<AppSchema | null>(null)
-  const [dirty, setDirty] = useState(false)
   const [view, setView] = useState<View>(null)
 
   // Any view without a mobile entry point of its own (currently just
@@ -161,12 +162,15 @@ export default function App() {
     destructive?: boolean
     onConfirm: () => void
   } | null>(null)
-  const [busy, setBusy] = useState(false)
-  // Origin edits save immediately on submit (unlike tool edits, which batch
-  // into draft/dirty until Save) — it's a single field with its own PUT
-  // endpoint, and there's no half-finished intermediate state worth
-  // protecting against an accidental navigate-away.
-  const [originDraft, setOriginDraft] = useState('')
+  // Origin edits save immediately on submit, same as every tool edit now —
+  // it's a small list with its own PUT endpoint, and there's no
+  // half-finished intermediate state worth protecting against an
+  // accidental navigate-away. originDrafts is the
+  // list being edited (kept in sync with the server via the effect below);
+  // newOriginDraft is the separate "add one more" text field, since the
+  // list itself is no longer a single editable string.
+  const [originDrafts, setOriginDrafts] = useState<string[]>([])
+  const [newOriginDraft, setNewOriginDraft] = useState('')
   const [originBusy, setOriginBusy] = useState(false)
   // Thought edits follow the same immediate-save pattern as origin.
   const [thoughtDraft, setThoughtDraft] = useState('')
@@ -178,7 +182,6 @@ export default function App() {
     setSummaries(null)
     setQuota(null)
     setDraft(null)
-    setDirty(false)
     setView(null)
     setLoginError(message)
   }, [])
@@ -200,16 +203,14 @@ export default function App() {
     [logout, showToast],
   )
 
-  // Collapses the setBusy(true)/try/await/catch/finally setBusy(false)
-  // skeleton that saveDraft, addToolFromWizard, removeTool, saveOrigin,
-  // saveThought, and issueKey/revokeKey's onConfirm all repeated verbatim
-  // — differing only in which busy setter they used and what ran on
-  // success. reportError is closed over rather than a parameter since
-  // every call site here wants identical error handling; onSuccess is the
-  // only per-call variation (e.g. saveDraft's setDirty(false), or
-  // addToolFromWizard's view/dirty updates that must happen before the
-  // request, not after — those still sit outside runAction, which only
-  // wraps the request itself).
+  // Collapses the setBusyState(true)/try/await/catch/finally
+  // setBusyState(false) skeleton that saveOrigins and saveThought both
+  // repeat verbatim — differing only in which busy setter they used.
+  // reportError is closed over rather than a parameter since every call
+  // site here wants identical error handling. Tool saves (persistTool,
+  // below) don't go through this: they track busy/error per tool index
+  // rather than with one shared setter, so they manage that bookkeeping
+  // directly instead.
   // Returns whether fn succeeded, so callers that need to react to the
   // outcome (e.g. AppSettingsList.tsx only closing OriginEditSheet after a
   // confirmed save, not immediately on click) can await it instead of
@@ -288,14 +289,6 @@ export default function App() {
     api.getQuota().then(setQuota).catch(() => setQuota(null))
   }, [authState])
 
-  // Unsaved edits only live in this tab; warn before the browser discards them.
-  useEffect(() => {
-    if (!dirty) return
-    const handler = (e: BeforeUnloadEvent) => e.preventDefault()
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty])
-
   const issues = useMemo(() => (draft ? validateApp(draft) : []), [draft])
   const issuesByTool = useMemo(() => {
     const m = new Map<number, typeof issues>()
@@ -314,8 +307,9 @@ export default function App() {
   // refreshSummaries) — but not on every keystroke, since that would fight
   // the user typing.
   useEffect(() => {
-    setOriginDraft(activeSummary?.allowedOrigin ?? '')
-  }, [activeSummary?.appId, activeSummary?.allowedOrigin])
+    setOriginDrafts(activeSummary?.allowedOrigins ?? [])
+    setNewOriginDraft('')
+  }, [activeSummary?.appId, activeSummary?.allowedOrigins])
 
   useEffect(() => {
     setThoughtDraft(activeSummary?.thought ?? '')
@@ -336,36 +330,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft, summaries, view?.kind])
 
-  // Runs action immediately if there's nothing unsaved to lose; otherwise
-  // gates it behind a confirmation. action itself may be async — this
-  // helper doesn't need to await it, callers that care already do.
-  // useCallback (only re-created when dirty itself changes, not on every
-  // render) so callers like selectApp/addApp that also useCallback stay
-  // referentially stable across unrelated re-renders — see DesktopAppBar's
-  // own React.memo, which this stability is what makes worthwhile.
-  const withDiscardConfirm = useCallback(
-    (action: () => void) => {
-      if (!dirty) {
-        action()
-        return
-      }
-      setPendingConfirm({
-        message: 'Discard unsaved changes to this app?',
-        confirmLabel: 'Discard',
-        destructive: false,
-        onConfirm: action,
-      })
-    },
-    [dirty],
-  )
-
-  // Same shared ConfirmModal as withDiscardConfirm above, but unconditional
-  // and message/action supplied by the caller — for local, component-owned
-  // dirty state this file's own `dirty` doesn't cover, e.g.
-  // MobileWorkspaceCards.tsx's in-progress "new tool" draft, which isn't
-  // added to draft.tools (and so can't dirty this app's own `dirty` flag)
-  // until it's actually saved. The caller decides whether its own local
-  // state is dirty enough to ask at all; this just renders the dialog.
+  // Same shared ConfirmModal MobileWorkspaceCards.tsx's in-progress "new
+  // tool" draft uses to ask before discarding local, component-owned state
+  // that isn't in draft.tools (and so was never persisted) — message/action
+  // supplied by the caller, which decides whether its own local state is
+  // dirty enough to ask at all; this just renders the dialog.
   function confirmDiscard(message: string, onConfirm: () => void) {
     setPendingConfirm({ message, confirmLabel: 'Discard', destructive: false, onConfirm })
   }
@@ -376,26 +345,28 @@ export default function App() {
   // App settings, not the workspace (see its own comment).
   // useCallback so DesktopAppBar.tsx (wrapped in React.memo) doesn't
   // re-render every time App does, just because onSelectApp's identity
-  // would otherwise be a fresh closure on every render.
+  // would otherwise be a fresh closure on every render. No discard
+  // confirmation gate anymore — every tool edit saves immediately (see
+  // updateTool/removeTool below), so there's never unsaved app state to
+  // lose by switching apps.
   const selectApp = useCallback(
     (appId: string, afterSelect: () => void = () => setView(null)) => {
-      withDiscardConfirm(async () => {
+      ;(async () => {
         try {
           const app = await api.getApp(appId)
           setDraft({ appId: app.appId, tools: app.tools ?? [] })
-          setDirty(false)
           afterSelect()
         } catch (err) {
           reportError(err)
         }
-      })
+      })()
     },
-    [withDiscardConfirm, reportError],
+    [reportError],
   )
 
   const addApp = useCallback(() => {
-    withDiscardConfirm(() => setShowAddApp(true))
-  }, [withDiscardConfirm])
+    setShowAddApp(true)
+  }, [])
 
   async function createApp(appId: string) {
     try {
@@ -403,7 +374,6 @@ export default function App() {
       await refreshSummaries()
       const app = await api.getApp(appId)
       setDraft({ appId: app.appId, tools: app.tools ?? [] })
-      setDirty(false)
       setView(null)
       setShowAddApp(false)
     } catch (err) {
@@ -422,7 +392,6 @@ export default function App() {
           await api.deleteApp(appId)
           await refreshSummaries()
           setDraft(null)
-          setDirty(false)
           setView(null)
         } catch (err) {
           reportError(err)
@@ -430,35 +399,6 @@ export default function App() {
       },
     })
   }
-
-  function saveDraft() {
-    if (!draft) return
-    runAction(
-      setBusy,
-      async () => {
-        await api.saveTools(draft.appId, draft.tools)
-        await refreshSummaries()
-      },
-      () => setDirty(false),
-    )
-  }
-
-  // Replaces the workspace header's manual Save button — autosaves
-  // draft.tools 1.2s after the last edit, same as saveDraft's own guard
-  // (canSave, below) required before: dirty, no validation issues, and
-  // not already mid-save. Debounced (not saved on every keystroke) so
-  // rapid edits (e.g. typing a tool name) don't fire a request per
-  // character. saveDraft itself already no-ops if draft becomes null
-  // before the timer fires (e.g. the visitor switched apps), so no extra
-  // guard is needed here for that race.
-  useEffect(() => {
-    if (!dirty || issues.length > 0 || busy) return
-    const timer = setTimeout(() => {
-      saveDraft()
-    }, 1200)
-    return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- saveDraft closes over draft/dirty itself; re-running this effect on every draft change (not just dirty/issues/busy) would reset the debounce timer on every keystroke instead of only after typing pauses.
-  }, [dirty, issues.length, busy])
 
   function issueKey() {
     if (!draft) return
@@ -486,11 +426,11 @@ export default function App() {
   // Returns whether the save succeeded — AppSettingsList.tsx's mobile sheet
   // awaits this to decide whether it's safe to close (see runAction's own
   // comment on why this can't just assume success).
-  function saveOrigin(e: React.FormEvent): Promise<boolean> {
+  function saveOrigins(e: React.FormEvent): Promise<boolean> {
     e.preventDefault()
     if (!draft) return Promise.resolve(false)
     return runAction(setOriginBusy, async () => {
-      await api.setOrigin(draft.appId, originDraft.trim())
+      await api.setOrigins(draft.appId, originDrafts)
       await refreshSummaries()
     })
   }
@@ -523,7 +463,96 @@ export default function App() {
 
   function updateDraft(next: AppSchema) {
     setDraft(next)
-    setDirty(true)
+  }
+
+  // Tracks, per tool array index, the last version of that tool actually
+  // persisted to the backend (undefined = never saved, e.g. a brand-new
+  // blank tool that still fails validation). Positions are stable across
+  // edits within a session — add/remove/wizard-create all go through
+  // setDraft synchronously, so an index here always lines up with the same
+  // slot in draft.tools — which is what lets the debounced effect below
+  // tell "this tool changed since it was last saved" apart from "this tool
+  // was just re-rendered". Keyed on appId so switching apps doesn't confuse
+  // one app's saved snapshot for another's.
+  const savedToolsRef = useRef<{ appId: string | null; tools: (Tool | undefined)[] }>({
+    appId: null,
+    tools: [],
+  })
+  if (draft && savedToolsRef.current.appId !== draft.appId) {
+    savedToolsRef.current = { appId: draft.appId, tools: draft.tools.map((t) => t) }
+  }
+  // Per-tool save/error state, index-keyed — mirrors busy/reportError's
+  // shape but scoped to one tool at a time instead of the whole app, since
+  // every tool now saves independently rather than through one shared
+  // draft-wide save.
+  const [toolBusy, setToolBusy] = useState<Set<number>>(new Set())
+  const [toolErrors, setToolErrors] = useState<Map<number, string>>(new Map())
+
+  function markToolBusy(index: number, busyState: boolean) {
+    setToolBusy((s) => {
+      const next = new Set(s)
+      if (busyState) next.add(index)
+      else next.delete(index)
+      return next
+    })
+  }
+
+  function setToolError(index: number, message: string | null) {
+    setToolErrors((m) => {
+      const next = new Map(m)
+      if (message) next.set(index, message)
+      else next.delete(index)
+      return next
+    })
+  }
+
+  // After a tool at removedIndex is spliced out of draft.tools, every
+  // index above it shifts down by one — without this, a stale busy/error
+  // entry keyed by the old index would silently point at whatever tool
+  // slides into that slot next.
+  function shiftToolIndicesAfterRemoval(removedIndex: number) {
+    setToolBusy((s) => {
+      const next = new Set<number>()
+      for (const i of s) {
+        if (i === removedIndex) continue
+        next.add(i > removedIndex ? i - 1 : i)
+      }
+      return next
+    })
+    setToolErrors((m) => {
+      const next = new Map<number, string>()
+      for (const [i, msg] of m) {
+        if (i === removedIndex) continue
+        next.set(i > removedIndex ? i - 1 : i, msg)
+      }
+      return next
+    })
+  }
+
+  // Persists tools[index] via api.saveTool, or — if its name changed since
+  // the last persisted version — deletes the old name first (the backend
+  // upserts by name in the URL, so a rename isn't expressible as a single
+  // PUT; it would otherwise leave the old-named tool behind alongside the
+  // new one). Updates savedToolsRef on success so the next debounce pass
+  // sees this tool as clean, and refreshes the summaries list (tool count
+  // etc.) the same way every other mutation here does.
+  async function persistTool(appId: string, index: number, tool: Tool) {
+    const prev = savedToolsRef.current.tools[index]
+    markToolBusy(index, true)
+    try {
+      if (prev && prev.name !== tool.name) {
+        await api.deleteTool(appId, prev.name)
+      }
+      await api.saveTool(appId, tool)
+      savedToolsRef.current.tools[index] = tool
+      setToolError(index, null)
+      await refreshSummaries()
+    } catch (err) {
+      reportError(err)
+      setToolError(index, err instanceof Error ? err.message : String(err))
+    } finally {
+      markToolBusy(index, false)
+    }
   }
 
   function appendTool(tool: Tool) {
@@ -536,30 +565,25 @@ export default function App() {
     appendTool(emptyTool())
   }
 
-  // Unlike appendTool (used by the blank-form "+ New tool" path, which only
-  // stages the change in draft/dirty until the user hits Save), a tool
-  // built through the guided wizard saves immediately — it went through a
-  // multi-step review already, so there's less risk of it being a
-  // half-finished edit someone would want to back out of before it's
-  // persisted. Computes the new tools list explicitly (not via draft.tools
-  // after updateDraft) since setDraft's update wouldn't be visible yet in
-  // this same function body.
+  // A tool built through the guided wizard saves immediately — it went
+  // through a multi-step review already, so unlike the blank "+ New tool"
+  // form (which waits for the debounced autosave below, since a
+  // freshly-appended empty tool fails validation until named/described
+  // anyway), there's no half-finished state to wait out here.
   function addToolFromWizard(tool: Tool) {
     setShowToolWizard(false)
     if (!draft) return
     const tools = [...draft.tools, tool]
+    const index = tools.length - 1
     updateDraft({ ...draft, tools })
-    setView({ kind: 'tool', index: tools.length - 1 })
-    runAction(
-      setBusy,
-      async () => {
-        await api.saveTools(draft.appId, tools)
-        await refreshSummaries()
-      },
-      () => setDirty(false),
-    )
+    setView({ kind: 'tool', index })
+    persistTool(draft.appId, index, tool)
   }
 
+  // Updates local display state only; persisting happens via the debounced
+  // effect below (same 1.2s-after-last-keystroke pattern the old
+  // draft-wide autosave used), so rapid edits (e.g. typing a tool name)
+  // don't fire a request per character.
   function updateTool(index: number, next: Tool) {
     if (!draft) return
     const tools = draft.tools.slice()
@@ -567,10 +591,34 @@ export default function App() {
     updateDraft({ ...draft, tools })
   }
 
-  // Saves immediately, unlike updateTool/appendTool (staged in draft/dirty
-  // until an explicit Save) — matches addToolFromWizard's reasoning:
-  // "Delete tool" is itself a deliberate, named action (behind a
-  // confirmation here too, since it's destructive), not an in-progress
+  // Debounced per-tool autosave: 1.2s after the last edit to any given
+  // tool, if that tool has no validation issues and differs from what was
+  // last persisted for its index, save it. Runs once per render against
+  // every tool index rather than one effect per tool, since the number of
+  // tools itself changes — a fixed-size array of hooks isn't an option
+  // here. Each index gets its own timer/skip logic, so editing tool A
+  // doesn't reset or delay tool B's pending save.
+  useEffect(() => {
+    if (!draft) return
+    const appId = draft.appId
+    const timers = draft.tools.map((tool, index) => {
+      if (toolBusy.has(index)) return undefined
+      const toolIssues = issuesByTool.get(index)
+      if (toolIssues && toolIssues.length > 0) return undefined
+      const prev = savedToolsRef.current.tools[index]
+      if (prev && JSON.stringify(prev) === JSON.stringify(tool)) return undefined
+      return setTimeout(() => {
+        persistTool(appId, index, tool)
+      }, 1200)
+    })
+    return () => {
+      for (const t of timers) if (t) clearTimeout(t)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- persistTool/issuesByTool close over draft/reportError themselves; keying on draft.tools (not toolBusy's Set identity) is what makes this fire only after an actual edit, not after every busy/error state change.
+  }, [draft, issuesByTool])
+
+  // Deletes immediately (behind a confirmation, since it's destructive) —
+  // "Delete tool" is itself a deliberate, named action, not an in-progress
   // edit someone might want to back out of before it's persisted.
   function removeTool(index: number) {
     if (!draft) return
@@ -579,18 +627,25 @@ export default function App() {
     setPendingConfirm({
       message: `Delete "${toolName}"? This can't be undone.`,
       confirmLabel: 'Delete',
-      onConfirm: () => {
+      onConfirm: async () => {
         const tools = draft.tools.filter((_, i) => i !== index)
         updateDraft({ ...draft, tools })
         setView(null)
-        runAction(
-          setBusy,
-          async () => {
-            await api.saveTools(appId, tools)
-            await refreshSummaries()
-          },
-          () => setDirty(false),
-        )
+        markToolBusy(index, true)
+        try {
+          // Only the backend actually has this tool if it was ever
+          // persisted (savedToolsRef) — a brand-new tool deleted before its
+          // first save has nothing to delete server-side.
+          if (savedToolsRef.current.tools[index]) {
+            await api.deleteTool(appId, toolName)
+          }
+          savedToolsRef.current.tools.splice(index, 1)
+          shiftToolIndicesAfterRemoval(index)
+          await refreshSummaries()
+        } catch (err) {
+          reportError(err)
+          markToolBusy(index, false)
+        }
       },
     })
   }
@@ -598,30 +653,27 @@ export default function App() {
   // Re-fetches draft (and, via refreshSummaries, the thought/origin/key
   // fields selectApp's fetch doesn't cover) before switching sub-views
   // within the same app — so e.g. a Thought edit saved from another tab
-  // shows up here without a full app reselect. Gated by the same
-  // withDiscardConfirm() every other draft-replacing action here uses: the
-  // switch itself (switchView) only actually runs once confirmed (or
-  // immediately if there's nothing unsaved) — the view must not change
-  // before the user has answered, or the confirmation reads as showing up
-  // after the fact instead of gating it.
+  // shows up here without a full app reselect. No discard confirmation
+  // gate here anymore: every tool edit already saves on its own (debounced
+  // autosave or immediate, depending on the action), so there's nothing
+  // unsaved left to lose by switching views.
   function refreshDraftForSwitch(switchView: () => void) {
     if (!draft) {
       switchView()
       return
     }
-    withDiscardConfirm(async () => {
-      switchView()
+    switchView()
+    ;(async () => {
       try {
         // Independent endpoints (app.appId's own tools/fields vs. the
         // summaries list) — no data dependency between them, so run them
         // concurrently instead of paying their latency twice in sequence.
         const [app] = await Promise.all([api.getApp(draft.appId), refreshSummaries()])
         setDraft({ appId: app.appId, tools: app.tools ?? [] })
-        setDirty(false)
       } catch (err) {
         reportError(err)
       }
-    })
+    })()
   }
 
   function selectTool(index: number) {
@@ -711,6 +763,11 @@ export default function App() {
   const appSettingsSelected = view?.kind === 'appSettings'
   const previewSelected = view?.kind === 'preview'
   const appLevelIssues = issues.filter((i) => i.toolIndex === null)
+  // Whether any tool has a save in flight or a failed save — drives the
+  // workspace header's "Saving…" badge below, replacing the old
+  // draft-wide dirty/busy pair now that saves happen per tool.
+  const anyToolBusy = toolBusy.size > 0
+  const anyToolError = toolErrors.size > 0
 
   return (
     <AppShell
@@ -770,11 +827,13 @@ export default function App() {
               hasKey={activeSummary?.hasKey ?? false}
               onIssueKey={issueKey}
               onRevokeKey={revokeKey}
-              allowedOrigin={activeSummary?.allowedOrigin ?? null}
-              originDraft={originDraft}
-              onOriginDraftChange={setOriginDraft}
+              allowedOrigins={activeSummary?.allowedOrigins ?? []}
+              originDrafts={originDrafts}
+              onOriginDraftsChange={setOriginDrafts}
+              newOriginDraft={newOriginDraft}
+              onNewOriginDraftChange={setNewOriginDraft}
               originBusy={originBusy}
-              onSaveOrigin={saveOrigin}
+              onSaveOrigins={saveOrigins}
               onDeleteApp={deleteApp}
             />
           ) : (
@@ -783,11 +842,13 @@ export default function App() {
               hasKey={activeSummary?.hasKey ?? false}
               onIssueKey={issueKey}
               onRevokeKey={revokeKey}
-              allowedOrigin={activeSummary?.allowedOrigin ?? null}
-              originDraft={originDraft}
-              onOriginDraftChange={setOriginDraft}
+              allowedOrigins={activeSummary?.allowedOrigins ?? []}
+              originDrafts={originDrafts}
+              onOriginDraftsChange={setOriginDrafts}
+              newOriginDraft={newOriginDraft}
+              onNewOriginDraftChange={setNewOriginDraft}
               originBusy={originBusy}
-              onSaveOrigin={saveOrigin}
+              onSaveOrigins={saveOrigins}
               onDeleteApp={deleteApp}
             />
           )
@@ -801,8 +862,8 @@ export default function App() {
           isMobile ? (
             <MobileWorkspaceCards
               draft={draft}
-              dirty={dirty}
-              busy={busy}
+              dirty={anyToolBusy || anyToolError}
+              busy={anyToolBusy}
               appLevelIssues={appLevelIssues}
               issuesByTool={issuesByTool}
               thoughtDraft={thoughtDraft}
@@ -822,21 +883,28 @@ export default function App() {
                 empty header still reserved its full padding/border-bottom
                 height, which read as a stray blank band once DesktopAppBar
                 was added above it (this header used to be the workspace's
-                only top row; now it's a second one stacked under that). */}
-            {(dirty || busy || appLevelIssues.length > 0) && (
+                only top row; now it's a second one stacked under that).
+                dirty/busy used to be one draft-wide pair backing a manual
+                Save button; now every tool saves on its own, so this shows
+                "Saving…" while any tool has a save in flight and surfaces a
+                save failure the same way appLevelIssues already does. */}
+            {(anyToolBusy || anyToolError || appLevelIssues.length > 0) && (
               <header className={styles.workspaceHeader}>
                 <div className={styles.workspaceHeading}>
-                  {(dirty || busy) && (
-                    <span className={`${styles.badge} ${styles.badgeDirty}`}>
-                      {busy ? 'Saving…' : 'Unsaved changes'}
-                    </span>
+                  {anyToolBusy && (
+                    <span className={`${styles.badge} ${styles.badgeDirty}`}>Saving…</span>
                   )}
                 </div>
 
-                {appLevelIssues.length > 0 && (
+                {(appLevelIssues.length > 0 || anyToolError) && (
                   <ul className="issue-list issue-list-inline">
                     {appLevelIssues.map((issue, i) => (
                       <li key={i}>{issue.message}</li>
+                    ))}
+                    {[...toolErrors.entries()].map(([index, message]) => (
+                      <li key={`tool-error-${index}`}>
+                        {draft?.tools[index]?.name || `tool[${index}]`}: {message}
+                      </li>
                     ))}
                   </ul>
                 )}
@@ -873,6 +941,8 @@ export default function App() {
                       key={activeToolIndex}
                       tool={selectedTool}
                       issues={issuesByTool.get(activeToolIndex!) ?? []}
+                      busy={toolBusy.has(activeToolIndex!)}
+                      saveError={toolErrors.get(activeToolIndex!) ?? null}
                       onChange={(next) => updateTool(activeToolIndex!, next)}
                       onRemove={() => removeTool(activeToolIndex!)}
                     />

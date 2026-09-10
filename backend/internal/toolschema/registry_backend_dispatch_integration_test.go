@@ -55,33 +55,32 @@ func deleteTestApp(t *testing.T, reg *Registry, appID string) {
 // intact.
 func TestRegistryBackendDispatch_WriteReadBack(t *testing.T) {
 	reg := openTestRegistry(t)
+	sqlDB, _ := reg.db.DB()
+	const ownerID = 999701
 	const appID = "test-backend-dispatch-roundtrip"
+	makeTestUser(t, sqlDB, ownerID, "backend-dispatch-roundtrip@example.com")
 	t.Cleanup(func() { deleteTestApp(t, reg, appID) })
 
-	app := &App{
-		AppID: appID,
-		Tools: []Tool{
-			{
-				Name:        "recommend_nearby",
-				Description: "Recommend nearby places",
-				Parameters: ParameterSchema{
-					Type: "object",
-					Properties: map[string]*ParameterSchema{
-						"lat": {Type: "number"},
-						"lng": {Type: "number"},
-					},
-					Required: []string{"lat", "lng"},
-				},
-				BackendDispatch: &BackendDispatch{
-					Endpoint:  "https://example.com/tool",
-					TimeoutMS: 5000,
-				},
-			},
-		},
+	if err := reg.Create(appID, ownerID); err != nil {
+		t.Fatalf("Create: %v", err)
 	}
-
-	if err := reg.Save(app); err != nil {
-		t.Fatalf("Save: %v", err)
+	if err := reg.SaveTool(appID, Tool{
+		Name:        "recommend_nearby",
+		Description: "Recommend nearby places",
+		Parameters: ParameterSchema{
+			Type: "object",
+			Properties: map[string]*ParameterSchema{
+				"lat": {Type: "number"},
+				"lng": {Type: "number"},
+			},
+			Required: []string{"lat", "lng"},
+		},
+		BackendDispatch: &BackendDispatch{
+			Endpoint:  "https://example.com/tool",
+			TimeoutMS: 5000,
+		},
+	}); err != nil {
+		t.Fatalf("SaveTool: %v", err)
 	}
 
 	got, ok := reg.Get(appID)
@@ -110,32 +109,33 @@ func TestRegistryBackendDispatch_WriteReadBack(t *testing.T) {
 // column must not accidentally populate for tools that never set it.
 func TestRegistryBackendDispatch_NonDispatchToolUnaffected(t *testing.T) {
 	reg := openTestRegistry(t)
+	sqlDB, _ := reg.db.DB()
+	const ownerID = 999702
 	const appID = "test-backend-dispatch-mixed"
+	makeTestUser(t, sqlDB, ownerID, "backend-dispatch-mixed@example.com")
 	t.Cleanup(func() { deleteTestApp(t, reg, appID) })
 
-	app := &App{
-		AppID: appID,
-		Tools: []Tool{
-			{
-				Name:        "dispatch_tool",
-				Description: "Uses backend dispatch",
-				Parameters:  ParameterSchema{Type: "object"},
-				BackendDispatch: &BackendDispatch{
-					Endpoint:  "https://example.com/dispatch",
-					TimeoutMS: 3000,
-				},
-			},
-			{
-				Name:        "plain_tool",
-				Description: "Ordinary browser-dispatched action tool",
-				Parameters:  ParameterSchema{Type: "object"},
-				Kind:        ToolKindAction,
-			},
-		},
+	if err := reg.Create(appID, ownerID); err != nil {
+		t.Fatalf("Create: %v", err)
 	}
-
-	if err := reg.Save(app); err != nil {
-		t.Fatalf("Save: %v", err)
+	if err := reg.SaveTool(appID, Tool{
+		Name:        "dispatch_tool",
+		Description: "Uses backend dispatch",
+		Parameters:  ParameterSchema{Type: "object"},
+		BackendDispatch: &BackendDispatch{
+			Endpoint:  "https://example.com/dispatch",
+			TimeoutMS: 3000,
+		},
+	}); err != nil {
+		t.Fatalf("SaveTool(dispatch_tool): %v", err)
+	}
+	if err := reg.SaveTool(appID, Tool{
+		Name:        "plain_tool",
+		Description: "Ordinary browser-dispatched action tool",
+		Parameters:  ParameterSchema{Type: "object"},
+		Kind:        ToolKindAction,
+	}); err != nil {
+		t.Fatalf("SaveTool(plain_tool): %v", err)
 	}
 
 	got, ok := reg.Get(appID)
@@ -170,84 +170,72 @@ func TestRegistryBackendDispatch_NonDispatchToolUnaffected(t *testing.T) {
 	}
 }
 
-// TestRegistryBackendDispatch_ReplaceAllClearsStaleData covers scenario (c):
-// saveApp's replace-all semantics (delete all of the app's tools, then
-// re-insert the new list) must also apply to BackendDispatch — a
-// second Save with no BackendDispatch tools must leave no trace of the
-// first save's BackendDispatch data behind.
-func TestRegistryBackendDispatch_ReplaceAllClearsStaleData(t *testing.T) {
+// TestRegistryBackendDispatch_UpdateClearsDispatchWhenOmitted covers what
+// scenario (c) became once Registry.Save's replace-all semantics were
+// removed in favor of SaveTool's per-tool upsert (see git history —
+// SaveTool deliberately does NOT clear other tools, the opposite property
+// the old replace-all test here used to pin): calling SaveTool again for
+// the SAME tool name, this time without a BackendDispatch, must still
+// clear that one tool's own stale backend_dispatch column via the upsert's
+// DoUpdates column list — not leave the previous call's JSON behind just
+// because the new Tool value's BackendDispatch field is nil.
+func TestRegistryBackendDispatch_UpdateClearsDispatchWhenOmitted(t *testing.T) {
 	reg := openTestRegistry(t)
-	const appID = "test-backend-dispatch-replace-all"
+	sqlDB, _ := reg.db.DB()
+	const ownerID = 999703
+	const appID = "test-backend-dispatch-update-clears"
+	makeTestUser(t, sqlDB, ownerID, "backend-dispatch-update-clears@example.com")
 	t.Cleanup(func() { deleteTestApp(t, reg, appID) })
 
-	withDispatch := &App{
-		AppID: appID,
-		Tools: []Tool{
-			{
-				Name:        "recommend_nearby",
-				Description: "Recommend nearby places",
-				Parameters:  ParameterSchema{Type: "object"},
-				BackendDispatch: &BackendDispatch{
-					Endpoint:  "https://example.com/stale",
-					TimeoutMS: 9999,
-				},
-			},
-		},
+	if err := reg.Create(appID, ownerID); err != nil {
+		t.Fatalf("Create: %v", err)
 	}
-	if err := reg.Save(withDispatch); err != nil {
-		t.Fatalf("first Save (with dispatch): %v", err)
+	if err := reg.SaveTool(appID, Tool{
+		Name:        "recommend_nearby",
+		Description: "Recommend nearby places",
+		Parameters:  ParameterSchema{Type: "object"},
+		BackendDispatch: &BackendDispatch{
+			Endpoint:  "https://example.com/stale",
+			TimeoutMS: 9999,
+		},
+	}); err != nil {
+		t.Fatalf("first SaveTool (with dispatch): %v", err)
 	}
 
 	// Sanity: confirm it actually landed before testing that it goes away.
 	if got, ok := reg.Get(appID); !ok || got.Tools[0].BackendDispatch == nil {
-		t.Fatalf("setup failed: BackendDispatch not present after first Save")
+		t.Fatalf("setup failed: BackendDispatch not present after first SaveTool")
 	}
 
-	withoutDispatch := &App{
-		AppID: appID,
-		Tools: []Tool{
-			{
-				Name:        "plain_tool",
-				Description: "No backend dispatch this time",
-				Parameters:  ParameterSchema{Type: "object"},
-				Kind:        ToolKindAction,
-			},
-		},
-	}
-	if err := reg.Save(withoutDispatch); err != nil {
-		t.Fatalf("second Save (without dispatch): %v", err)
+	if err := reg.SaveTool(appID, Tool{
+		Name:        "recommend_nearby",
+		Description: "No backend dispatch this time",
+		Parameters:  ParameterSchema{Type: "object"},
+		Kind:        ToolKindAction,
+	}); err != nil {
+		t.Fatalf("second SaveTool (without dispatch): %v", err)
 	}
 
 	got, ok := reg.Get(appID)
 	if !ok {
-		t.Fatalf("Get(%q): not found after second Save", appID)
+		t.Fatalf("Get(%q): not found after second SaveTool", appID)
 	}
 	if len(got.Tools) != 1 {
-		t.Fatalf("got %d tools after replace, want 1 (stale tool row should be gone, not just its BackendDispatch)", len(got.Tools))
-	}
-	if got.Tools[0].Name != "plain_tool" {
-		t.Fatalf("got tool %q, want %q — old tool row was not replaced", got.Tools[0].Name, "plain_tool")
+		t.Fatalf("got %d tools after update, want 1 (same name, updated in place — not a second row)", len(got.Tools))
 	}
 	if got.Tools[0].BackendDispatch != nil {
-		t.Errorf("BackendDispatch = %+v after replace-all with no dispatch tools, want nil — stale backend_dispatch data was left behind", got.Tools[0].BackendDispatch)
+		t.Errorf("BackendDispatch = %+v after an update omitting it, want nil — stale backend_dispatch data was left behind", got.Tools[0].BackendDispatch)
 	}
 
 	// Belt-and-suspenders: also check the DB directly, in case a future
-	// Registry-level bug were to mask a lingering row (e.g. via caching)
+	// Registry-level bug were to mask a lingering value (e.g. via caching)
 	// that Get's in-memory view wouldn't reveal.
-	var row struct {
-		Name            string
-		BackendDispatch []byte
-	}
-	if err := reg.db.Table("tools").Select("name, backend_dispatch").Where("app_id = ?", appID).Take(&row).Error; err != nil {
-		t.Fatalf("direct DB query after replace: %v", err)
-	}
-	name, bdJSON := row.Name, row.BackendDispatch
-	if name != "plain_tool" {
-		t.Errorf("DB row name = %q, want %q", name, "plain_tool")
+	var bdJSON []byte
+	if err := reg.db.Table("tools").Select("backend_dispatch").Where("app_id = ? AND name = ?", appID, "recommend_nearby").Take(&bdJSON).Error; err != nil {
+		t.Fatalf("direct DB query after update: %v", err)
 	}
 	if bdJSON != nil {
-		t.Errorf("DB row backend_dispatch = %s, want NULL — replace-all left stale BackendDispatch JSON in the tools table", bdJSON)
+		t.Errorf("DB row backend_dispatch = %s, want NULL — update left stale BackendDispatch JSON in the tools table", bdJSON)
 	}
 }
 

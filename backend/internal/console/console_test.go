@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/tim72117/onagent/internal/session"
+	"github.com/tim72117/onagent/internal/toolschema"
 	"github.com/tim72117/onagent/internal/usertoken"
 )
 
@@ -41,11 +42,22 @@ func (f fakeTokenVerifier) Verify(r *http.Request) (*usertoken.User, bool) { ret
 
 type fakeAppOwnerLookup struct {
 	owners map[string]int64 // appID -> ownerID; missing key means "unknown app"
+	public map[string]bool  // appID -> Public flag; missing key means false, mirroring the schema's DEFAULT false
 }
 
 func (f fakeAppOwnerLookup) OwnerOf(appID string) (int64, bool) {
 	id, ok := f.owners[appID]
 	return id, ok
+}
+
+// Get implements the Get method appOwnerLookup added for ownedOrPublicApp
+// (see console.go) — only App.Public is meaningful to that caller, so this
+// fake populates nothing else.
+func (f fakeAppOwnerLookup) Get(appID string) (*toolschema.App, bool) {
+	if _, ok := f.owners[appID]; !ok {
+		return nil, false
+	}
+	return &toolschema.App{AppID: appID, Public: f.public[appID]}, true
 }
 
 func newTestRequest() *http.Request {
@@ -148,6 +160,36 @@ func TestOwnedAppOrNotFound(t *testing.T) {
 	}
 }
 
+// TestOwnedOrPublicApp covers ownedOrPublicApp's extra branch over
+// ownedAppOrNotFound: a non-owner is admitted only when the app is marked
+// Public, and every case ownedAppOrNotFound already allows/rejects must
+// behave identically here too (owning always wins regardless of Public).
+func TestOwnedOrPublicApp(t *testing.T) {
+	apps := fakeAppOwnerLookup{
+		owners: map[string]int64{"my-app": 7, "someone-elses-private-app": 8, "someone-elses-public-app": 8},
+		public: map[string]bool{"someone-elses-public-app": true},
+	}
+
+	cases := []struct {
+		name   string
+		userID int64
+		appID  string
+		want   bool
+	}{
+		{"owner always allowed, public or not", 7, "my-app", true},
+		{"non-owner allowed via public flag", 7, "someone-elses-public-app", true},
+		{"non-owner rejected: private app owned by someone else", 7, "someone-elses-private-app", false},
+		{"non-owner rejected: app does not exist", 7, "no-such-app", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ownedOrPublicApp(apps, tc.userID, tc.appID); got != tc.want {
+				t.Errorf("ownedOrPublicApp(userID=%d, appID=%q) = %v, want %v", tc.userID, tc.appID, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestWithAuth_RejectsWhenNeitherCredentialResolves and
 // TestWithAuth_PassesResolvedUserToNext cover withAuth itself (not just
 // verifyUser) — confirming the wrapper actually wires h.sessionVerify/
@@ -244,7 +286,7 @@ func TestPlaygroundResolver_NilSessionsOrLogFailsClosed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, ok, _, code := tc.resolver.ResolveApp(newTestRequestWithAppID("irrelevant-app"))
+			_, _, _, ok, _, code := tc.resolver.ResolveApp(newTestRequestWithAppID("irrelevant-app"))
 			if ok {
 				t.Fatal("ResolveApp ok = true, want false")
 			}

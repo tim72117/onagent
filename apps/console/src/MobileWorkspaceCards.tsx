@@ -4,6 +4,7 @@ import { emptyTool } from './schema'
 import type { ValidationIssue } from './validate'
 import { ThoughtEditSheet } from './ThoughtEditSheet'
 import { ToolEditSheet } from './ToolEditSheet'
+import { AiToolGeneratorSheet } from './AiToolGeneratorSheet'
 import { useSheet } from './useSheet'
 import styles from './MobileWorkspaceCards.module.css'
 
@@ -76,6 +77,7 @@ export function MobileWorkspaceCards({
   // comment above for why. null means no creation in progress.
   const [newTool, setNewTool] = useState<Tool | null>(null)
   const thoughtSheet = useSheet()
+  const aiGeneratorSheet = useSheet()
 
   return (
     <div className={styles.root}>
@@ -166,6 +168,12 @@ export function MobileWorkspaceCards({
           >
             Build one step by step →
           </button>
+          <button type="button" className={`text-btn ${styles.aiGenerateBtn}`} onClick={aiGeneratorSheet.onOpen}>
+            <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+              <path d="M12 2.5c.3 3.3 1 5.6 2.1 6.9 1.2 1.4 3.5 2.1 6.9 2.4-3.4.3-5.7 1-6.9 2.4-1.2 1.3-1.8 3.6-2.1 6.9-.3-3.3-1-5.6-2.1-6.9-1.2-1.4-3.5-2.1-6.9-2.4 3.4-.3 5.7-1 6.9-2.4C11 8.1 11.7 5.8 12 2.5z" />
+            </svg>
+            Generate with AI →
+          </button>
         </div>
       </div>
 
@@ -197,6 +205,12 @@ export function MobileWorkspaceCards({
         }}
         isNew
         onConfirmDiscard={onConfirmDiscard}
+      />
+
+      <AiToolGeneratorSheet
+        open={aiGeneratorSheet.open}
+        onClose={aiGeneratorSheet.onClose}
+        onGenerated={setNewTool}
       />
     </div>
   )

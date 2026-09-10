@@ -202,7 +202,7 @@ func TestStandingForPeriodEnd(t *testing.T) {
 }
 
 func TestOwnerStandingLimit(t *testing.T) {
-	planFree := PlanFor(TierFree).MonthlyPrompts
+	planFree := PlanFor(TierFree).MonthlyTokens
 
 	t.Run("no override uses the tier plan", func(t *testing.T) {
 		r := ownerStandingRow{tier: TierFree, quotaOverride: nil}

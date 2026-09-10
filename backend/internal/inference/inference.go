@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 
 	"github.com/tim72117/onagent/internal/codegen"
+	"github.com/tim72117/want/types"
 )
 
 // ToolCall is one tool invocation the inference service wants the front-end
@@ -24,6 +25,15 @@ type ToolCall struct {
 type Result struct {
 	ToolCalls        []ToolCall
 	AssistantMessage string
+
+	// Usage is the LLM provider's own token accounting for this Complete
+	// call, summed across every inference turn want ran to produce it (a
+	// single prompt can trigger several provider round-trips — tool-use
+	// loops, multi-agent handoffs — each carrying its own usage event on
+	// want's "agent.inference" topic; see WantService.Complete). Nil for
+	// implementations that don't report usage (MockService) or if want
+	// never emitted a usage event for this turn.
+	Usage *types.Usage
 }
 
 // Request bundles everything the inference service needs to reason about
@@ -46,6 +56,32 @@ type Request struct {
 	// history if and only if they carry the same SessionID. Empty means "no
 	// isolation requested" (single-caller/dev use).
 	SessionID string
+
+	// RequestID is the client-supplied id for this one prompt (ws.Session
+	// passes its protocol.Envelope.RequestID through unchanged). WantService
+	// uses it as quota.Service.Record's event_id, so every usage row recorded
+	// per-provider-round-trip during Complete (see WantService.Complete's
+	// "agent.inference" subscription) carries the same event_id. event_id is
+	// NOT a dedup key — quota.Record has no ON CONFLICT clause, so a caller
+	// that retries the same RequestID (e.g. after a dropped/ambiguous
+	// response) gets a second row inserted and summed into usageSince's
+	// total, not a no-op; see quota.Record's own doc comment for why that
+	// tradeoff was chosen deliberately. Empty is valid (e.g. tests, callers
+	// with no per-prompt id) and simply skips in-Complete recording, same as
+	// a nil quota.Service does.
+	RequestID string
+
+	// UserID is who this prompt's usage is billed to — the connection's
+	// actual operator, resolved once at WebSocket handshake time by
+	// ws.AppResolver.ResolveApp and carried on ws.Session for the
+	// connection's whole life (see Session.userID). WantService.Complete
+	// passes it straight through to quota.Service.Record's userID parameter;
+	// see that doc comment for why this is no longer derived from appID's
+	// owner. Zero is valid (quota disabled, or a caller with no user concept
+	// — e.g. tests) and simply means Record bills to user id 0, which is
+	// harmless since Record itself is skipped whenever RequestID is empty or
+	// quota is nil (see WantService.Complete).
+	UserID int64
 }
 
 // Service is the boundary this platform depends on. Swap MockService for a

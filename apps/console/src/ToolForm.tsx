@@ -9,11 +9,19 @@ import styles from './ToolForm.module.css'
 export function ToolForm({
   tool,
   issues,
+  busy,
+  saveError,
   onChange,
   onRemove,
 }: {
   tool: Tool
   issues: ValidationIssue[]
+  // Reflects App.tsx's per-tool debounced autosave (persistTool) — there's
+  // no manual Save button here, edits save on their own shortly after the
+  // user stops typing, so this is the only UI signal that a save is
+  // actually in flight or failed.
+  busy?: boolean
+  saveError?: string | null
   onChange: (next: Tool) => void
   onRemove: () => void
 }) {
@@ -42,6 +50,11 @@ export function ToolForm({
             </span>
           )}
         </div>
+        {busy && (
+          <span className={styles.sourceTemplate} aria-live="polite">
+            Saving…
+          </span>
+        )}
       </div>
 
       {issues.length > 0 && (
@@ -49,6 +62,12 @@ export function ToolForm({
           {issues.map((issue, i) => (
             <li key={i}>{issue.message}</li>
           ))}
+        </ul>
+      )}
+
+      {saveError && (
+        <ul className="issue-list">
+          <li>Couldn't save: {saveError}</li>
         </ul>
       )}
 

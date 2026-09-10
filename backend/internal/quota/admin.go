@@ -76,7 +76,7 @@ type UserSummary struct {
 	Tier          Tier      `json:"tier"` // "" = no subscriptions row (see doc comment above)
 	PlanName      string    `json:"planName"`
 	Limit         int       `json:"limit"` // effective allowance (override if set, else plan value); 0 when Tier is ""
-	Used          int       `json:"used"`  // prompts used in the current period; 0 when Tier is "" (no period to count against)
+	Used          int       `json:"used"`  // tokens used in the current period (sum of usage_events.total_tokens) — the figure enforcement checks against Limit; 0 when Tier is "" (no period to count against)
 	QuotaOverride *int      `json:"quotaOverride,omitempty"`
 	CreatedAt     time.Time `json:"createdAt"`
 	AppCount      int       `json:"appCount"` // number of apps this user owns (apps.owner_id)

@@ -17,15 +17,16 @@ import (
 // handler_integration_test.go for APIKeyResolver's own DB-backed behavior).
 type fakeResolver struct {
 	appID, sessionID string
+	userID           int64
 	ok               bool
 	msg              string
 	code             int
 	called           bool
 }
 
-func (f *fakeResolver) ResolveApp(r *http.Request) (appID, sessionID string, ok bool, msg string, code int) {
+func (f *fakeResolver) ResolveApp(r *http.Request) (appID, sessionID string, userID int64, ok bool, msg string, code int) {
 	f.called = true
-	return f.appID, f.sessionID, f.ok, f.msg, f.code
+	return f.appID, f.sessionID, f.userID, f.ok, f.msg, f.code
 }
 
 func newTestHandler() *Handler {
@@ -52,7 +53,7 @@ func TestAPIKeyResolver_NilAuthOrLogFailsClosed(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/ws?token=irrelevant", nil)
-			_, _, ok, _, code := tc.resolver.ResolveApp(req)
+			_, _, _, ok, _, code := tc.resolver.ResolveApp(req)
 			if ok {
 				t.Fatal("ResolveApp ok = true, want false")
 			}

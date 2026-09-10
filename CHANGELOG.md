@@ -6,6 +6,100 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.4.0
+
+Breaking changes:
+
+- `quota.Plan.MonthlyPrompts` (an int counting prompts per period) is
+  replaced by `quota.Plan.MonthlyTokens` (an int counting LLM tokens per
+  period, summed from `usage_events.total_tokens`) — the field was
+  renamed, not just its meaning changed, so any code referencing
+  `MonthlyPrompts` fails to compile. `subscriptions.monthly_quota` (the
+  per-user override column) keeps its existing name and type but is now
+  interpreted as a token count instead of a prompt count.
+- `inference.NewWant`'s signature gains a required fourth parameter,
+  `quotaSvc *quota.Service` — any existing caller passing three arguments
+  fails to compile. Pass `nil` to disable in-`Complete` usage recording
+  (matching a nil `quota.Service`'s existing no-op behavior elsewhere).
+- `quota.Service.Record` no longer deduplicates by `(app_id, event_id)` —
+  the `ON CONFLICT DO NOTHING` it used to run is gone. A caller that
+  relied on retrying the same `RequestID` being a safe no-op will now
+  insert (and get summed into quota) a second row instead. This is
+  deliberate: `WantService.Complete` now records one row per provider
+  round-trip within a single prompt, all sharing that prompt's
+  `RequestID`, and those rows must all count — see `quota.Record`'s doc
+  comment.
+- `quota.UserSummary.TotalTokens` (admin API JSON field `totalTokens`) is
+  removed — it was always numerically identical to `Used` once quota
+  enforcement moved to a token-sum model, so the two API fields collapsed
+  into one meaning with no consumer left reading the removed one.
+
+Why the quota model changed: prompt count was a poor proxy for actual LLM
+cost once a single prompt could trigger a variable number of internal
+provider round-trips (tool-calling loops), each with very different token
+weight. The free tier's allowance is now 100,000 tokens/month (`quota.
+plan.go`), enforced and displayed via the same `usageSince` SUM query
+everywhere (quota checks, the console's own usage display, and the admin
+user list) so there is exactly one place that number can drift out of
+sync.
+
+Fixes a real bug found while building this: a prompt's token usage used
+to be recorded exactly once, after `WantService.Complete` returned
+successfully. A prompt that triggered a tool-calling round trip could
+have its usage silently lost — real, billable tokens the LLM had already
+produced — whenever the caller's WebSocket connection closed while
+`ws.Session.AskInteraction` was still waiting on a `tool_result` (this
+cancels `ctx`, making `Complete` return an error instead of a `Result`,
+so the one recording call site was never reached). Usage is now recorded
+inside `Complete` itself, the instant each round-trip's usage event
+arrives, using a `context.Background()` write that isn't tied to the
+caller's connection lifetime — so tokens already spent are never lost to
+a subsequently-cancelled turn.
+
+Other fixes:
+
+- Fix a real bug in the AI-assisted tool builder feature ("Generate with
+  AI" in the mobile console): `aiToolGenerator.ts` only listened for a
+  `tool_call` WebSocket message, but its one tool (`propose_tool`) is
+  declared `kind: query`, so the backend actually sends `TypeToolQuery`
+  ("tool_query"), never `TypeToolCall` — the frontend never saw the
+  message and always timed out after 30s, even when the LLM successfully
+  proposed a tool. Fixed to listen for `tool_query`, matching what
+  `protocol/message.go` actually sends for a query-kind tool.
+- Fix a real bug in `onagent` CLI's `set-origin` command: it sent
+  `{"origin": "<value>"}` (a singular string field) to the backend, but
+  `console.go`'s handler only reads `{"origins": [...]}` (a plural array
+  field) — Go's JSON decoder silently ignores unknown fields, so the
+  request always decoded to an empty `origins` list. The backend then
+  genuinely updated the row (clearing `allowed_origins` to empty), so
+  `RowsAffected == 1` and the CLI printed a false "success" message while
+  actually wiping out the app's allowed origin instead of setting it.
+- The `tool-builder` platform-internal app's tool definition is checked
+  into the repo as `backend/internal/console/tool-builder-tools.yaml`
+  (previously only pushed ad hoc via `onagent save-tools`, with no
+  version-controlled source).
+- Console: the "Generate with AI" tool-creation flow's UI text is now in
+  English (previously Traditional Chinese), matching the rest of the
+  console's UI language.
+- Console: the account/settings usage display now shows only the
+  backend-computed usage percentage (`quota.usedPercent`, e.g. "33% used
+  this month") instead of a raw token count against the plan limit —
+  intentionally not surfacing the specific token allowance number in this
+  UI.
+- Admin console: removed the "Tokens (this period)" column, which
+  duplicated the adjacent "Usage (this period)" column once both derived
+  from the same token-sum figure; the remaining usage column now formats
+  large numbers with thousands separators.
+- Landing pages (English and Traditional Chinese): pricing copy no longer
+  states a specific prompt-count allowance for the Free plan (stale after
+  the token-based quota change), replaced with "a small monthly usage
+  allowance for testing."
+- `docs/ai-tool-builder-design-2026-09-09.md`: corrected the `tool_call`/
+  `tool_query` mismatch in its own runtime notes (it prescribed the buggy
+  `tool_call` listening behavior above), and removed the "Frontend" TODO
+  item now that it's implemented — the app's own per-user provisioning
+  ("Ownership"/"Hiding it from the normal app list") remains un-implemented.
+
 ## v0.3.5
 
 No breaking changes — patch release. Desktop console layout changes; no

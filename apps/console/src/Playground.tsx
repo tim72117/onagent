@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BASE } from './api'
 import type { Tool } from './schema'
 import { MOCK_TEMPLATE_KEYS, useMockRuntimes } from './playgroundMocks'
+import { randomRequestId } from './randomRequestId'
 import styles from './Playground.module.css'
 
 type ConnectionState = 'connecting' | 'open' | 'closed'
@@ -150,7 +151,7 @@ export function Playground({ appId, tools }: { appId: string; tools: Tool[] }) {
       // Mirrors packages/bridge/src/client.ts's own connect(): hello must
       // go first, and nothing else (prompt) is sent until ack comes back
       // with this session's tool set.
-      send(ws, 'hello', crypto.randomUUID(), { appId })
+      send(ws, 'hello', randomRequestId(), { appId })
     })
     ws.addEventListener('close', () => {
       setState('closed')
@@ -271,10 +272,10 @@ export function Playground({ appId, tools }: { appId: string; tools: Tool[] }) {
     // requestId must be globally unique, not just unique within this page
     // load: the backend's Quota.Record uses this session's stable id
     // ("PG-<userID>-<appID>") plus requestId as an idempotency key against
-    // usage_events (app_id, event_id). crypto.randomUUID() (not a
+    // usage_events (app_id, event_id). randomRequestId() (not a
     // page-load-scoped counter) keeps prompts from different page loads for
     // the same user+app from ever colliding.
-    wsRef.current && send(wsRef.current, 'prompt', crypto.randomUUID(), { text })
+    wsRef.current && send(wsRef.current, 'prompt', randomRequestId(), { text })
     setInput('')
   }
 

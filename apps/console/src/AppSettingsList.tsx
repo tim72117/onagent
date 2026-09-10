@@ -16,11 +16,13 @@ export function AppSettingsList({
   hasKey,
   onIssueKey,
   onRevokeKey,
-  allowedOrigin,
-  originDraft,
-  onOriginDraftChange,
+  allowedOrigins,
+  originDrafts,
+  onOriginDraftsChange,
+  newOriginDraft,
+  onNewOriginDraftChange,
   originBusy,
-  onSaveOrigin,
+  onSaveOrigins,
   onDeleteApp,
 }: {
   appId: string
@@ -28,11 +30,13 @@ export function AppSettingsList({
   hasKey: boolean
   onIssueKey: () => void
   onRevokeKey: () => void
-  allowedOrigin: string | null
-  originDraft: string
-  onOriginDraftChange: (value: string) => void
+  allowedOrigins: string[]
+  originDrafts: string[]
+  onOriginDraftsChange: (next: string[]) => void
+  newOriginDraft: string
+  onNewOriginDraftChange: (value: string) => void
   originBusy: boolean
-  onSaveOrigin: (e: React.FormEvent) => Promise<boolean>
+  onSaveOrigins: (e: React.FormEvent) => Promise<boolean>
   onDeleteApp: () => void
 }) {
   const keySheet = useSheet()
@@ -62,9 +66,11 @@ export function AppSettingsList({
 
         <button type="button" className={styles.row} onClick={originSheet.onOpen}>
           <div className={styles.rowInfo}>
-            <div className={styles.rowLabel}>Allowed origin</div>
-            <div className={styles.rowValue}>{allowedOrigin ?? 'Not set'}</div>
-            {!allowedOrigin && (
+            <div className={styles.rowLabel}>Allowed origins</div>
+            <div className={styles.rowValue}>
+              {allowedOrigins.length > 0 ? allowedOrigins.join(', ') : 'Not set'}
+            </div>
+            {allowedOrigins.length === 0 && (
               <div className={styles.rowWarning}>
                 No origin set — every connection for this app is blocked until one is saved.
               </div>
@@ -87,16 +93,18 @@ export function AppSettingsList({
       <OriginEditSheet
         open={originSheet.open}
         onClose={originSheet.onClose}
-        allowedOrigin={allowedOrigin}
-        originDraft={originDraft}
-        onOriginDraftChange={onOriginDraftChange}
+        allowedOrigins={allowedOrigins}
+        originDrafts={originDrafts}
+        onOriginDraftsChange={onOriginDraftsChange}
+        newOriginDraft={newOriginDraft}
+        onNewOriginDraftChange={onNewOriginDraftChange}
         originBusy={originBusy}
-        onSaveOrigin={async (e) => {
+        onSaveOrigins={async (e) => {
           // Only close on a confirmed save — closing unconditionally right
           // after firing the (async) request meant a failed save looked
           // identical to a successful one: the sheet slid away either way,
           // taking the input and any error context with it.
-          const ok = await onSaveOrigin(e)
+          const ok = await onSaveOrigins(e)
           if (ok) originSheet.onClose()
           return ok
         }}

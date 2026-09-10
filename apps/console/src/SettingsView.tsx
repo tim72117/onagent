@@ -19,9 +19,7 @@ export function SettingsView({ quota, onLogout }: { quota: Quota | null; onLogou
       {quota?.enabled ? (
         <div className={styles.planCard}>
           <div className={styles.planName}>{quota.planName} plan</div>
-          <div className={styles.planUsage}>
-            {quota.used} / {quota.limit} requests used this month
-          </div>
+          <div className={styles.planUsage}>{quota.usedPercent}% used this month</div>
           <div className={styles.planReset}>Resets {new Date(quota.periodEnd!).toLocaleDateString()}</div>
         </div>
       ) : (

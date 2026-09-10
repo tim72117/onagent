@@ -4,7 +4,7 @@ package quota
 // subscription tier to the concrete limits that tier grants. Quota
 // enforcement (quota.go) resolves a user's tier to a Plan here at check
 // time and never reads a per-row copy of the number — so changing a plan's
-// MonthlyPrompts below immediately applies to every user on that tier, with
+// MonthlyTokens below immediately applies to every user on that tier, with
 // no migration and no backfill. Add a new paid tier by adding one entry to
 // plans and (optionally) a matching Tier constant.
 
@@ -25,28 +25,32 @@ const (
 const DefaultTier = TierFree
 
 // Plan is the set of limits a tier grants. Today that's just a monthly
-// prompt allowance; new limit dimensions (token budgets, concurrent
-// sessions, ...) are added as fields here and read wherever they apply.
+// token allowance; new limit dimensions (concurrent sessions, ...) are added
+// as fields here and read wherever they apply.
 type Plan struct {
 	// Tier is the identifier this plan is keyed by; stored on the user's
 	// subscriptions row.
 	Tier Tier
 	// Name is a human-readable label for UIs and CLI output (e.g. "Free").
 	Name string
-	// MonthlyPrompts is how many billable prompts this tier includes per
-	// billing period. This is THE quota number — editing it here changes the
-	// allowance for every user on this tier at once. Placeholder value until
-	// a real pricing strategy is decided.
-	MonthlyPrompts int
+	// MonthlyTokens is how many LLM tokens (prompt + completion, summed from
+	// usage_events.total_tokens) this tier includes per billing period. This
+	// is THE quota number — editing it here changes the allowance for every
+	// user on this tier at once. Replaces the earlier per-prompt-count model
+	// (MonthlyPrompts): a plan of N prompts was a poor proxy for actual LLM
+	// cost once a single prompt could trigger a variable number of internal
+	// provider round-trips (tool-calling loops) each with very different
+	// token weight — see quota.usageSince's doc comment.
+	MonthlyTokens int
 }
 
 // plans is the authoritative table of every defined plan, keyed by tier.
 // Only the free tier exists today; paid tiers get added here.
 var plans = map[Tier]Plan{
 	TierFree: {
-		Tier:           TierFree,
-		Name:           "Free",
-		MonthlyPrompts: 100, // placeholder — set when pricing is decided
+		Tier:          TierFree,
+		Name:          "Free",
+		MonthlyTokens: 100_000,
 	},
 }
 

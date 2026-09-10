@@ -19,9 +19,11 @@ package quota
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
+	"github.com/tim72117/want/types"
 	"gorm.io/gorm"
 )
 
@@ -88,7 +90,9 @@ type Decision struct {
 	Allowed bool
 	// Used and Limit describe the owner's current-period standing when a
 	// real check ran (both zero when quota is disabled). Limit is the
-	// monthly allowance; Used is the count already recorded this period.
+	// monthly token allowance; Used is the tokens already recorded this
+	// period (sum of usage_events.total_tokens, not a prompt count — see
+	// usageSince's doc comment).
 	Used  int
 	Limit int
 }
@@ -132,56 +136,81 @@ func (s *Service) Check(ctx context.Context, appID string) (Decision, error) {
 	}, nil
 }
 
-// Record appends one usage event for appID, keyed by eventID for
-// idempotency (a retried request carrying the same RequestID is not counted
-// twice — the ON CONFLICT below makes the insert a no-op the second time).
-// A nil Service (disabled) is a no-op. Callers should record only after the
-// billable work actually succeeded (ws.Session.handlePrompt records after
-// inference.Complete returns without error).
-// owner_id is resolved from the app and stored on the row at write time,
-// rather than joined back through apps at read time: that join is what let
-// deleting an app erase its usage history (the FK used to cascade), which
-// made quota resettable on demand. Denormalizing here means the ledger
-// stays correct even after the app it was recorded against is gone.
+// Record appends one usage event for appID, billed to userID. A nil Service
+// (disabled) is a no-op. WantService.Complete (internal/inference/want.go)
+// calls this once per provider round-trip, as that round-trip's own usage
+// event arrives — not once at the very end of a prompt — specifically so a
+// prompt whose connection closes mid-turn (while waiting on a tool_result)
+// still gets the tokens it already spent recorded, rather than losing them
+// when the caller's Complete call returns an error instead of a Result. A
+// single user-visible prompt that triggers several round-trips (a
+// tool-calling loop) therefore produces several rows here, all sharing that
+// prompt's RequestID as eventID; usageSince sums total_tokens across all of
+// them rather than de-duplicating by eventID, since each row's usage is that
+// round-trip's OWN token cost, not a running total (see
+// TestComplete_SumsUsageAcrossToolUseRounds).
 //
-// Resolved inside Record rather than passed in by callers so ws.Session and
-// the console playground don't have to carry billing's ownership model
-// around — they already only know the appID (see both call sites).
+// usage is the LLM provider's own token accounting for this event
+// (inference.Result.Usage / the per-round-trip usage want reports) and IS
+// what quota enforcement checks (see usageSince). nil is a supported value
+// (MockService, or a provider event that never reported usage) and leaves
+// the token columns NULL, contributing 0 toward the owner's period total.
 //
-// eventID is stored for audit/debugging only — it is NOT used to
-// deduplicate anymore (see docs/known-issues-pending-discussion.md's
-// "用量記錄機制" section). This used to INSERT ... ON CONFLICT (app_id,
-// event_id) DO NOTHING, on the theory that a client retrying the same
-// RequestID after a dropped response shouldn't be charged twice. In
-// practice, a caller-supplied identifier turned out to be an unreliable
-// dedup key: apps/console's Playground reused requestId="0" (a useRef
-// counter that resets on every page reload) across page loads sharing the
-// same sessionID, so a brand-new prompt silently collided with a real
-// prompt's event_id from a previous session — an uncounted prompt, but
-// with zero errors anywhere to catch it. With no real payment processing
-// yet (free tier only), an occasional double-count from an actual retry
-// is a smaller, cheaper-to-accept risk than silently losing usage that
-// already happened. Revisit this once Stripe billing lands (see
-// docs/refactor-subscription-billing-cycle-2026-09-03.md) — real money
-// changes which side of this tradeoff is safer.
-func (s *Service) Record(ctx context.Context, appID, eventID string) error {
+// userID is who this event is billed to — the connection's actual operator
+// at the moment the usage happened, not necessarily appID's owner. For the
+// real Agent Bridge SDK path (ws.APIKeyResolver) that IS the app's owner
+// (an anonymous site visitor has no billable account of their own — the
+// developer who owns the app pays for their traffic); for the console
+// Playground (playgroundResolver) it is the signed-in developer actually
+// driving that Playground session, who may not own the app being tried (see
+// toolschema.App.Public). Both resolvers compute this once at handshake
+// time and it rides along on ws.Session for the life of the connection —
+// see AppResolver.ResolveApp's userID return and Session.userID.
+//
+// Passed in rather than resolved here by joining through apps (the previous
+// design): that join meant Record could only ever bill the app's owner,
+// which is wrong once a public app's usage must bill its actual visitor,
+// not its owner. A caller that has already verified appID exists (both
+// resolvers do, at handshake, before a Session/AgentID ever forms) supplying
+// userID directly is both correct for that case and one less query per
+// event. A Record call against an app_id that no longer exists by the time
+// this INSERT runs is now a foreign-key error, not a silent no-op — see
+// TestRecordAgainstUnknownAppIsANoOp's rename/doc-comment update explaining
+// why that's an acceptable, even correct, behavior change.
+//
+// eventID is stored for audit/debugging only — it is NOT a deduplication
+// key (see docs/known-issues-pending-discussion.md's "用量記錄機制"
+// section for the history of why an INSERT ... ON CONFLICT DO NOTHING
+// dedup was tried and abandoned). A caller retrying the same RequestID, or
+// a single prompt's several round-trips sharing one RequestID, are both
+// expected to each insert their own row — undercounting a real cost is a
+// worse failure mode here than an occasional overcount, with no real
+// payment processing yet (free tier only). Revisit this once Stripe
+// billing lands (see docs/refactor-subscription-billing-cycle-2026-09-03.md)
+// — real money changes which side of this tradeoff is safer.
+func (s *Service) Record(ctx context.Context, appID string, userID int64, eventID string, usage *types.Usage) error {
 	if s == nil {
 		return nil
 	}
-	// Insert-select has no GORM builder equivalent, and deliberately isn't
-	// split into "look up owner_id, then insert" — that would open a race
-	// window where the app is deleted between the two steps, leaving an
-	// orphaned or missing usage row. Kept as raw SQL, executed through
-	// *gorm.DB so it still runs on the same connection/pool as everything
-	// else this Service does.
-	err := s.db.WithContext(ctx).Exec(`
-		INSERT INTO usage_events (app_id, owner_id, event_id, kind)
-		SELECT $1, a.owner_id, $2, 'prompt'
-		  FROM apps a
-		 WHERE a.app_id = $1`,
-		appID, eventID).Error
-	if err != nil {
-		return fmt.Errorf("quota: record usage event: %w", err)
+	var promptTokens, completionTokens, totalTokens *int
+	if usage != nil {
+		promptTokens = &usage.PromptTokens
+		completionTokens = &usage.CompletionTokens
+		totalTokens = &usage.TotalTokens
+	}
+	// A plain INSERT now that owner_id comes from the caller instead of a
+	// join through apps — no more insert-select, and no more race window to
+	// avoid (the previous design's SELECT ... FROM apps existed purely to
+	// resolve owner_id at write time; userID replaces that read entirely).
+	// Kept as raw SQL rather than a GORM struct Create for symmetry with the
+	// rest of this file's writes and to keep the token-columns-as-NULL
+	// handling (promptTokens etc. as *int) explicit at the call site.
+	tx := s.db.WithContext(ctx).Exec(`
+		INSERT INTO usage_events (app_id, owner_id, event_id, kind, prompt_tokens, completion_tokens, total_tokens)
+		VALUES ($1, $2, $3, 'prompt', $4, $5, $6)`,
+		appID, userID, eventID, promptTokens, completionTokens, totalTokens)
+	if tx.Error != nil {
+		return fmt.Errorf("quota: record usage event: %w", tx.Error)
 	}
 	return nil
 }
@@ -310,33 +339,55 @@ type ownerStandingRow struct {
 	startedAt     time.Time
 }
 
-// limit returns the effective monthly prompt allowance: the per-user
+// limit returns the effective monthly token allowance: the per-user
 // override if one is set, otherwise the tier's plan value. Centralizing
 // this here keeps "override beats plan" in one place.
 func (r ownerStandingRow) limit() int {
 	if r.quotaOverride != nil {
 		return *r.quotaOverride
 	}
-	return PlanFor(r.tier).MonthlyPrompts
+	return PlanFor(r.tier).MonthlyTokens
 }
 
-// usageSince counts billable events charged to ownerID since periodStart.
+// usageSince sums total_tokens charged to ownerID since periodStart — this
+// IS what quota enforcement checks against a plan's Limit (see Check),
+// alongside being what StandingFor/ListUsers surface as "used" for display.
 // This is the O(n)-over-the-ledger query the
 // usage_events(owner_id, created_at) index exists to keep fast.
+//
+// SUM over total_tokens, not COUNT(*) or COUNT(DISTINCT event_id): a plan
+// measured in prompt *count* was a poor proxy for actual LLM cost once a
+// single prompt could trigger a variable number of internal provider
+// round-trips (tool-calling loops), each with very different token weight —
+// see plan.go's MonthlyTokens doc comment. WantService.Complete (see
+// internal/inference/want.go) records one usage_events row per round-trip,
+// all sharing that prompt's RequestID as event_id; summing every row's
+// total_tokens (rather than de-duplicating by event_id first) is correct
+// here specifically because each round-trip's usage event is that
+// round-trip's OWN token cost, not a running total that already includes
+// the rounds before it — see TestComplete_SumsUsageAcrossToolUseRounds
+// (internal/inference/want_test.go), which locks in that assumption at the
+// provider-usage layer.
 //
 // Deliberately reads owner_id off the ledger row instead of joining apps:
 // the join meant a deleted app's rows stopped being counted (and, while the
 // FK still cascaded, stopped existing at all), so deleting and recreating an
 // app reset the period's usage to zero.
+//
+// SUM over a NULL-only column returns SQL NULL, not 0, hence the
+// sql.NullInt64 scan target — a period with no usage rows, or whose rows
+// never reported usage (MockService, or a provider event that never
+// arrived), must read back as 0 tokens, not an error.
 func (s *Service) usageSince(ctx context.Context, ownerID int64, periodStart time.Time) (int, error) {
-	var n int64
+	var total sql.NullInt64
 	if err := s.db.WithContext(ctx).
 		Model(&usageEventRow{}).
 		Where("owner_id = ? AND created_at >= ?", ownerID, periodStart).
-		Count(&n).Error; err != nil {
-		return 0, fmt.Errorf("quota: count usage: %w", err)
+		Select("SUM(total_tokens)").
+		Scan(&total).Error; err != nil {
+		return 0, fmt.Errorf("quota: sum token usage: %w", err)
 	}
-	return int(n), nil
+	return int(total.Int64), nil
 }
 
 // currentPeriodStart returns the start of the billing period containing now,

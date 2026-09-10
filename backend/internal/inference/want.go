@@ -61,6 +61,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/tim72117/onagent/internal/quota"
 	"github.com/tim72117/onagent/internal/sessionstore"
 	"github.com/tim72117/onagent/internal/toolschema"
 	"github.com/tim72117/want/config"
@@ -86,6 +87,19 @@ type WantService struct {
 	apps         *toolschema.Registry
 	sessionStore *sessionstore.Store // optional; nil means no cross-request history persistence — see NewWant
 
+	// quota, if non-nil, is recorded against as soon as each provider
+	// round-trip's usage event arrives (see Complete's "agent.inference"
+	// subscription) — not just once at the very end of a successful
+	// Complete call. A prompt that triggers a tool-calling round trip can
+	// be cut short (the caller's WebSocket closing while AskInteraction is
+	// still waiting on a tool_result cancels ctx, which makes Complete
+	// return early with an error — see ws.Session.handlePrompt) after the
+	// LLM has already produced billable tokens; recording per-event here
+	// means that cost is captured even when Complete itself never returns
+	// successfully. nil (no quota enforcement configured) skips recording
+	// entirely, same as quota.Service's own nil-receiver no-op.
+	quota *quota.Service
+
 	initOnce sync.Once // guards the one process-wide orchestrator.InitializeWithConfig call — see package doc comment
 	initErr  error
 
@@ -109,11 +123,12 @@ type WantService struct {
 // Submit is a fresh conversation" rather than an error (see
 // types.SessionStore's doc comment), which is what callers that don't need
 // durable history (e.g. tests) get by passing nil here.
-func NewWant(settings *config.Settings, apps *toolschema.Registry, sessionStore *sessionstore.Store) *WantService {
+func NewWant(settings *config.Settings, apps *toolschema.Registry, sessionStore *sessionstore.Store, quotaSvc *quota.Service) *WantService {
 	return &WantService{
 		settings:     settings,
 		apps:         apps,
 		sessionStore: sessionStore,
+		quota:        quotaSvc,
 		sessions:     make(map[string]*orchestrator.Orchestrator),
 	}
 }
@@ -223,6 +238,8 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 	state := ui.NewCommonInferenceState()
 	var textMu sync.Mutex
 	var text strings.Builder
+	var usageMu sync.Mutex
+	var usage *types.Usage
 
 	done := make(chan struct{})
 	var once sync.Once
@@ -241,6 +258,39 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 				textMu.Unlock()
 			}
 		case ui.StatusViewModel:
+			if vm.Usage != nil {
+				usageMu.Lock()
+				if usage == nil {
+					usage = &types.Usage{}
+				}
+				usage.Add(vm.Usage)
+				usageMu.Unlock()
+
+				// Recorded here — the instant this round-trip's usage
+				// arrives — rather than only once at the very end of a
+				// successful Complete call (the previous design): a prompt
+				// that triggers a tool-calling round trip can have its
+				// WebSocket closed by the caller while AskInteraction is
+				// still waiting on a tool_result (see
+				// ws.Session.handlePrompt), which cancels ctx and makes
+				// Complete return an error below — after the LLM already
+				// produced these billable tokens. Recording per-round-trip
+				// here means that cost survives even when Complete itself
+				// never returns successfully. One row per round-trip (this
+				// round's own usage, not the running total) rather than one
+				// row per Complete call: quota.usageSince SUMs total_tokens
+				// across every matching row, so several rows sharing this
+				// prompt's RequestID as event_id are added together, not
+				// deduplicated by it — that sum is exactly this prompt's
+				// real total cost across however many round-trips it took.
+				// See quota.Record's doc comment for why event_id is not
+				// used as a dedup key.
+				if s.quota != nil && req.RequestID != "" {
+					if err := s.quota.Record(context.Background(), req.AppID, req.UserID, req.RequestID, vm.Usage); err != nil {
+						fmt.Printf("want.go: failed to record usage event appID=%s requestID=%s err=%v\n", req.AppID, req.RequestID, err)
+					}
+				}
+			}
 			if vm.Status == "idle" {
 				// Tool-use/text events for this turn may still be in
 				// flight; give them a window to land before finishing.
@@ -278,6 +328,10 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 	assistantMessage := text.String()
 	textMu.Unlock()
 
+	usageMu.Lock()
+	resultUsage := usage
+	usageMu.Unlock()
+
 	// ToolCalls stays empty here on purpose: forwardingTool/queryTool
 	// (agent_roles.go) both now report their call to the browser directly
 	// via askPage/AskInteraction, immediately and synchronously, rather
@@ -285,7 +339,7 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 	// — see ws.Session.AskInteraction. MockService.Complete is the only
 	// remaining populator of Result.ToolCalls, for its own simpler,
 	// non-blocking simulation.
-	return &Result{AssistantMessage: assistantMessage}, nil
+	return &Result{AssistantMessage: assistantMessage, Usage: resultUsage}, nil
 }
 
 // sessionIDRE matches what ws.randomID produces (hex), with room for other

@@ -185,9 +185,12 @@ func TestLoginOrCreateWithGoogle_NewAccount(t *testing.T) {
 
 	store := New(database, false)
 
-	user, err := store.LoginOrCreateWithGoogle(googleID, email)
+	user, created, err := store.LoginOrCreateWithGoogle(googleID, email)
 	if err != nil {
 		t.Fatalf("LoginOrCreateWithGoogle: %v", err)
+	}
+	if !created {
+		t.Error("created = false, want true — a Google subject/email never seen before must report a new account")
 	}
 	if user.Email != email {
 		t.Errorf("user.Email = %q, want %q", user.Email, email)
@@ -255,14 +258,20 @@ func TestLoginOrCreateWithGoogle_ReturningUser(t *testing.T) {
 
 	store := New(database, false)
 
-	first, err := store.LoginOrCreateWithGoogle(googleID, email)
+	first, firstCreated, err := store.LoginOrCreateWithGoogle(googleID, email)
 	if err != nil {
 		t.Fatalf("first LoginOrCreateWithGoogle: %v", err)
 	}
+	if !firstCreated {
+		t.Error("first call: created = false, want true — this Google subject hasn't been seen before")
+	}
 
-	second, err := store.LoginOrCreateWithGoogle(googleID, email)
+	second, secondCreated, err := store.LoginOrCreateWithGoogle(googleID, email)
 	if err != nil {
 		t.Fatalf("second LoginOrCreateWithGoogle: %v", err)
+	}
+	if secondCreated {
+		t.Error("second call: created = true, want false — this is a returning user, not a new registration")
 	}
 	if second.ID != first.ID {
 		t.Errorf("second call returned a different user ID (%d) than the first (%d) for the same Google subject", second.ID, first.ID)
@@ -322,9 +331,12 @@ func TestLoginOrCreateWithGoogle_LinksToExistingPasswordAccount(t *testing.T) {
 	// 2. Sign in with Google using the same (already-verified — see
 	// googleauth.go's email_verified check, which runs before this method
 	// is ever called) email address.
-	linked, err := store.LoginOrCreateWithGoogle(googleID, email)
+	linked, linkedCreated, err := store.LoginOrCreateWithGoogle(googleID, email)
 	if err != nil {
 		t.Fatalf("LoginOrCreateWithGoogle: %v", err)
+	}
+	if linkedCreated {
+		t.Error("created = true, want false — this links an already-existing password account, not a new registration")
 	}
 
 	// Same account, not a new one.
@@ -348,9 +360,12 @@ func TestLoginOrCreateWithGoogle_LinksToExistingPasswordAccount(t *testing.T) {
 
 	// And the new Google identity must resolve straight back to this same
 	// account on a subsequent sign-in (step 1's path, not step 2's again).
-	again, err := store.LoginOrCreateWithGoogle(googleID, email)
+	again, againCreated, err := store.LoginOrCreateWithGoogle(googleID, email)
 	if err != nil {
 		t.Fatalf("second LoginOrCreateWithGoogle: %v", err)
+	}
+	if againCreated {
+		t.Error("created = true, want false — repeat Google sign-in must not report a new account")
 	}
 	if again.ID != registered.ID {
 		t.Errorf("repeat Google sign-in returned user ID %d, want %d", again.ID, registered.ID)
@@ -371,7 +386,7 @@ func TestLoginOrCreateWithGoogle_InvalidEmail(t *testing.T) {
 
 	store := New(database, false)
 
-	if _, err := store.LoginOrCreateWithGoogle("some-google-sub", "not-an-email"); !errors.Is(err, ErrInvalidEmail) {
+	if _, _, err := store.LoginOrCreateWithGoogle("some-google-sub", "not-an-email"); !errors.Is(err, ErrInvalidEmail) {
 		t.Errorf("LoginOrCreateWithGoogle with malformed email: got %v, want ErrInvalidEmail", err)
 	}
 }

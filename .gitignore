@@ -32,6 +32,13 @@ dist/
 /backend/.bin/
 /backend/workspace/
 
+# want writes the same kind of session-transcript scratch (tmp/logs/, per
+# agent id) under whatever the process's working directory happens to be —
+# `go test ./internal/inference/...` runs from that package's own
+# directory, not the repo root, so its runs land here rather than under
+# /backend/tmp/ above.
+/backend/internal/inference/tmp/
+
 # Repo-root scratch space (notes, one-off files not meant for version control).
 /tmp/
 

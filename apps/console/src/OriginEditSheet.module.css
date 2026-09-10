@@ -2,15 +2,78 @@
   padding-top: 4px;
 }
 
+.list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.listItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+}
+
+.listItemText {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.removeBtn {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+
+.removeBtn:hover {
+  background: var(--border);
+  color: var(--ink);
+}
+
+.addRow {
+  display: flex;
+  gap: 8px;
+}
+
 /* Deliberately larger padding than the global `input, textarea, select`
-   rule (style.css, padding: 7px 9px) — a mobile-only sheet whose single
-   field is the whole screen's content, sized for a touch target rather
+   rule (style.css, padding: 7px 9px) — a mobile-only sheet whose field
+   list is the whole screen's content, sized for a touch target rather
    than matching the denser desktop form inputs it inherits border/
    border-radius/focus styling from. Not a drifted duplicate to reconcile
    back to the global value. */
 .input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 13px;
   padding: 12px 14px;
+}
+
+.addRow :global(.text-btn) {
+  flex: none;
+}
+
+.addRow :global(.text-btn):disabled {
+  opacity: 0.5;
+  cursor: default;
 }

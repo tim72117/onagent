@@ -105,9 +105,14 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request, admin *adminauth.Ad
 // --- plans & users -------------------------------------------------------
 
 type planInfo struct {
-	Tier           string `json:"tier"`
-	Name           string `json:"name"`
-	MonthlyPrompts int    `json:"monthlyPrompts"`
+	Tier string `json:"tier"`
+	Name string `json:"name"`
+	// MonthlyPrompts is a legacy JSON field name kept for existing SPA
+	// consumers — it now carries the plan's token allowance
+	// (quota.Plan.MonthlyTokens), not a prompt count. See
+	// quota.Plan.MonthlyTokens's doc comment on why quota enforcement moved
+	// off counting prompts.
+	MonthlyPrompts int `json:"monthlyPrompts"`
 }
 
 // listPlans returns the plan catalog so the SPA can render a plan selector
@@ -116,7 +121,7 @@ func (h *Handler) listPlans(w http.ResponseWriter, r *http.Request, _ *adminauth
 	plans := quota.AllPlans()
 	out := make([]planInfo, 0, len(plans))
 	for _, p := range plans {
-		out = append(out, planInfo{Tier: string(p.Tier), Name: p.Name, MonthlyPrompts: p.MonthlyPrompts})
+		out = append(out, planInfo{Tier: string(p.Tier), Name: p.Name, MonthlyPrompts: p.MonthlyTokens})
 	}
 	// Stable order by allowance so the list is deterministic (AllPlans is
 	// map iteration).

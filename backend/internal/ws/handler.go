@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -26,7 +27,7 @@ import (
 // always wins over that field). Two callers currently supply one: the real
 // Agent Bridge SDK path (APIKeyResolver, below — one random session id per
 // connection, per-app origin binding from the app's own configured
-// allowedOrigin) and the console's Playground (internal/console's
+// allowedOrigins) and the console's Playground (internal/console's
 // playgroundResolver — a stable "PG-<userID>-<appID>" session id so
 // re-opening Playground for the same app resumes the same want conversation
 // transcript, and the console's own origin allowlist rather than any
@@ -71,8 +72,18 @@ func AllowAllOrigins(string) bool { return true }
 // sessionID may be "" to let Session pick a fresh random id (NewSession's
 // default). ok=false rejects the handshake; msg and code (optional) are what
 // the client sees.
+//
+// userID is who this connection's usage should be billed to — resolved once
+// here, at handshake time, and carried unchanged for the connection's whole
+// life on Session.userID, from there into every inference.Request.UserID
+// this connection's prompts produce (see ws.Session.handlePrompt and
+// quota.Service.Record's own doc comment on why billing attribution moved
+// from "the app's owner, looked up at write time" to "whoever the
+// connection resolved to at handshake time"). Each implementation decides
+// what that means for its own audience — see APIKeyResolver and
+// internal/console's playgroundResolver for the two very different answers.
 type AppResolver interface {
-	ResolveApp(r *http.Request) (appID, sessionID string, ok bool, msg string, code int)
+	ResolveApp(r *http.Request) (appID, sessionID string, userID int64, ok bool, msg string, code int)
 }
 
 // APIKeyResolver is the AppResolver the real Agent Bridge SDK path uses:
@@ -80,10 +91,10 @@ type AppResolver interface {
 // headers to a WebSocket upgrade request — this is why TLS is not optional
 // for any deployment that enables it, or the key would ride the wire, and
 // often server access logs, in plaintext), and the app's own
-// auth.Store-configured allowedOrigin is the only origin a connection
-// presenting that key may come from — replaying a key stolen from one site
-// must not work from another just because that other site is on some
-// broader allowlist.
+// auth.Store-configured allowedOrigins is the only set of origins a
+// connection presenting that key may come from — replaying a key stolen
+// from one site must not work from another just because that other site is
+// on some broader allowlist.
 type APIKeyResolver struct {
 	Auth  *auth.Store
 	Apps  *toolschema.Registry
@@ -91,7 +102,7 @@ type APIKeyResolver struct {
 	Log   *slog.Logger
 }
 
-func (a *APIKeyResolver) ResolveApp(r *http.Request) (appID, sessionID string, ok bool, msg string, code int) {
+func (a *APIKeyResolver) ResolveApp(r *http.Request) (appID, sessionID string, userID int64, ok bool, msg string, code int) {
 	// Defense-in-depth, not a documented mode: a misconstructed
 	// APIKeyResolver (Auth/Log left nil — every real construction site sets
 	// both, see cmd/server/main.go) would otherwise panic on this method's
@@ -101,29 +112,44 @@ func (a *APIKeyResolver) ResolveApp(r *http.Request) (appID, sessionID string, o
 	// closed with a generic message rather than surfacing which field was
 	// nil to the client.
 	if a.Auth == nil || a.Log == nil {
-		return "", "", false, "auth unavailable", http.StatusServiceUnavailable
+		return "", "", 0, false, "auth unavailable", http.StatusServiceUnavailable
 	}
 	origin := r.Header.Get("Origin")
 	token := r.URL.Query().Get("token")
 	result, verified := a.Auth.Verify(token)
 	if !verified {
 		a.Log.Info("ws handshake rejected: invalid or missing token", "origin", origin)
-		return "", "", false, "invalid or missing token", http.StatusUnauthorized
+		return "", "", 0, false, "invalid or missing token", http.StatusUnauthorized
 	}
 	if _, known := a.Apps.Get(result.AppID); !known {
 		a.Log.Warn("ws handshake rejected: token resolves to unknown appId", "appId", result.AppID)
-		return "", "", false, "unknown app", http.StatusUnauthorized
+		return "", "", 0, false, "unknown app", http.StatusUnauthorized
 	}
-	// No origin configured means every connection for this app is rejected
+	// No origins configured means every connection for this app is rejected
 	// (fail-closed) rather than falling back to some broader allowlist.
-	if result.AllowedOrigin == "" {
+	if len(result.AllowedOrigins) == 0 {
 		a.Log.Warn("ws handshake rejected: app has no allowed origin configured", "appId", result.AppID)
-		return "", "", false, "app is not configured to accept connections from any site yet", http.StatusForbidden
+		return "", "", 0, false, "app is not configured to accept connections from any site yet", http.StatusForbidden
 	}
-	if origin != result.AllowedOrigin {
-		a.Log.Info("ws handshake rejected: origin does not match app's configured origin",
-			"appId", result.AppID, "origin", origin, "allowedOrigin", result.AllowedOrigin)
-		return "", "", false, "origin not allowed for this app", http.StatusForbidden
+	if !slices.Contains(result.AllowedOrigins, origin) {
+		a.Log.Info("ws handshake rejected: origin does not match any of app's configured origins",
+			"appId", result.AppID, "origin", origin, "allowedOrigins", result.AllowedOrigins)
+		return "", "", 0, false, "origin not allowed for this app", http.StatusForbidden
+	}
+
+	// This connection's operator, for billing purposes, IS the app's owner
+	// (see AppResolver's doc comment): a real SDK connection is an anonymous
+	// end-user visiting the developer's own site, with no billable account
+	// of their own — the developer who owns the app pays for their traffic,
+	// same as before this field existed. The app is already confirmed to
+	// exist (a.Apps.Get above), so a missing owner here would mean
+	// apps.owner_id is somehow NULL despite the schema's NOT NULL constraint
+	// (see schema.sql) — fail closed rather than silently billing to 0,
+	// which would look like a real (if wrong) account.
+	ownerID, hasOwner := a.Apps.OwnerOf(result.AppID)
+	if !hasOwner {
+		a.Log.Error("ws handshake rejected: app has no resolvable owner (should be impossible — owner_id is NOT NULL)", "appId", result.AppID)
+		return "", "", 0, false, "app is misconfigured", http.StatusInternalServerError
 	}
 
 	// Cheap early gate: refuse to even upgrade the connection if this app's
@@ -149,10 +175,10 @@ func (a *APIKeyResolver) ResolveApp(r *http.Request) (appID, sessionID string, o
 		a.Log.Warn("ws handshake: quota check failed, allowing (fail-open)", "appId", result.AppID, "err", err)
 	} else if !dec.Allowed {
 		a.Log.Info("ws handshake rejected: owner over quota", "appId", result.AppID, "used", dec.Used, "limit", dec.Limit)
-		return "", "", false, "monthly quota exceeded for this app's plan", http.StatusTooManyRequests
+		return "", "", 0, false, "monthly quota exceeded for this app's plan", http.StatusTooManyRequests
 	}
 
-	return result.AppID, "", true, "", 0
+	return result.AppID, "", ownerID, true, "", 0
 }
 
 func NewHandler(apps *toolschema.Registry, infer inference.Service, log *slog.Logger, allowed OriginChecker, resolver AppResolver, quotaSvc *quota.Service) *Handler {
@@ -192,11 +218,12 @@ func NewHandler(apps *toolschema.Registry, infer inference.Service, log *slog.Lo
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var appID, sessionID string
+	var userID int64
 	if h.Resolver != nil {
 		var ok bool
 		var msg string
 		var code int
-		appID, sessionID, ok, msg, code = h.Resolver.ResolveApp(r)
+		appID, sessionID, userID, ok, msg, code = h.Resolver.ResolveApp(r)
 		if !ok {
 			http.Error(w, msg, code)
 			return
@@ -208,5 +235,5 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.Log.Info("ws upgrade rejected", "err", err, "origin", r.Header.Get("Origin"))
 		return
 	}
-	NewSession(r.Context(), conn, h.Apps, h.Inference, h.Log, appID, h.Quota, sessionID)
+	NewSession(r.Context(), conn, h.Apps, h.Inference, h.Log, appID, h.Quota, sessionID, userID)
 }

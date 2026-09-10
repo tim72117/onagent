@@ -16,6 +16,19 @@ function paramCount(schema: Tool['parameters']): number {
   return Object.keys(schema.properties ?? {}).length
 }
 
+// One-line preview of the Parameters row's value — each parameter's own
+// name and description, not just a bare count, so a developer (or someone
+// reviewing an AI-generated tool, see aiToolGenerator.ts) can tell at a
+// glance whether the parameters actually look right without opening
+// ToolParametersSheet. .rowValue already truncates with an ellipsis
+// (ToolEditSheet.module.css), so this can run long without breaking layout.
+function paramSummary(schema: Tool['parameters']): string {
+  const props = schema.properties ?? {}
+  const names = Object.keys(props)
+  if (names.length === 0) return 'None'
+  return names.map((name) => `${name}: ${props[name]?.description || 'no description'}`).join(' · ')
+}
+
 // Mobile-only, full-screen (see BottomSheet.tsx's fullscreen prop) —
 // same native-settings-style list-of-rows pattern as AppSettingsList.tsx
 // (tap a row, get a dedicated edit sheet for just that field), not a
@@ -85,7 +98,14 @@ export function ToolEditSheet({
   const trimmedName = draft.name.trim()
   const isValidName = TOOL_NAME_RE.test(trimmedName)
   const dirty = JSON.stringify(draft) !== JSON.stringify(tool)
-  const saveDisabled = !dirty || !isValidName
+  // For an existing tool, "unchanged from tool" (dirty) is the right gate —
+  // no point saving if nothing was edited. For isNew, that same check is
+  // wrong: draft starts out identical to tool (the AI generator's proposed
+  // tool, or emptyTool()), so dirty is false the instant the sheet opens,
+  // even when the AI already produced a complete, valid tool needing zero
+  // further edits — the correct gate there is just "is draft valid", not
+  // "did it change from its own starting point."
+  const saveDisabled = isNew ? !isValidName : !dirty || !isValidName
 
   function handleSave() {
     if (!draft || !isValidName) return
@@ -151,10 +171,10 @@ export function ToolEditSheet({
 
           <button type="button" className={styles.row} onClick={parametersSheet.onOpen}>
             <div className={styles.rowInfo}>
-              <div className={styles.rowLabel}>Parameters</div>
-              <div className={styles.rowValue}>
-                {paramCount(draft.parameters) === 0 ? 'None' : `${paramCount(draft.parameters)} parameter(s)`}
+              <div className={styles.rowLabel}>
+                Parameters{paramCount(draft.parameters) > 0 && ` (${paramCount(draft.parameters)})`}
               </div>
+              <div className={styles.rowValue}>{paramSummary(draft.parameters)}</div>
             </div>
             <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
               <path d="M9 18l6-6-6-6" />

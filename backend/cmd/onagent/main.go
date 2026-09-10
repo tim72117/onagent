@@ -38,6 +38,77 @@ import (
 // sets it — there's no tag to derive it from at that point.
 var version = "dev"
 
+// resourceCommand is one verb attached to a resource (e.g. "app"'s "list",
+// "create", "origin", "thought"). requireSet marks the two verbs that
+// aren't a full CRUD-style action but a single mutable field on app
+// ("origin", "thought") — for those, the next arg after the resource+verb
+// must literally be "set" (e.g. `onagent app origin set <appId> <origin>`),
+// modeling "set" as a sub-verb rather than letting `app origin <appId>
+// <origin>` silently mean the same thing two different ways.
+type resourceCommand struct {
+	verb       string
+	requireSet bool
+	run        func(args []string) error
+	usage      string // one-line "onagent <resource> <verb> ..." shown in help/errors
+}
+
+// resource groups a noun (e.g. "app") with the verbs it supports. This is
+// the CLI's top-level dispatch table: resource-first, verb-second, matching
+// the "gh repo create" / "kubectl get pods" convention instead of the old
+// flat "<verb>-<noun>" commands.
+type resource struct {
+	name     string
+	commands []resourceCommand
+}
+
+var resources = []resource{
+	{
+		name: "app",
+		commands: []resourceCommand{
+			{verb: "list", run: runListApps, usage: "onagent app list [-api <url>]"},
+			{verb: "create", run: runCreateApp, usage: "onagent app create <appId> [-api <url>]"},
+			{verb: "delete", run: runDeleteApp, usage: "onagent app delete <appId> [-api <url>]"},
+			{verb: "origin", requireSet: true, run: runAppOrigin, usage: "onagent app origin set <appId> <origin> [-api <url>]"},
+			{verb: "thought", requireSet: true, run: runAppThought, usage: "onagent app thought set <appId> <thought> [-api <url>]"},
+		},
+	},
+	{
+		name: "key",
+		commands: []resourceCommand{
+			{verb: "issue", run: runIssueKey, usage: "onagent key issue <appId> [-api <url>]"},
+			{verb: "revoke", run: runRevokeKey, usage: "onagent key revoke <appId> [-api <url>]"},
+		},
+	},
+	{
+		name: "tool",
+		commands: []resourceCommand{
+			{verb: "list", run: runGetTools, usage: "onagent tool list <appId> [-api <url>]"},
+			{verb: "create", run: runSaveTools, usage: "onagent tool create <appId> <tool.yaml> [-api <url>]"},
+			{verb: "delete", run: runDeleteTool, usage: "onagent tool delete <appId> <toolName> [-api <url>]"},
+		},
+	},
+}
+
+// findResource returns the resource named name, or nil if there isn't one.
+func findResource(name string) *resource {
+	for i := range resources {
+		if resources[i].name == name {
+			return &resources[i]
+		}
+	}
+	return nil
+}
+
+// findCommand returns r's command for verb, or nil if r doesn't have one.
+func findCommand(r *resource, verb string) *resourceCommand {
+	for i := range r.commands {
+		if r.commands[i].verb == verb {
+			return &r.commands[i]
+		}
+	}
+	return nil
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -47,52 +118,88 @@ func main() {
 	cmd := os.Args[1]
 	args := os.Args[2:]
 
-	var err error
 	switch cmd {
 	case "version", "--version", "-v":
 		fmt.Println("onagent", version)
 		return
+	case "help", "--help", "-h":
+		runHelp(args)
+		return
 	case "login":
-		err = runLogin(args)
-	case "list-apps":
-		err = runListApps(args)
-	case "create-app":
-		err = runCreateApp(args)
-	case "issue-key":
-		err = runIssueKey(args)
-	case "set-origin":
-		err = runSetOrigin(args)
-	case "set-thought":
-		err = runSetThought(args)
-	case "save-tools":
-		err = runSaveTools(args)
-	case "get-tools":
-		err = runGetTools(args)
-	default:
+		if err := runLogin(args); err != nil {
+			fmt.Fprintln(os.Stderr, "onagent:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	r := findResource(cmd)
+	if r == nil {
 		usage()
 		os.Exit(1)
 	}
 
-	if err != nil {
+	if err := dispatchResource(r, args); err != nil {
 		fmt.Fprintln(os.Stderr, "onagent:", err)
 		os.Exit(1)
 	}
 }
 
-func usage() {
-	fmt.Fprintln(os.Stderr, `usage:
-  onagent version | --version | -v   print the CLI version
-  onagent login [-api <url>]          sign in with email/password, typed into this terminal
-  onagent login --web [-api <url>] [-console <url>]
-                                       sign in via a browser tab instead (see below)
-  onagent list-apps [-api <url>]
-  onagent create-app [-api <url>] <appId>
-  onagent issue-key [-api <url>] <appId>
-  onagent set-origin [-api <url>] <appId> <origin>
-  onagent set-thought [-api <url>] <appId> <thought>
-  onagent save-tools [-api <url>] <appId> <tools.yaml>
-  onagent get-tools [-api <url>] <appId>
+// dispatchResource resolves the verb (and, for the two "requireSet"
+// commands, the mandatory literal "set" after it) under resource r and
+// invokes its run function. It prints r's usage and returns a non-nil
+// error (main exits non-zero on any error) whenever the verb doesn't
+// exist, is missing, or a requireSet command isn't immediately followed by
+// "set".
+func dispatchResource(r *resource, args []string) error {
+	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprint(os.Stderr, resourceUsage(r))
+		if len(args) == 0 {
+			return fmt.Errorf("missing command for %q", r.name)
+		}
+		return nil
+	}
 
+	verb := args[0]
+	rest := args[1:]
+
+	cmd := findCommand(r, verb)
+	if cmd == nil {
+		fmt.Fprint(os.Stderr, resourceUsage(r))
+		return fmt.Errorf("unknown command %q for %q", verb, r.name)
+	}
+
+	if cmd.requireSet {
+		if len(rest) == 0 || rest[0] != "set" {
+			return fmt.Errorf("usage: %s", cmd.usage)
+		}
+		rest = rest[1:]
+	}
+
+	return cmd.run(rest)
+}
+
+func usage() {
+	fmt.Fprintln(os.Stderr, topUsage())
+}
+
+// topUsage renders the full top-level usage text, shared by usage() (on a
+// bad/missing top-level command) and runHelp (`onagent help`).
+func topUsage() string {
+	var b strings.Builder
+	b.WriteString("usage:\n")
+	b.WriteString("  onagent version | --version | -v   print the CLI version\n")
+	b.WriteString("  onagent help | --help | -h [<resource>]   print this message, or one resource's commands\n")
+	b.WriteString("  onagent login [-api <url>]          sign in with email/password, typed into this terminal\n")
+	b.WriteString("  onagent login --web [-api <url>] [-console <url>]\n")
+	b.WriteString("                                       sign in via a browser tab instead (see below)\n")
+	b.WriteString("\n")
+	for _, r := range resources {
+		for _, c := range r.commands {
+			b.WriteString("  " + c.usage + "\n")
+		}
+	}
+	b.WriteString(`
   -api defaults to https://onagent.shuttle.tools (the deployed onagent
   service). -console (login --web only) is the origin the console
   front-end is served from — the CLI appends /app/cli-auth itself, since
@@ -102,6 +209,37 @@ func usage() {
   Point this at a local onagent dev server with just -api
   http://localhost:8080; only add -console separately if the console
   truly lives somewhere else.`)
+	return b.String()
+}
+
+// resourceUsage renders just one resource's commands, e.g. for `onagent
+// help app` or an error dispatching under "app".
+func resourceUsage(r *resource) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "usage: onagent %s <command>\n", r.name)
+	for _, c := range r.commands {
+		b.WriteString("  " + c.usage + "\n")
+	}
+	return b.String()
+}
+
+// runHelp implements `onagent help`, `onagent help <resource>`, and (via
+// dispatchResource's own "help"/"--help"/"-h" handling above) `onagent
+// <resource> help`. Unlike the run* commands it never fails outright — an
+// unknown resource name just falls back to the full top-level usage, since
+// "help" should always show *something* useful rather than erroring.
+func runHelp(args []string) {
+	if len(args) == 0 {
+		fmt.Print(topUsage())
+		fmt.Println()
+		return
+	}
+	if r := findResource(args[0]); r != nil {
+		fmt.Print(resourceUsage(r))
+		return
+	}
+	fmt.Print(topUsage())
+	fmt.Println()
 }
 
 // --- login -------------------------------------------------------------
@@ -300,12 +438,12 @@ func openBrowser(url string) error {
 	}
 }
 
-// --- list-apps -----------------------------------------------------------
+// --- app list --------------------------------------------------------------
 
 func runListApps(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 0 {
-		return fmt.Errorf("list-apps takes no extra arguments")
+		return fmt.Errorf("usage: onagent app list [-api <url>]")
 	}
 
 	client, err := authenticatedClient(base)
@@ -332,12 +470,12 @@ func runListApps(args []string) error {
 	return nil
 }
 
-// --- create-app ------------------------------------------------------------
+// --- app create --------------------------------------------------------------
 
 func runCreateApp(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: onagent create-app [-api <url>] <appId>")
+		return fmt.Errorf("usage: onagent app create <appId> [-api <url>]")
 	}
 	appID := rest[0]
 
@@ -354,12 +492,41 @@ func runCreateApp(args []string) error {
 	return nil
 }
 
-// --- issue-key ---------------------------------------------------------
+// --- app delete --------------------------------------------------------------
+
+// runDeleteApp is irreversible: the backend deletes the app, every tool on
+// it (CASCADE), and revokes its API key — see console.go's deleteApp. No
+// confirmation prompt (unlike the console UI's ConfirmModal) — the CLI's
+// existing commands are all fire-and-immediately-execute, since a scripted
+// caller has no one to answer an interactive prompt; the appId argument
+// itself, printed back in the success message, is the only confirmation
+// this gives.
+func runDeleteApp(args []string) error {
+	base, rest := apiFlag(args)
+	if len(rest) != 1 {
+		return fmt.Errorf("usage: onagent app delete <appId> [-api <url>]")
+	}
+	appID := rest[0]
+
+	client, err := authenticatedClient(base)
+	if err != nil {
+		return err
+	}
+
+	if err := client.deleteApp(appID); err != nil {
+		return fmt.Errorf("delete app: %w", err)
+	}
+
+	fmt.Printf("Deleted app %q and its tools. Its API key is revoked too.\n", appID)
+	return nil
+}
+
+// --- key issue ---------------------------------------------------------
 
 func runIssueKey(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: onagent issue-key [-api <url>] <appId>")
+		return fmt.Errorf("usage: onagent key issue <appId> [-api <url>]")
 	}
 	appID := rest[0]
 
@@ -381,12 +548,38 @@ func runIssueKey(args []string) error {
 	return nil
 }
 
-// --- set-origin ----------------------------------------------------------
+// --- key revoke ----------------------------------------------------------
 
-func runSetOrigin(args []string) error {
+// runRevokeKey invalidates appID's key with no replacement issued — unlike
+// `key issue` run again (which also invalidates the old key, but as a side
+// effect of minting a new one), this is for permanently cutting off an
+// app's connections rather than rotating credentials.
+func runRevokeKey(args []string) error {
+	base, rest := apiFlag(args)
+	if len(rest) != 1 {
+		return fmt.Errorf("usage: onagent key revoke <appId> [-api <url>]")
+	}
+	appID := rest[0]
+
+	client, err := authenticatedClient(base)
+	if err != nil {
+		return err
+	}
+
+	if err := client.revokeKey(appID); err != nil {
+		return fmt.Errorf("revoke key: %w", err)
+	}
+
+	fmt.Printf("Revoked %q's API key. Connected sites stop working immediately.\n", appID)
+	return nil
+}
+
+// --- app origin set ----------------------------------------------------------
+
+func runAppOrigin(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: onagent set-origin [-api <url>] <appId> <origin>")
+		return fmt.Errorf("usage: onagent app origin set <appId> <origin> [-api <url>]")
 	}
 	appID, origin := rest[0], rest[1]
 
@@ -403,12 +596,12 @@ func runSetOrigin(args []string) error {
 	return nil
 }
 
-// --- set-thought -----------------------------------------------------------
+// --- app thought set -----------------------------------------------------------
 
-func runSetThought(args []string) error {
+func runAppThought(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: onagent set-thought [-api <url>] <appId> <thought>")
+		return fmt.Errorf("usage: onagent app thought set <appId> <thought> [-api <url>]")
 	}
 	appID, thought := rest[0], rest[1]
 
@@ -429,12 +622,12 @@ func runSetThought(args []string) error {
 	return nil
 }
 
-// --- save-tools ----------------------------------------------------------
+// --- tool create ----------------------------------------------------------
 
 func runSaveTools(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 2 {
-		return fmt.Errorf("usage: onagent save-tools [-api <url>] <appId> <tools.yaml>")
+		return fmt.Errorf("usage: onagent tool create <appId> <tool.yaml> [-api <url>]")
 	}
 	appID, path := rest[0], rest[1]
 
@@ -443,15 +636,23 @@ func runSaveTools(args []string) error {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
 
-	// Parsed as a full toolschema.App so a file already shaped like
-	// backend/tools/*.yaml (appId + tools + thought) just works — only
-	// .Tools is actually sent; the appId to target comes from the command
-	// argument, not the file, so one file can be reused across apps.
-	var app toolschema.App
-	if err := yaml.Unmarshal(data, &app); err != nil {
+	// tool.yaml is a single tool's own fields (name/description/parameters/
+	// ...) — not an App-shaped file with appId/tools/thought. The backend's
+	// PUT /console/apps/{appId}/tools/{toolName} endpoint (client.saveTool)
+	// upserts exactly this one tool and leaves every other tool on the app
+	// untouched, so the file only ever describes the one tool being created
+	// or updated; the appId to target comes from the command argument, not
+	// the file, so one file can be reused across apps.
+	var tool toolschema.Tool
+	if err := yaml.Unmarshal(data, &tool); err != nil {
 		return fmt.Errorf("parse %s: %w", path, err)
 	}
-	if err := app.Validate(); err != nil {
+	// Reuses App.Validate's per-tool checks (name/description/parameters.
+	// type/kind/...) by wrapping the one tool in a throwaway App — appId
+	// here only needs to be ValidAppID-shaped for Validate's own appId
+	// check to pass; the real appId (from the command argument) is what
+	// actually gets used when saving.
+	if err := (&toolschema.App{AppID: appID, Tools: []toolschema.Tool{tool}}).Validate(); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 
@@ -460,7 +661,7 @@ func runSaveTools(args []string) error {
 		return err
 	}
 
-	summary, err := client.saveTools(appID, app.Tools)
+	summary, err := client.saveTool(appID, tool)
 	if err != nil {
 		return fmt.Errorf("save tools: %w", err)
 	}
@@ -469,12 +670,12 @@ func runSaveTools(args []string) error {
 	return nil
 }
 
-// --- get-tools -----------------------------------------------------------
+// --- tool list -----------------------------------------------------------
 
 func runGetTools(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 1 {
-		return fmt.Errorf("usage: onagent get-tools [-api <url>] <appId>")
+		return fmt.Errorf("usage: onagent tool list <appId> [-api <url>]")
 	}
 	appID := rest[0]
 
@@ -489,13 +690,39 @@ func runGetTools(args []string) error {
 	}
 
 	// Marshaled straight back out as toolschema.App's own yaml tags
-	// (appId + tools + thought) — the same shape save-tools reads, so this
-	// output can be piped into a file and round-tripped back in.
+	// (appId + tools + thought) — the same shape `tool create` reads, so
+	// this output can be piped into a file and round-tripped back in.
 	out, err := yaml.Marshal(app)
 	if err != nil {
 		return fmt.Errorf("encode yaml: %w", err)
 	}
 	fmt.Print(string(out))
+	return nil
+}
+
+// --- tool delete -----------------------------------------------------------
+
+// runDeleteTool removes one tool from appId — the delete counterpart to
+// `tool create`'s upsert. No confirmation prompt, same rationale as
+// runDeleteApp above.
+func runDeleteTool(args []string) error {
+	base, rest := apiFlag(args)
+	if len(rest) != 2 {
+		return fmt.Errorf("usage: onagent tool delete <appId> <toolName> [-api <url>]")
+	}
+	appID, toolName := rest[0], rest[1]
+
+	client, err := authenticatedClient(base)
+	if err != nil {
+		return err
+	}
+
+	summary, err := client.deleteTool(appID, toolName)
+	if err != nil {
+		return fmt.Errorf("delete tool: %w", err)
+	}
+
+	fmt.Printf("Deleted tool %q from %q (%d tool(s) remaining).\n", toolName, appID, summary.ToolCount)
 	return nil
 }
 
@@ -676,8 +903,16 @@ func (c *apiClient) issueKey(appID string) (apiKey string, err error) {
 	return out.ApiKey, nil
 }
 
+// setOrigin sends {"origins":[origin]} — the backend's setOriginRequest
+// only has an Origins []string field (json:"origins"), never a singular
+// "origin" string. This CLI shipped once with the singular shape here: it
+// decoded successfully (no error, no unknown-field rejection — that
+// protection didn't exist yet either) into an empty Origins slice, which
+// silently wiped out the app's allowed-origins list while the CLI reported
+// success. Keep this comment as the reminder next time this function looks
+// like it "should" just take a single string.
 func (c *apiClient) setOrigin(appID, origin string) (appSummary, error) {
-	body, err := json.Marshal(map[string]string{"origin": origin})
+	body, err := json.Marshal(map[string][]string{"origins": {origin}})
 	if err != nil {
 		return appSummary{}, err
 	}
@@ -728,13 +963,17 @@ func (c *apiClient) listApps() ([]appSummary, error) {
 	return out, nil
 }
 
-func (c *apiClient) saveTools(appID string, tools []toolschema.Tool) (appSummary, error) {
-	body, err := json.Marshal(tools)
+// saveTool upserts exactly one tool — PUT /console/apps/{appId}/tools/
+// {toolName}, tool.Name in both the URL and the body (the backend rejects a
+// mismatch between the two, see console.saveTool's doc comment) — leaving
+// every other tool already on the app untouched.
+func (c *apiClient) saveTool(appID string, tool toolschema.Tool) (appSummary, error) {
+	body, err := json.Marshal(tool)
 	if err != nil {
 		return appSummary{}, err
 	}
 
-	res, err := c.do(http.MethodPut, "/console/apps/"+pathEscape(appID)+"/tools", bytes.NewReader(body))
+	res, err := c.do(http.MethodPut, "/console/apps/"+pathEscape(appID)+"/tools/"+pathEscape(tool.Name), bytes.NewReader(body))
 	if err != nil {
 		return appSummary{}, err
 	}
@@ -745,6 +984,49 @@ func (c *apiClient) saveTools(appID string, tools []toolschema.Tool) (appSummary
 		return appSummary{}, fmt.Errorf("decode response: %w", err)
 	}
 	return out, nil
+}
+
+// deleteTool removes one tool — DELETE /console/apps/{appId}/tools/
+// {toolName}, the delete counterpart to saveTool's upsert. Unlike
+// deleteApp/revokeKey below, this endpoint answers 200 with the app's
+// current appSummary (not 204), same as saveTool, so the CLI can report
+// the tool count after the delete.
+func (c *apiClient) deleteTool(appID, toolName string) (appSummary, error) {
+	res, err := c.do(http.MethodDelete, "/console/apps/"+pathEscape(appID)+"/tools/"+pathEscape(toolName), nil)
+	if err != nil {
+		return appSummary{}, err
+	}
+	defer res.Body.Close()
+
+	var out appSummary
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return appSummary{}, fmt.Errorf("decode response: %w", err)
+	}
+	return out, nil
+}
+
+// deleteApp removes the app and every tool on it, and revokes its API key
+// — DELETE /console/apps/{appId}, which answers 204 with no body (unlike
+// deleteTool/saveTool, there's no app left afterward to summarize).
+func (c *apiClient) deleteApp(appID string) error {
+	res, err := c.do(http.MethodDelete, "/console/apps/"+pathEscape(appID), nil)
+	if err != nil {
+		return err
+	}
+	return res.Body.Close()
+}
+
+// revokeKey invalidates appID's current API key with nothing new issued in
+// its place — DELETE /console/apps/{appId}/key, 204 with no body. Distinct
+// from issueKey, which invalidates the old key too but as a side effect of
+// minting a replacement; this is for "stop this app from connecting at
+// all" with no immediate replacement key to hand back.
+func (c *apiClient) revokeKey(appID string) error {
+	res, err := c.do(http.MethodDelete, "/console/apps/"+pathEscape(appID)+"/key", nil)
+	if err != nil {
+		return err
+	}
+	return res.Body.Close()
 }
 
 // getApp returns the full App definition (every tool with its complete

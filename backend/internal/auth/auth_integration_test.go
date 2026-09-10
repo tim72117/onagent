@@ -8,12 +8,12 @@
 //
 // This suite is meant to survive auth.go's planned rewrite from
 // database/sql to GORM (see internal/db.DB's doc comment): it exercises
-// Store's exported methods (Issue, Verify, HasKey, Revoke, SetOrigin,
-// OriginFor) rather than the SQL used to get there.
+// Store's exported methods (Issue, Verify, HasKey, Revoke, SetOrigins,
+// OriginsFor) rather than the SQL used to get there.
 //
 // It also covers the single most important invariant for the upcoming
 // migration: auth and toolschema.Registry share the `apps` table but each
-// only touches its own columns (auth: api_key_hash, allowed_origin;
+// only touches its own columns (auth: api_key_hash, allowed_origins;
 // toolschema: owner_id, thought, plus the whole `tools` table). If a GORM
 // rewrite of either package swaps its targeted UPDATE for a bare
 // gorm `Save()` (which writes every column, zeroing out whatever it
@@ -26,6 +26,7 @@ package auth
 import (
 	"database/sql"
 	"flag"
+	"slices"
 	"testing"
 
 	"github.com/tim72117/onagent/internal/db"
@@ -117,20 +118,20 @@ func TestStoreCRUDLifecycle(t *testing.T) {
 	if result.AppID != appID {
 		t.Fatalf("Verify(issued key).AppID = %q, want %q", result.AppID, appID)
 	}
-	if result.AllowedOrigin != "" {
-		t.Fatalf("Verify(issued key).AllowedOrigin = %q, want empty before SetOrigin", result.AllowedOrigin)
+	if len(result.AllowedOrigins) != 0 {
+		t.Fatalf("Verify(issued key).AllowedOrigins = %v, want empty before SetOrigins", result.AllowedOrigins)
 	}
 
-	// SetOrigin / OriginFor round-trip.
-	if err := store.SetOrigin(appID, "https://example.com"); err != nil {
-		t.Fatalf("SetOrigin: %v", err)
+	// SetOrigins / OriginsFor round-trip, including more than one origin.
+	if err := store.SetOrigins(appID, []string{"https://example.com", "https://other.example.com"}); err != nil {
+		t.Fatalf("SetOrigins: %v", err)
 	}
-	if got := store.OriginFor(appID); got != "https://example.com" {
-		t.Fatalf("OriginFor after SetOrigin = %q, want %q", got, "https://example.com")
+	if got := store.OriginsFor(appID); !slices.Equal(got, []string{"https://example.com", "https://other.example.com"}) {
+		t.Fatalf("OriginsFor after SetOrigins = %v, want %v", got, []string{"https://example.com", "https://other.example.com"})
 	}
 	result, ok = store.Verify(key)
-	if !ok || result.AllowedOrigin != "https://example.com" {
-		t.Fatalf("Verify after SetOrigin = (%+v, %v), want AllowedOrigin=https://example.com, true", result, ok)
+	if !ok || !slices.Equal(result.AllowedOrigins, []string{"https://example.com", "https://other.example.com"}) {
+		t.Fatalf("Verify after SetOrigins = (%+v, %v), want AllowedOrigins=[https://example.com https://other.example.com], true", result, ok)
 	}
 
 	// Revoke clears the key: HasKey flips false, old key stops verifying.
@@ -204,8 +205,8 @@ func TestAuthAndToolschemaDoNotOverwriteEachOther(t *testing.T) {
 	if _, err := store.Issue(appID); err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	if err := store.SetOrigin(appID, "https://example.com"); err != nil {
-		t.Fatalf("SetOrigin: %v", err)
+	if err := store.SetOrigins(appID, []string{"https://example.com"}); err != nil {
+		t.Fatalf("SetOrigins: %v", err)
 	}
 
 	// toolschema's fields must be untouched by auth's writes.
@@ -240,35 +241,30 @@ func TestToolschemaWritesDoNotOverwriteAuthFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
-	if err := store.SetOrigin(appID, "https://example.org"); err != nil {
-		t.Fatalf("SetOrigin: %v", err)
+	if err := store.SetOrigins(appID, []string{"https://example.org"}); err != nil {
+		t.Fatalf("SetOrigins: %v", err)
 	}
 
-	// Now exercise toolschema's writes on the same app: SetThought and a
-	// full Save (which upserts the app row and replaces its tool set).
+	// Now exercise toolschema's writes on the same app: SetThought and
+	// SaveTool (which upserts one tool row).
 	if err := reg.SetThought(appID, "another prompt"); err != nil {
 		t.Fatalf("SetThought: %v", err)
 	}
-	app, ok := reg.Get(appID)
-	if !ok {
-		t.Fatalf("Get before Save: app not found")
-	}
-	app.Tools = []toolschema.Tool{{
+	if err := reg.SaveTool(appID, toolschema.Tool{
 		Name:        "some_tool",
 		Description: "a tool",
 		Parameters:  toolschema.ParameterSchema{Type: "object"},
 		Kind:        toolschema.ToolKindAction,
-	}}
-	if err := reg.Save(app); err != nil {
-		t.Fatalf("Save: %v", err)
+	}); err != nil {
+		t.Fatalf("SaveTool: %v", err)
 	}
 
 	// auth's fields must be untouched by toolschema's writes.
 	if !store.HasKey(appID) {
 		t.Fatalf("HasKey after toolschema writes = false, want true — toolschema must not clear api_key_hash")
 	}
-	if got := store.OriginFor(appID); got != "https://example.org" {
-		t.Fatalf("OriginFor after toolschema writes = %q, want %q — toolschema must not clear allowed_origin", got, "https://example.org")
+	if got := store.OriginsFor(appID); !slices.Equal(got, []string{"https://example.org"}) {
+		t.Fatalf("OriginsFor after toolschema writes = %v, want %v — toolschema must not clear allowed_origins", got, []string{"https://example.org"})
 	}
 	if result, ok := store.Verify(key); !ok || result.AppID != appID {
 		t.Fatalf("Verify(original key) after toolschema writes = (%+v, %v), want (AppID=%s, true)", result, ok, appID)

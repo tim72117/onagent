@@ -156,4 +156,14 @@ type App struct {
 	// LLM tool schema itself (codegen.ToLLMTools doesn't touch it) — it
 	// only affects the want agent role's system prompt.
 	Thought string `yaml:"thought,omitempty" json:"thought,omitempty"`
+
+	// Public marks this app as reachable in the console Playground by any
+	// signed-in user, not just its owner — see console/playground.go's
+	// ResolveApp, which checks "owned OR public" instead of
+	// ownedAppOrNotFound's strict ownership check. Deliberately does NOT
+	// relax any REST API operation (editing tools, changing origin,
+	// deleting, ...): those stay behind console.go's withOwnedApp/
+	// ownedAppOrNotFound unconditionally, regardless of this flag — a public
+	// Playground is meant to let other users try an app, not edit it.
+	Public bool `yaml:"public,omitempty" json:"public,omitempty"`
 }

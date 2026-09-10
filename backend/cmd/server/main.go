@@ -292,7 +292,7 @@ func main() {
 		log.Info("GOOGLE_OAUTH_CLIENT_ID not set: Google sign-in disabled")
 	}
 
-	inferSvc := newInferenceService(log, apps, database)
+	inferSvc := newInferenceService(log, apps, database, quotaSvc)
 	wsResolver := &ws.APIKeyResolver{Auth: wsAuth, Apps: apps, Quota: quotaSvc, Log: log}
 	wsHandler := ws.NewHandler(apps, inferSvc, log, originChecker, wsResolver, quotaSvc)
 	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore, inferSvc, quotaSvc, siteOrigins, log)
@@ -522,7 +522,11 @@ func parseOrigins(csv string) []string {
 // startup (see inference.RegisterAppRole's doc comment). database backs a
 // sessionstore.Store so each session's conversation history survives a
 // process restart — see NewWant's sessionStore parameter doc comment.
-func newInferenceService(log *slog.Logger, apps *toolschema.Registry, database *gorm.DB) inference.Service {
+// quotaSvc is threaded through so WantService.Complete can record usage
+// per provider round-trip as it happens, rather than the caller (ws.Session)
+// recording once at the very end — see NewWant's quotaSvc parameter doc
+// comment on why that matters for a prompt whose connection closes mid-turn.
+func newInferenceService(log *slog.Logger, apps *toolschema.Registry, database *gorm.DB, quotaSvc *quota.Service) inference.Service {
 	// settings covers exactly the fields want's own config.FromEnv() reads
 	// from the environment (Provider/Model/GoogleAPIKey/AnthropicAPIKey/
 	// MockScenario), so want's env var names stay in one place instead of
@@ -544,7 +548,7 @@ func newInferenceService(log *slog.Logger, apps *toolschema.Registry, database *
 
 	log.Info("using want orchestrator for inference", "provider", settings.Provider)
 	inference.RegisterPlatformTools(apps.All())
-	return inference.NewWant(settings, apps, sessionstore.New(database))
+	return inference.NewWant(settings, apps, sessionstore.New(database), quotaSvc)
 }
 
 func allowlistChecker(allowed []string) ws.OriginChecker {

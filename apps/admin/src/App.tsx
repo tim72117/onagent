@@ -236,7 +236,7 @@ function UsersTab({ onLoggedOut }: { onLoggedOut: () => void }) {
                     {u.quotaOverride != null && <span className="badge" title="Manual per-user override">override</span>}
                   </td>
                   <td className={u.tier !== '' && u.used >= u.limit ? 'over' : ''}>
-                    {u.tier === '' ? <span className="muted">—</span> : `${u.used} / ${u.limit}`}
+                    {u.tier === '' ? <span className="muted">—</span> : `${u.used.toLocaleString()} / ${u.limit.toLocaleString()}`}
                   </td>
                   <td>
                     {/* An empty-value placeholder option so a user with no
@@ -260,7 +260,7 @@ function UsersTab({ onLoggedOut }: { onLoggedOut: () => void }) {
               ))}
               {users.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={7} className="muted center-cell">
+                  <td colSpan={8} className="muted center-cell">
                     No users yet.
                   </td>
                 </tr>

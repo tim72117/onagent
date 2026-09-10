@@ -17,24 +17,37 @@ export function AppSettingsView({
   hasKey,
   onIssueKey,
   onRevokeKey,
-  allowedOrigin,
-  originDraft,
-  onOriginDraftChange,
+  allowedOrigins,
+  originDrafts,
+  onOriginDraftsChange,
+  newOriginDraft,
+  onNewOriginDraftChange,
   originBusy,
-  onSaveOrigin,
+  onSaveOrigins,
   onDeleteApp,
 }: {
   appId: string
   hasKey: boolean
   onIssueKey: () => void
   onRevokeKey: () => void
-  allowedOrigin: string | null
-  originDraft: string
-  onOriginDraftChange: (value: string) => void
+  allowedOrigins: string[]
+  originDrafts: string[]
+  onOriginDraftsChange: (next: string[]) => void
+  newOriginDraft: string
+  onNewOriginDraftChange: (value: string) => void
   originBusy: boolean
-  onSaveOrigin: (e: React.FormEvent) => void
+  onSaveOrigins: (e: React.FormEvent) => void
   onDeleteApp: () => void
 }) {
+  function addDraft() {
+    const trimmed = newOriginDraft.trim()
+    if (!trimmed || originDrafts.includes(trimmed)) return
+    onOriginDraftsChange([...originDrafts, trimmed])
+    onNewOriginDraftChange('')
+  }
+
+  const dirty =
+    originDrafts.length !== allowedOrigins.length || originDrafts.some((o, i) => o !== allowedOrigins[i])
   return (
     <div className={styles.root}>
       <h1 className={styles.heading}>"{appId}" settings</h1>
@@ -51,22 +64,64 @@ export function AppSettingsView({
         )}
       </div>
 
-      <form className={styles.originRow} onSubmit={onSaveOrigin}>
-        <span className="micro-label">Allowed origin</span>
-        <input
-          className={styles.originInput}
-          placeholder="https://your-site.example.com"
-          value={originDraft}
-          onChange={(e) => onOriginDraftChange(e.target.value)}
-        />
-        <button
-          type="submit"
-          className="text-btn"
-          disabled={originBusy || originDraft.trim() === (allowedOrigin ?? '')}
-        >
-          {originBusy ? 'Saving…' : 'Save origin'}
-        </button>
-        {!allowedOrigin && (
+      <form
+        className={styles.originForm}
+        onSubmit={(e) => {
+          // A pending, not-yet-added value in the text field shouldn't be
+          // silently dropped on Save — fold it in first.
+          const trimmed = newOriginDraft.trim()
+          if (trimmed && !originDrafts.includes(trimmed)) {
+            onOriginDraftsChange([...originDrafts, trimmed])
+            onNewOriginDraftChange('')
+          }
+          onSaveOrigins(e)
+        }}
+      >
+        <span className="micro-label">Allowed origins</span>
+        {originDrafts.length > 0 && (
+          <ul className={styles.originList}>
+            {originDrafts.map((origin) => (
+              <li key={origin} className={styles.originListItem}>
+                <span className={styles.originListItemText}>{origin}</span>
+                <button
+                  type="button"
+                  className={styles.originRemoveBtn}
+                  aria-label={`Remove ${origin}`}
+                  onClick={() => onOriginDraftsChange(originDrafts.filter((o) => o !== origin))}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" width="12" height="12">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className={styles.originRow}>
+          <input
+            className={styles.originInput}
+            placeholder="https://your-site.example.com"
+            value={newOriginDraft}
+            onChange={(e) => onNewOriginDraftChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addDraft()
+              }
+            }}
+          />
+          <button type="button" className="text-btn" onClick={addDraft} disabled={!newOriginDraft.trim()}>
+            Add
+          </button>
+          <button
+            type="submit"
+            className="text-btn"
+            disabled={originBusy || (!dirty && !newOriginDraft.trim())}
+          >
+            {originBusy ? 'Saving…' : 'Save origins'}
+          </button>
+        </div>
+        {allowedOrigins.length === 0 && (
           <span className={styles.originWarning}>
             No origin set — every connection for this app is blocked until one is saved.
           </span>

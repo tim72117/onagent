@@ -1,6 +1,7 @@
 package toolschema
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -20,6 +21,7 @@ type appRow struct {
 	AppID   string  `gorm:"column:app_id;primaryKey"`
 	OwnerID *int64  `gorm:"column:owner_id"`
 	Thought *string `gorm:"column:thought"`
+	Public  bool    `gorm:"column:public"`
 }
 
 func (appRow) TableName() string { return "apps" }
@@ -105,16 +107,34 @@ func (r *Registry) Reload() error {
 	return nil
 }
 
-// Save validates app, upserts it and replaces its tool set in the
-// database within a single transaction, and reloads the registry so the
-// change is visible immediately. Returns the validate/write error without
-// touching in-memory state if either fails.
-func (r *Registry) Save(app *App) error {
-	if err := app.Validate(); err != nil {
-		return fmt.Errorf("toolschema: refusing to save invalid app: %w", err)
+// SaveTool validates tool and upserts it as the one row (app_id, tool.Name)
+// in the tools table — unlike the replace-all Save this superseded (see git
+// history), every other tool already on appID is left completely untouched.
+// Both the console front-end's per-tool editor and the CLI's `onagent tool
+// create` write through this now, since neither has (or should need) the
+// app's full current tool list in hand just to avoid clobbering it.
+//
+// tool is validated by wrapping it in a single-tool App and reusing
+// App.Validate() — appID itself must already be ValidAppID (Create already
+// enforced that when the app was made), so this only needs Validate's
+// per-tool checks (name, description, parameters.type, kind, ...), not a
+// second, separately-maintained set of single-tool validation rules.
+func (r *Registry) SaveTool(appID string, tool Tool) error {
+	if err := (&App{AppID: appID, Tools: []Tool{tool}}).Validate(); err != nil {
+		return fmt.Errorf("toolschema: refusing to save invalid tool: %w", err)
 	}
-	if err := saveApp(r.db, app); err != nil {
+	if err := saveTool(r.db, appID, tool); err != nil {
 		return err
+	}
+	return r.Reload()
+}
+
+// DeleteTool removes the one (app_id, name) row from tools, and reloads.
+// Deleting a tool name that never existed is not an error — same
+// already-gone-is-fine convention as Registry.Delete for a nonexistent app.
+func (r *Registry) DeleteTool(appID, name string) error {
+	if err := r.db.Where("app_id = ? AND name = ?", appID, name).Delete(&toolRow{}).Error; err != nil {
+		return fmt.Errorf("toolschema: delete tool %s.%s: %w", appID, name, err)
 	}
 	return r.Reload()
 }
@@ -189,6 +209,24 @@ func (r *Registry) SetThought(appID, thought string) error {
 	return r.Reload()
 }
 
+// SetPublic sets appID's Public flag and reloads so the change is visible
+// immediately. Fails if appID doesn't exist. No REST route calls this today
+// (no caller has asked for one) — it exists so a future admin/owner-facing
+// endpoint has a ready-made write path, mirroring SetThought's shape.
+func (r *Registry) SetPublic(appID string, public bool) error {
+	if !ValidAppID(appID) {
+		return fmt.Errorf("toolschema: invalid appId %q", appID)
+	}
+	res := r.db.Model(&appRow{}).Where("app_id = ?", appID).Update("public", public)
+	if res.Error != nil {
+		return fmt.Errorf("toolschema: set public for %s: %w", appID, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("toolschema: no such app %q", appID)
+	}
+	return r.Reload()
+}
+
 // OwnedBy returns every appId owned by ownerID, for a user's app list.
 func (r *Registry) OwnedBy(ownerID int64) ([]string, error) {
 	var rows []appRow
@@ -220,7 +258,7 @@ func loadAllApps(db *gorm.DB) (map[string]*App, error) {
 		if row.Thought != nil {
 			thought = *row.Thought
 		}
-		apps[row.AppID] = &App{AppID: row.AppID, Tools: []Tool{}, Thought: thought}
+		apps[row.AppID] = &App{AppID: row.AppID, Tools: []Tool{}, Thought: thought, Public: row.Public}
 	}
 
 	var toolRows []toolRow
@@ -266,68 +304,86 @@ func loadAllApps(db *gorm.DB) (map[string]*App, error) {
 	return apps, nil
 }
 
-// saveApp upserts the app row and replaces its entire tool set inside one
-// transaction, so a Registry.Reload can never observe a half-written
-// save (e.g. old tools deleted but new ones not yet inserted).
-func saveApp(db *gorm.DB, app *App) error {
+// saveTool upserts the single (app_id, tool.Name) row inside one
+// transaction, so a concurrent Reload can never observe a half-written
+// tools table (there's really only one row here, but the existence check
+// below and the insert must still commit or fail together).
+func saveTool(db *gorm.DB, appID string, tool Tool) error {
 	return db.Transaction(func(tx *gorm.DB) error {
-		// OnConflict DoNothing here is deliberate: it must only ever create
-		// the row's app_id, never touch owner_id/thought if the row already
-		// exists (Registry.Create/SetThought own those). A bare Create()
-		// without this clause would error on conflict instead.
-		if err := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "app_id"}},
-			DoNothing: true,
-		}).Create(&appRow{AppID: app.AppID}).Error; err != nil {
-			return fmt.Errorf("toolschema: upsert app %s: %w", app.AppID, err)
+		// Must fail, not silently write an orphaned tool row, if appID
+		// doesn't exist yet — mirrors the check the old saveApp made before
+		// this function replaced it (see git history): apps.owner_id is
+		// NOT NULL (schema.sql), and a tool row for an app_id with no
+		// matching apps row would either violate the tools.app_id foreign
+		// key or, on an older schema still missing that constraint,
+		// silently create data with nothing to own it. In the real request
+		// path this is unreachable — PUT /console/apps/{appId}/tools/
+		// {toolName} runs behind withOwnedApp (console.go), which 404s a
+		// nonexistent appId before saveTool's handler ever calls this —
+		// this check only fires for a caller that bypasses that standard
+		// flow, and it should get a clear error instead of quietly
+		// corrupting data.
+		var exists bool
+		if err := tx.Raw(`SELECT EXISTS(SELECT 1 FROM apps WHERE app_id = ?)`, appID).Scan(&exists).Error; err != nil {
+			return fmt.Errorf("toolschema: check app %s exists: %w", appID, err)
+		}
+		if !exists {
+			return fmt.Errorf("toolschema: app %q does not exist; create it first via POST /console/apps", appID)
 		}
 
-		// Replace-all semantics: saveApp always receives the tool editor's
-		// full intended tool list, so deleting the old set and inserting the
-		// new one is simpler and less error-prone than diffing for
-		// adds/removes/renames.
-		if err := tx.Where("app_id = ?", app.AppID).Delete(&toolRow{}).Error; err != nil {
-			return fmt.Errorf("toolschema: clear tools for %s: %w", app.AppID, err)
+		paramsJSON, err := json.Marshal(tool.Parameters)
+		if err != nil {
+			return fmt.Errorf("toolschema: marshal parameters for %s: %w", tool.Name, err)
 		}
-
-		rows := make([]toolRow, 0, len(app.Tools))
-		for i, t := range app.Tools {
-			paramsJSON, err := json.Marshal(t.Parameters)
+		var returnsJSON []byte
+		if tool.Returns != nil {
+			returnsJSON, err = json.Marshal(tool.Returns)
 			if err != nil {
-				return fmt.Errorf("toolschema: marshal parameters for %s: %w", t.Name, err)
+				return fmt.Errorf("toolschema: marshal returns for %s: %w", tool.Name, err)
 			}
-			var returnsJSON []byte
-			if t.Returns != nil {
-				returnsJSON, err = json.Marshal(t.Returns)
-				if err != nil {
-					return fmt.Errorf("toolschema: marshal returns for %s: %w", t.Name, err)
-				}
-			}
-			kind := t.Kind
-			if kind == "" {
-				kind = ToolKindAction
-			}
-			var backendDispatchJSON []byte
-			if t.BackendDispatch != nil {
-				backendDispatchJSON, err = json.Marshal(t.BackendDispatch)
-				if err != nil {
-					return fmt.Errorf("toolschema: marshal backend_dispatch for %s: %w", t.Name, err)
-				}
-			}
-			var sourceTemplate *string
-			if t.SourceTemplate != "" {
-				sourceTemplate = &t.SourceTemplate
-			}
-			rows = append(rows, toolRow{
-				AppID: app.AppID, Name: t.Name, Description: t.Description,
-				Parameters: paramsJSON, Returns: returnsJSON, Kind: string(kind),
-				BackendDispatch: backendDispatchJSON, Position: i, SourceTemplate: sourceTemplate,
-			})
 		}
-		if len(rows) > 0 {
-			if err := tx.Create(&rows).Error; err != nil {
-				return fmt.Errorf("toolschema: insert tools for %s: %w", app.AppID, err)
+		kind := tool.Kind
+		if kind == "" {
+			kind = ToolKindAction
+		}
+		var backendDispatchJSON []byte
+		if tool.BackendDispatch != nil {
+			backendDispatchJSON, err = json.Marshal(tool.BackendDispatch)
+			if err != nil {
+				return fmt.Errorf("toolschema: marshal backend_dispatch for %s: %w", tool.Name, err)
 			}
+		}
+		var sourceTemplate *string
+		if tool.SourceTemplate != "" {
+			sourceTemplate = &tool.SourceTemplate
+		}
+
+		// position defaults to "after every existing tool on this app" for
+		// a brand-new name; ON CONFLICT's DoUpdates list deliberately
+		// excludes position, so updating an existing tool leaves its
+		// current position alone instead of moving it to the end.
+		var maxPosition sql.NullInt64
+		if err := tx.Raw(`SELECT MAX(position) FROM tools WHERE app_id = ?`, appID).Scan(&maxPosition).Error; err != nil {
+			return fmt.Errorf("toolschema: resolve position for %s: %w", tool.Name, err)
+		}
+		position := 0
+		if maxPosition.Valid {
+			position = int(maxPosition.Int64) + 1
+		}
+
+		row := toolRow{
+			AppID: appID, Name: tool.Name, Description: tool.Description,
+			Parameters: paramsJSON, Returns: returnsJSON, Kind: string(kind),
+			BackendDispatch: backendDispatchJSON, Position: position, SourceTemplate: sourceTemplate,
+		}
+		err = tx.Clauses(clause.OnConflict{
+			Columns: []clause.Column{{Name: "app_id"}, {Name: "name"}},
+			DoUpdates: clause.AssignmentColumns([]string{
+				"description", "parameters", "returns", "kind", "backend_dispatch", "source_template",
+			}),
+		}).Create(&row).Error
+		if err != nil {
+			return fmt.Errorf("toolschema: upsert tool %s.%s: %w", appID, tool.Name, err)
 		}
 		return nil
 	})
