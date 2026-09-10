@@ -6,6 +6,85 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.4.1
+
+Breaking changes:
+
+- `tools.id BIGSERIAL` is now the table's primary key; `(app_id, name)`
+  is downgraded to a `UNIQUE` constraint (existing rows are backfilled
+  automatically). `toolschema.Registry.SaveTool(appID string, tool Tool)
+  error` is now `SaveTool(appID string, tool Tool) (id int64, err error)`
+  — every caller must handle the new return value. `Registry.Create
+  (appID string, ownerID int64) error` gains a required third parameter,
+  `public bool` (pass `false` for the previous behavior). A new method,
+  `Registry.DeleteToolByID(appID string, id int64) error`, is added
+  alongside the existing name-based `DeleteTool`.
+- Console REST: `PUT /console/apps/{appId}/tools/{toolName}` now returns
+  `{..., "toolId": number}` in addition to the existing `appSummary`
+  fields (additive, not itself breaking for a JSON consumer) — but the
+  matching `PUT`/`DELETE /console/apps/{appId}/tools/id/{toolId}` routes
+  are new, and a tool's rename must go through them once the tool has a
+  `toolId` (see "Why" below); repeatedly calling the name-based route to
+  edit an existing tool no longer renames it in place. `POST
+  /console/apps` accepts an optional `"public": boolean` field (defaults
+  to `false`, matching the schema's existing default — no behavior change
+  for an existing caller that omits it).
+- `onagent app create` gains `-public`; `apiClient.createApp(appID
+  string)` is now `createApp(appID string, public bool)`.
+
+Why: renaming a tool used to mean deleting the row under its old
+`(app_id, name)` key and inserting a new one under the new name — the
+only two operations a name-only primary key allows. If the insert failed
+after the delete had already committed (a network blip, a validation
+error on the new name), the tool vanished from the app entirely, under
+neither its old nor new name, with no trace. `tools.id` gives
+`Registry.SaveTool` an identity to update in place: `UPDATE tools SET
+name = ?, ... WHERE id = ?` changes the name atomically, with no window
+where the tool doesn't exist. The console editor picks up a tool's id
+from its first save's response and uses the new id-based routes for
+every subsequent edit; the CLI's `tool create` (a hand-authored
+`tool.yaml` has no id to give) keeps using the name-based route, which
+still upserts by name exactly as before — this only changes what happens
+when the console (not the CLI) edits an existing tool's name.
+
+Other fixes:
+
+- Fix the console editor's tool-save autosave silently dropping edits
+  made just before switching to another view. It used to save 1.2s after
+  the last keystroke; if a switch to a different sub-view (Thought,
+  Playground, another tool) landed inside that window, the switch's own
+  re-fetch overwrote local state with the server's still-stale copy
+  before the pending timer ever fired — no error, no indication anything
+  was lost. Tool edits now save only on an explicit Save action (both the
+  desktop `ToolForm` and the mobile `ToolEditSheet` already had, or now
+  have, their own Save button/gesture), and switching views while a tool
+  has unsaved edits now asks for confirmation before discarding them.
+- `backend/internal/console/tool-builder-tools.yaml`: brought back in
+  sync with the `thought` actually live on the local dev deployment,
+  which had drifted ahead of the checked-in copy (a prior direct edit,
+  never written back to the repo) — restores prompt guidance that had
+  been lost from this file: parameters/returns objects must always
+  include an explicit `"type"` even with zero properties, every JSON
+  Schema `"type"` value must be lowercase, and a fixed-choice string
+  parameter should use `"enum"` rather than prose description.
+- `docs/ai-tool-builder-design-2026-09-09.md` is removed — its content
+  (the AI tool builder's design) is now fully superseded by the actual
+  implementation (`aiToolGenerator.ts`, `AiToolGeneratorSheet.tsx`,
+  `tool-builder-tools.yaml`) and its own doc comments; stale references
+  to this file in `aiToolGenerator.ts`, `AiToolGeneratorSheet.tsx`, and
+  `docs/known-issues-pending-discussion.md` were updated to point at the
+  actual source files instead.
+- `docs/known-issues-pending-discussion.md`: records two confirmed,
+  not-yet-fixed issues found while working on this release — `onagent
+  tool list`'s output (a full `App`: `appId`/`tools[]`/`thought`) cannot
+  actually be piped into `onagent tool create` (which reads a single
+  `Tool`, no wrapper) despite both commands' own doc comments claiming a
+  round trip works; and `aiToolGenerator.ts` hand-rolls its own WebSocket
+  protocol handling (hello/ack/prompt/tool_call/tool_result) instead of
+  reusing `Playground.tsx`'s already-working implementation, which is
+  judged to be the root cause that let the `tool_call`/`tool_query`
+  mismatch bug (fixed in v0.4.0) go unnoticed until it shipped.
+
 ## v0.4.0
 
 Breaking changes:
