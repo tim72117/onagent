@@ -369,6 +369,133 @@ func TestSetTierUpsertsOnConflict(t *testing.T) {
 	}
 }
 
+// TestCheck_PublicAppGatesOnConnectingUserNotOwner is a regression test for
+// a fixed gap (see internal/console/playground.go's ResolveApp and
+// internal/ws/session.go's handlePrompt, both now calling
+// Check(ctx, userID) instead of the old Check(ctx, appID)): Check used to
+// take only appID and always resolve that app's OWNER's standing internally
+// (see the old ownerStanding, now userStanding, which resolves whichever
+// userID it's given directly) — it had no way to ask "is THIS caller
+// allowed", which is exactly what a public app's Playground/enforcement path
+// needs once a non-owner visitor is involved.
+//
+// This exercises both directions on a Public app with two distinct users
+// (owner over quota, visitor never having spent a token of their own):
+//
+//  1. Check(ownerID) reflects the OWNER's own (over-quota) standing.
+//  2. Check(visitorID) reflects the VISITOR's own (well under quota)
+//     standing — unaffected by the owner's standing, proving the two are
+//     independently addressable now that Check takes a userID directly
+//     rather than resolving one from an appID's owner.
+//  3. The visitor spending tokens of their own (mirroring Record's actual
+//     per-connecting-user billing — see want.go's Complete -> quota.Record
+//     using req.UserID) lands under the VISITOR's own ledger and never
+//     touches the owner's Used total, and Check(visitorID) reflects that
+//     spend while Check(ownerID) stays unmoved by it — Check and Record now
+//     agree on whose ledger a given connection reads/writes.
+func TestCheck_PublicAppGatesOnConnectingUserNotOwner(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, _ := database.DB()
+	conn := sqlDB
+	svc := New(database)
+	ctx := context.Background()
+
+	const ownerID = 999910
+	const visitorID = 999911
+	const appID = "quota-public-app-owner-vs-visitor"
+	makeTestUser(t, conn, ownerID, "quota-public-owner@example.com")
+	makeTestUser(t, conn, visitorID, "quota-public-visitor@example.com")
+	makeTestApp(t, conn, appID, ownerID)
+
+	// Force the OWNER over quota deterministically, the same way
+	// TestAPIKeyResolver_OverQuotaRejectsHandshake does: a per-user
+	// monthly_quota override of 0 makes any nonnegative Used trip
+	// "used < limit" to false without needing 100+ real usage_events rows.
+	if err := svc.SetTier(ctx, ownerID, TierFree); err != nil {
+		t.Fatalf("SetTier(owner): %v", err)
+	}
+	if _, err := conn.Exec(`UPDATE subscriptions SET monthly_quota = 0, started_at = now() - interval '1 day' WHERE user_id = $1`, ownerID); err != nil {
+		t.Fatalf("force zero quota for owner: %v", err)
+	}
+
+	// The visitor is on a normal, well-under-limit tier of their own, and
+	// has never used this (or any) app before — a fresh, well-standing user
+	// by every measure except "did they happen to pick an app whose owner is
+	// over quota".
+	if err := svc.SetTier(ctx, visitorID, TierFree); err != nil {
+		t.Fatalf("SetTier(visitor): %v", err)
+	}
+	if _, err := conn.Exec(`UPDATE subscriptions SET started_at = now() - interval '1 day' WHERE user_id = $1`, visitorID); err != nil {
+		t.Fatalf("backdate started_at for visitor: %v", err)
+	}
+
+	// 1. Check(ownerID) reflects the owner's own over-quota standing.
+	ownerDec, err := svc.Check(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("Check(owner): %v", err)
+	}
+	if ownerDec.Allowed {
+		t.Errorf("Check(ownerID) Allowed = true, want false (owner forced to a zero quota override)")
+	}
+
+	// 2. Check(visitorID) is NOT gated by the owner's standing at all — the
+	// visitor has their own, independent, well-under-limit standing. This is
+	// the actual fix: before it, the only Check available was Check(appID),
+	// which always answered for the app's owner regardless of who was
+	// really connected.
+	visitorDec, err := svc.Check(ctx, visitorID)
+	if err != nil {
+		t.Fatalf("Check(visitor): %v", err)
+	}
+	if !visitorDec.Allowed {
+		t.Errorf("Check(visitorID) Allowed = false, want true — a visitor who has never spent a token of "+
+			"their own quota must not be blocked just because appID's OWNER happens to be over theirs (got Used=%d Limit=%d)",
+			visitorDec.Used, visitorDec.Limit)
+	}
+
+	// 3. The visitor spends tokens of their own (mirroring Record's actual
+	// per-connecting-user billing). Confirm this lands under the VISITOR's
+	// own ledger, is reflected by Check(visitorID), and never touches the
+	// owner's Used total or Check(ownerID)'s decision.
+	if err := svc.Record(ctx, appID, visitorID, "req-visitor-spend-1", &types.Usage{TotalTokens: 500}); err != nil {
+		t.Fatalf("Record(visitor spend): %v", err)
+	}
+
+	visitorStanding, err := svc.StandingFor(ctx, visitorID)
+	if err != nil {
+		t.Fatalf("StandingFor(visitor): %v", err)
+	}
+	if visitorStanding.Used != 500 {
+		t.Errorf("visitor's own Used after Record = %d, want 500 — Record must bill the connecting user, not appID's owner", visitorStanding.Used)
+	}
+
+	ownerStandingAfter, err := svc.StandingFor(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("StandingFor(owner): %v", err)
+	}
+	if ownerStandingAfter.Used != 0 {
+		t.Errorf("owner's Used after the VISITOR's Record call = %d, want 0 (unchanged) — "+
+			"the visitor's spend must not appear on the owner's ledger", ownerStandingAfter.Used)
+	}
+
+	visitorDecAfter, err := svc.Check(ctx, visitorID)
+	if err != nil {
+		t.Fatalf("Check(visitor, after spend): %v", err)
+	}
+	if visitorDecAfter.Used != 500 {
+		t.Errorf("Check(visitorID).Used after the visitor's own Record call = %d, want 500", visitorDecAfter.Used)
+	}
+
+	ownerDecAfter, err := svc.Check(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("Check(owner, after visitor's spend): %v", err)
+	}
+	if ownerDecAfter.Allowed != ownerDec.Allowed {
+		t.Errorf("Check(ownerID) changed from Allowed:%v to Allowed:%v after the VISITOR (not the owner) recorded usage — "+
+			"Check(ownerID) must be unaffected by another user's spend", ownerDec.Allowed, ownerDecAfter.Allowed)
+	}
+}
+
 // TestCountUsersAndListUsers covers admin.go's two read endpoints together:
 // CountUsers' delta across creating known test users (never an absolute
 // count, since the database may hold unrelated real data), and ListUsers

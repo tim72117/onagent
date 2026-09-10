@@ -100,31 +100,45 @@ type Decision struct {
 // allowed is the decision returned whenever no enforcement applies.
 var allowed = Decision{Allowed: true}
 
-// Check reports whether a new billable prompt is permitted for the owner of
-// appID right now. A nil Service (disabled) always allows. An app with no
-// owner on record (owner_id NULL, or the app is unknown) also always
-// allows: quota is a property of a paying user, and an unowned app has no
-// user to bill. Any database error is returned to the caller to decide
-// fail-open vs. fail-closed at the call site (see ws.Handler and
-// ws.Session, which log-and-allow so a transient DB blip never wrongly
-// blocks a legitimate user).
-func (s *Service) Check(ctx context.Context, appID string) (Decision, error) {
+// Check reports whether a new billable prompt is permitted for userID right
+// now. A nil Service (disabled) always allows. A userID with no resolvable
+// standing (unknown user id — should not happen for a real caller, see each
+// AppResolver's own doc comment on where userID comes from) also always
+// allows: quota is a property of a paying user, and there is no one to bill.
+// Any database error is returned to the caller to decide fail-open vs.
+// fail-closed at the call site (see ws.Handler and ws.Session, which
+// log-and-allow so a transient DB blip never wrongly blocks a legitimate
+// user).
+//
+// userID is deliberately NOT derived from appID here (that was this
+// function's original design, via ownerStanding — an app's OWNER's
+// standing, regardless of who is actually connected). Every caller now
+// resolves userID itself at the point it already knows who is billed for
+// this specific connection — APIKeyResolver.ResolveApp resolves the app's
+// owner (a real end-user site has no billable account of its own),
+// internal/console's playgroundResolver resolves the signed-in Playground
+// visitor (who, for a Public app, may be a completely different person from
+// the app's owner) — see AppResolver.ResolveApp's own doc comment. This is
+// what closes the gap where a public app's quota gate checked the owner's
+// standing while quota.Record billed the connecting visitor: the two were
+// silently checking/billing two different people for the same connection.
+func (s *Service) Check(ctx context.Context, userID int64) (Decision, error) {
 	if s == nil {
 		return allowed, nil
 	}
 
-	st, ok, err := s.ownerStanding(ctx, appID)
+	st, ok, err := s.userStanding(ctx, userID)
 	if err != nil {
 		return Decision{}, err
 	}
 	if !ok {
-		// App unknown or unowned — nobody to charge.
+		// Unknown user id — nobody to charge.
 		return allowed, nil
 	}
 
 	limit := st.limit()
 	periodStart := currentPeriodStart(st.startedAt, time.Now())
-	used, err := s.usageSince(ctx, st.ownerID, periodStart)
+	used, err := s.usageSince(ctx, userID, periodStart)
 	if err != nil {
 		return Decision{}, err
 	}
@@ -250,32 +264,21 @@ func (s *Service) StandingFor(ctx context.Context, ownerID int64) (Standing, err
 		return Standing{}, fmt.Errorf("quota: service is disabled")
 	}
 
-	var scanned standingScanRow
-	// started_at's COALESCE fallback is the SQL now() function, evaluated by
-	// Postgres at query execution time — deliberately not a Go-side
-	// time.Now() bound as a parameter, which would evaluate slightly
-	// earlier and shift the period-boundary race this package's tests
-	// already document (see quota_integration_test.go's comments on
-	// COALESCE(sub.started_at, now()) timing).
-	res := s.db.WithContext(ctx).
-		Table("users u").
-		Select("COALESCE(sub.tier, ?) AS tier, sub.monthly_quota AS quota_override, COALESCE(sub.started_at, now()) AS started_at", string(DefaultTier)).
-		Joins("LEFT JOIN subscriptions sub ON sub.user_id = u.id").
-		Where("u.id = ?", ownerID).
-		Scan(&scanned)
-	if res.Error != nil {
-		return Standing{}, fmt.Errorf("quota: resolve standing: %w", res.Error)
+	// Deliberately NOT er.RowsAffected == 0 semantics — StandingFor has
+	// always run this query directly and treated a missing users row as an
+	// error condition (gorm.ErrRecordNotFound below), unlike userStanding's
+	// ok=false (which Check treats as "nobody to charge", not an error).
+	// Kept as its own query rather than delegating to userStanding for that
+	// reason: the two callers want different behavior on a not-found user,
+	// not just a different return shape.
+	st, ok, err := s.userStanding(ctx, ownerID)
+	if err != nil {
+		return Standing{}, fmt.Errorf("quota: resolve standing: %w", err)
 	}
-	if res.RowsAffected == 0 {
+	if !ok {
 		return Standing{}, fmt.Errorf("quota: resolve standing: %w", gorm.ErrRecordNotFound)
 	}
-
-	st := ownerStandingRow{ownerID: ownerID, tier: Tier(scanned.Tier), startedAt: scanned.StartedAt}
-	if scanned.QuotaOverride != nil {
-		v := int(*scanned.QuotaOverride)
-		st.quotaOverride = &v
-	}
-	startedAt := scanned.StartedAt
+	startedAt := st.startedAt
 
 	now := time.Now()
 	periodStart := currentPeriodStart(startedAt, now)
@@ -295,9 +298,13 @@ func (s *Service) StandingFor(ctx context.Context, ownerID int64) (Standing, err
 	}, nil
 }
 
-// ownerStanding resolves appID to its owner and the billing facts needed to
-// compute a limit, in one query. ok is false when the app is unknown or has
-// no owner_id (an unowned app is not billable).
+// userStanding resolves userID directly to the billing facts needed to
+// compute a limit, in one query — the same users/subscriptions join
+// StandingFor runs, but returning the raw row (pre-limit, pre-Used) rather
+// than an assembled Standing, since Check also needs periodStart before it
+// can call usageSince. ok is false when userID has no row in `users` at all
+// (should not happen for a real caller — see Check's own doc comment on
+// where userID comes from).
 //
 // The limit itself is NOT read from the row — it is derived by Check from
 // the tier via PlanFor, so editing a plan applies to everyone on that tier
@@ -308,21 +315,21 @@ func (s *Service) StandingFor(ctx context.Context, ownerID int64) (Standing, err
 // NULL for everyone by default and, when set, wins over the plan's number —
 // this is the manual "grant this one user more" lever, without which the
 // plan value applies.
-func (s *Service) ownerStanding(ctx context.Context, appID string) (st ownerStandingRow, ok bool, err error) {
+func (s *Service) userStanding(ctx context.Context, userID int64) (st userStandingRow, ok bool, err error) {
 	var scanned standingScanRow
 	res := s.db.WithContext(ctx).
-		Table("apps a").
-		Select("a.owner_id, COALESCE(sub.tier, ?) AS tier, sub.monthly_quota AS quota_override, COALESCE(sub.started_at, now()) AS started_at", string(DefaultTier)).
-		Joins("LEFT JOIN subscriptions sub ON sub.user_id = a.owner_id").
-		Where("a.app_id = ? AND a.owner_id IS NOT NULL", appID).
+		Table("users u").
+		Select("COALESCE(sub.tier, ?) AS tier, sub.monthly_quota AS quota_override, COALESCE(sub.started_at, now()) AS started_at", string(DefaultTier)).
+		Joins("LEFT JOIN subscriptions sub ON sub.user_id = u.id").
+		Where("u.id = ?", userID).
 		Scan(&scanned)
 	if res.Error != nil {
-		return ownerStandingRow{}, false, fmt.Errorf("quota: resolve owner standing: %w", res.Error)
+		return userStandingRow{}, false, fmt.Errorf("quota: resolve user standing: %w", res.Error)
 	}
 	if res.RowsAffected == 0 {
-		return ownerStandingRow{}, false, nil
+		return userStandingRow{}, false, nil
 	}
-	st = ownerStandingRow{ownerID: scanned.OwnerID, tier: Tier(scanned.Tier), startedAt: scanned.StartedAt}
+	st = userStandingRow{tier: Tier(scanned.Tier), startedAt: scanned.StartedAt}
 	if scanned.QuotaOverride != nil {
 		v := int(*scanned.QuotaOverride)
 		st.quotaOverride = &v
@@ -330,10 +337,9 @@ func (s *Service) ownerStanding(ctx context.Context, appID string) (st ownerStan
 	return st, true, nil
 }
 
-// ownerStandingRow is the raw billing facts for an app's owner (see
-// ownerStanding). limit derivation happens in Check, not here.
-type ownerStandingRow struct {
-	ownerID       int64
+// userStandingRow is the raw billing facts for a user (see userStanding).
+// limit derivation happens in Check, not here.
+type userStandingRow struct {
 	tier          Tier
 	quotaOverride *int // nil unless a per-user override is set on the row
 	startedAt     time.Time
@@ -342,7 +348,7 @@ type ownerStandingRow struct {
 // limit returns the effective monthly token allowance: the per-user
 // override if one is set, otherwise the tier's plan value. Centralizing
 // this here keeps "override beats plan" in one place.
-func (r ownerStandingRow) limit() int {
+func (r userStandingRow) limit() int {
 	if r.quotaOverride != nil {
 		return *r.quotaOverride
 	}

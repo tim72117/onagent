@@ -145,15 +145,15 @@ func (s *Service) ListUsers(ctx context.Context) ([]UserSummary, error) {
 	}
 
 	type rawUser struct {
-		st        ownerStandingRow
+		id        int64
+		st        userStandingRow
 		email     string
 		createdAt time.Time
 		hasSub    bool // false = no subscriptions row at all, not even free
 	}
 	raw := make([]rawUser, 0, len(scanned))
 	for _, row := range scanned {
-		ru := rawUser{email: row.Email, createdAt: row.CreatedAt}
-		ru.st.ownerID = row.ID
+		ru := rawUser{id: row.ID, email: row.Email, createdAt: row.CreatedAt}
 		if row.Tier != nil && row.StartedAt != nil {
 			ru.hasSub = true
 			ru.st.tier = Tier(*row.Tier)
@@ -198,20 +198,20 @@ func (s *Service) ListUsers(ctx context.Context) ([]UserSummary, error) {
 			// usage this account has ever accumulated. Report zero rather
 			// than a misleading number.
 			out = append(out, UserSummary{
-				ID:        ru.st.ownerID,
+				ID:        ru.id,
 				Email:     ru.email,
 				CreatedAt: ru.createdAt,
-				AppCount:  appCountByOwner[ru.st.ownerID],
+				AppCount:  appCountByOwner[ru.id],
 			})
 			continue
 		}
 		periodStart := currentPeriodStart(ru.st.startedAt, now)
-		used, err := s.usageSince(ctx, ru.st.ownerID, periodStart)
+		used, err := s.usageSince(ctx, ru.id, periodStart)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, UserSummary{
-			ID:            ru.st.ownerID,
+			ID:            ru.id,
 			Email:         ru.email,
 			Tier:          ru.st.tier,
 			PlanName:      PlanFor(ru.st.tier).Name,
@@ -219,7 +219,7 @@ func (s *Service) ListUsers(ctx context.Context) ([]UserSummary, error) {
 			Used:          used,
 			QuotaOverride: ru.st.quotaOverride,
 			CreatedAt:     ru.createdAt,
-			AppCount:      appCountByOwner[ru.st.ownerID],
+			AppCount:      appCountByOwner[ru.id],
 		})
 	}
 	return out, nil

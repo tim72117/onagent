@@ -296,7 +296,15 @@ func (s *Session) handlePrompt(ctx context.Context, env protocol.Envelope) {
 	// refusal is a coded error on this one prompt (SDK branches on
 	// protocol.CodeQuotaExceeded). A DB error is fail-open (log and allow),
 	// matching the handshake: a database blip must not block a paying user.
-	if dec, err := s.quota.Check(ctx, app.AppID); err != nil {
+	//
+	// Checked against s.userID (this connection's billing attribution, set
+	// once at handshake time — see AppResolver.ResolveApp's doc comment),
+	// not app.AppID: Check now takes a userID directly instead of resolving
+	// one from the app's owner internally, so this gate is scoped to
+	// whoever is actually connected — the real backstop for a public app's
+	// visitor, not just the app owner's standing (see quota.Check's own
+	// doc comment on the gap this closes).
+	if dec, err := s.quota.Check(ctx, s.userID); err != nil {
 		s.log.Warn("quota check failed, allowing (fail-open)", "session", s.id, "app", app.AppID, "err", err)
 	} else if !dec.Allowed {
 		s.log.Info("prompt rejected: over quota", "session", s.id, "app", app.AppID, "used", dec.Used, "limit", dec.Limit)

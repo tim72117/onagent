@@ -162,6 +162,16 @@ func (a *APIKeyResolver) ResolveApp(r *http.Request) (appID, sessionID string, u
 	// mirrors how HTTP APIs report rate/quota limits; the SDK sees the
 	// handshake fail and its onError/reconnect path runs.
 	//
+	// Checked against ownerID (this connection's billing attribution, see
+	// AppResolver's doc comment), not appID — Check now takes a userID
+	// directly rather than resolving one from appID's owner internally,
+	// closing the gap where a public app's visitor was gated on the app
+	// OWNER's standing while quota.Record billed the visitor (see quota.
+	// Check's own doc comment). APIKeyResolver's ownerID and the userID
+	// this method bills to are the same value, so this line's behavior is
+	// unchanged for the real SDK path — only playgroundResolver's visitor
+	// path actually differs now.
+	//
 	// Deliberately NOT r.Context(): that context is tied to this HTTP
 	// request/upgrade, which can be canceled by the client disconnecting or
 	// retrying the handshake before this query returns — observed in
@@ -169,7 +179,7 @@ func (a *APIKeyResolver) ResolveApp(r *http.Request) (appID, sessionID string, u
 	// quick reconnect, not an actual DB problem. A short-lived detached
 	// context makes this check's lifetime match the query itself.
 	checkCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	dec, err := a.Quota.Check(checkCtx, result.AppID)
+	dec, err := a.Quota.Check(checkCtx, ownerID)
 	cancel()
 	if err != nil {
 		a.Log.Warn("ws handshake: quota check failed, allowing (fail-open)", "appId", result.AppID, "err", err)

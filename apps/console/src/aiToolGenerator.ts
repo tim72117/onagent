@@ -5,13 +5,15 @@ import { randomRequestId } from './randomRequestId'
 // Talks to the *existing* Playground WebSocket endpoint
 // (backend/internal/console/playground.go) exactly the way Playground.tsx
 // already does — hello, wait for ack, prompt, then answer the resulting
-// tool_query — rather than adding any new backend endpoint. tool-builder's
-// only tool is propose_tool (kind: query, per
-// docs/ai-tool-builder-design-2026-09-09.md, so the backend sends
-// TypeToolQuery, not TypeToolCall — see protocol/message.go's doc comment
-// on the distinction). ws.Session.AskInteraction blocks waiting for a
+// tool_call — rather than adding any new backend endpoint. tool-builder's
+// only tool is propose_tool (kind: action, per
+// backend/internal/console/tool-builder-tools.yaml: its acknowledgement is
+// never reasoned about further, so it's fire-and-forget, not a blocking
+// query — see toolschema.Tool.Kind's doc comment). Fire-and-forget still
+// means the backend's ws.Session.AskInteraction blocks waiting for a
 // tool_result regardless of Kind, same as Playground.tsx's own
-// handleToolMessage documents, so this always sends one back.
+// handleToolMessage documents, so this always sends one back — it's just
+// that nothing feeds the *content* of that result back into the LLM.
 //
 // TOOL_BUILDER_APP_ID is still hardcoded/shared, not yet provisioned per
 // user or hidden from the normal app list — see
@@ -88,7 +90,7 @@ export function generateToolFromDescription(description: string): Promise<Tool> 
         return
       }
 
-      if (env.type === 'tool_query') {
+      if (env.type === 'tool_call') {
         const payload = env.payload as { toolName?: string; args?: unknown } | undefined
         if (payload?.toolName !== 'propose_tool') return
 

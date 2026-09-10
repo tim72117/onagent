@@ -124,39 +124,37 @@ func (p *playgroundResolver) ResolveApp(r *http.Request) (appID, sessionID strin
 	}
 
 	// Cheap early gate, mirroring APIKeyResolver.ResolveApp: refuse to even
-	// upgrade the connection if this app's owner is already over quota, so
-	// an exhausted account can't keep opening fresh Playground sockets.
+	// upgrade the connection if THIS CALLER is already over quota, so an
+	// exhausted account can't keep opening fresh Playground sockets.
 	// ws.Session.handlePrompt still enforces this per-prompt regardless —
-	// that's the real backstop an owner can't bypass by reconnecting — this
+	// that's the real backstop a user can't bypass by reconnecting — this
 	// is purely an earlier, cheaper rejection. A DB error here is fail-open
 	// (log and allow), matching APIKeyResolver: a transient database blip
-	// must not block an owner from testing their own app. Deliberately not
+	// must not block a user from testing an app. Deliberately not
 	// r.Context() for the same reason APIKeyResolver isn't either — see its
 	// comment on quick-reconnect "context canceled" false positives.
 	//
-	// KNOWN GAP: this check is still scoped to the APP'S OWNER
-	// (quota.Service.Check resolves appID -> owner internally), not to
-	// user — the caller ownedOrPublicApp just admitted, who for a public
-	// app may be a completely different, non-owner visitor. A non-owner
-	// exercising someone else's over-quota public app is therefore still
-	// let through the handshake gate (or blocked by it) based on the
-	// OWNER's standing, not their own. This is acceptable for now: it's
-	// purely a cheaper, earlier rejection layered in front of the real
-	// enforcement point below (per-prompt, via ws.Session.handlePrompt ->
-	// WantService.Complete -> quota.Record), which DOES bill correctly to
-	// the connecting user (see userID threading in ws/handler.go and
-	// ws/session.go) once this task's Record(userID) change lands. Fixing
-	// Check itself to be visitor-scoped would mean widening quota.Service's
-	// whole model from per-app-owner to per-connecting-user, which is a
-	// larger change out of scope here.
+	// Checked against user.ID, not appID: Check now takes a userID directly
+	// rather than resolving one from appID's owner internally (see quota.
+	// Check's own doc comment). This used to be quota.Check(checkCtx,
+	// appID) — always the APP'S OWNER's standing, even for a Public app's
+	// non-owner visitor (ownedOrPublicApp just admitted one above) — so a
+	// visitor's own usage was never actually checked here, only whether the
+	// owner happened to be over quota. That silently let a visitor spend
+	// past their own allowance for free whenever the owner still had room,
+	// and, symmetrically, could block a visitor who had never used a token
+	// of their own just because the OWNER was over. Checking user.ID here
+	// makes this gate agree with quota.Record's billing target below (both
+	// are "whoever is actually connected"), for both the app owner testing
+	// their own app and a visitor trying someone else's public one.
 	checkCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	dec, err := p.quota.Check(checkCtx, appID)
+	dec, err := p.quota.Check(checkCtx, user.ID)
 	cancel()
 	if err != nil {
-		p.log.Warn("playground handshake: quota check failed, allowing (fail-open)", "appId", appID, "err", err)
+		p.log.Warn("playground handshake: quota check failed, allowing (fail-open)", "appId", appID, "userId", user.ID, "err", err)
 	} else if !dec.Allowed {
-		p.log.Info("playground handshake rejected: owner over quota", "appId", appID, "used", dec.Used, "limit", dec.Limit)
-		return "", "", 0, false, "monthly quota exceeded for this app's plan", http.StatusTooManyRequests
+		p.log.Info("playground handshake rejected: caller over quota", "appId", appID, "userId", user.ID, "used", dec.Used, "limit", dec.Limit)
+		return "", "", 0, false, "monthly quota exceeded for your plan", http.StatusTooManyRequests
 	}
 
 	// PG-<userID>-<appID> gives this playground run its own want

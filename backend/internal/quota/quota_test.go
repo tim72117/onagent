@@ -201,11 +201,11 @@ func TestStandingForPeriodEnd(t *testing.T) {
 	}
 }
 
-func TestOwnerStandingLimit(t *testing.T) {
+func TestUserStandingLimit(t *testing.T) {
 	planFree := PlanFor(TierFree).MonthlyTokens
 
 	t.Run("no override uses the tier plan", func(t *testing.T) {
-		r := ownerStandingRow{tier: TierFree, quotaOverride: nil}
+		r := userStandingRow{tier: TierFree, quotaOverride: nil}
 		if got := r.limit(); got != planFree {
 			t.Errorf("limit() = %d, want plan value %d", got, planFree)
 		}
@@ -213,14 +213,14 @@ func TestOwnerStandingLimit(t *testing.T) {
 
 	t.Run("override wins over the plan", func(t *testing.T) {
 		override := planFree + 999
-		r := ownerStandingRow{tier: TierFree, quotaOverride: &override}
+		r := userStandingRow{tier: TierFree, quotaOverride: &override}
 		if got := r.limit(); got != override {
 			t.Errorf("limit() = %d, want override %d", got, override)
 		}
 	})
 
 	t.Run("unknown tier with no override falls back to free plan value", func(t *testing.T) {
-		r := ownerStandingRow{tier: Tier("ghost"), quotaOverride: nil}
+		r := userStandingRow{tier: Tier("ghost"), quotaOverride: nil}
 		if got := r.limit(); got != planFree {
 			t.Errorf("limit() = %d, want free-plan fallback %d", got, planFree)
 		}
@@ -228,7 +228,7 @@ func TestOwnerStandingLimit(t *testing.T) {
 
 	t.Run("override of zero is respected (not treated as unset)", func(t *testing.T) {
 		zero := 0
-		r := ownerStandingRow{tier: TierFree, quotaOverride: &zero}
+		r := userStandingRow{tier: TierFree, quotaOverride: &zero}
 		if got := r.limit(); got != 0 {
 			t.Errorf("limit() = %d, want 0 (explicit override)", got)
 		}

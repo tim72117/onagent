@@ -28,7 +28,12 @@ tools:
       Call this once with a complete tool definition for the new tool the
       developer described. This is the only tool available in this
       conversation — always respond by calling it, never with plain text.
-    kind: query
+    # Fire-and-forget: the console's acknowledgement (returns, below) is
+    # never reasoned about further — the conversation ends as soon as this
+    # is called — so this is ToolKindAction, not ToolKindQuery, despite
+    # having a returns block (returns is also used for TS codegen, which
+    # applies regardless of Kind — see toolschema.Tool's doc comment).
+    kind: action
     parameters:
       type: object
       required: [name, description, parameters]
