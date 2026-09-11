@@ -143,11 +143,39 @@ func embedStatus(real bool) string {
 }
 
 // mountLanding serves apps/landing's build as plain static files at "/".
-// No SPA fallback: landing has no client-side router, it's one index.html
-// plus its asset files, so a request for a path that isn't an actual file
-// should 404 like any normal static host, not be rewritten to index.html.
+// Almost no SPA fallback: every page under landing is its own plain
+// index.html plus asset files (a request for a path that isn't an actual
+// file 404s like any normal static host), EXCEPT /showcase/*, which is a
+// small React app with its own client-side router (BrowserRouter — see
+// apps/landing/showcase/src/App.tsx) for its /showcase/<case>/ sub-routes.
+// Those sub-paths have no matching file on disk (there's only ever one
+// showcase/index.html), so they need the same SPA-fallback treatment
+// mountConsole gives /app/* — see that function's own doc comment for the
+// pattern this mirrors.
 func mountLanding(mux *http.ServeMux, root fs.FS) {
 	fileServer := http.FileServerFS(root)
+
+	showcaseHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upath := strings.TrimPrefix(r.URL.Path, "/showcase")
+		upath = strings.TrimPrefix(upath, "/")
+		if upath != "" {
+			if f, err := root.Open("showcase/" + upath); err == nil {
+				_ = f.Close()
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+		}
+		// Not a real static asset under showcase/ (e.g. /showcase/marketing):
+		// SPA fallback to showcase/index.html so React Router decides what to
+		// render. Serve the file directly rather than rewriting the request
+		// path, since the actual URL the browser requested must stay intact
+		// for BrowserRouter to pick the right route from it.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		http.ServeFileFS(w, r, root, "showcase/index.html")
+	})
+	mux.Handle("/showcase", showcaseHandler)
+	mux.Handle("/showcase/", showcaseHandler)
+
 	mux.Handle("/", fileServer)
 }
 

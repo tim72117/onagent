@@ -1,0 +1,189 @@
+/* Support case's list-page card — SupportCase.tsx. ".pc-*" ("phone card")
+   is fully distinct from this file's ".cs-*" ("chat shell") rules below,
+   even though both render a support conversation — see SupportCase.tsx's
+   own comment for why the classes are kept apart. */
+.collage { height: 280px; } /* overrides marketing.css's 230px only where a support card is on the page — CSS load order (App.tsx imports base, then each case) makes this the winning declaration for .pc-collage's siblings without needing a second selector. */
+.pc-phone {
+  position: absolute; left: 50%; top: 20px; transform: translateX(-50%);
+  width: 148px; height: 248px;
+  background: #0a0906; border-radius: 22px; padding: 6px;
+  border: 1.5px solid #3a3222;
+  box-shadow: 0 28px 50px -18px rgba(0,0,0,0.7);
+}
+.pc-notch { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 44px; height: 5px; border-radius: 3px; background: #1f1a10; }
+.pc-screen { width: 100%; height: 100%; border-radius: 17px; overflow: hidden; background: #fbfaf7; display: flex; flex-direction: column; }
+.pc-header { display: flex; align-items: center; gap: 6px; padding: 12px 10px 7px; border-bottom: 1px solid #f0ead9; background: #fff; }
+.pc-avatar { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--grad); color: #1a1408; flex: none; }
+.pc-avatar svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.pc-header-name { font-size: 8.5px; font-weight: 700; color: #2b2718; }
+.pc-header-status { font-size: 6.5px; color: #71664f; display: flex; align-items: center; gap: 3px; }
+.pc-dot { width: 5px; height: 5px; border-radius: 50%; background: #3fa86a; display: inline-block; }
+/* The whole thread plays through once (each message/tool-card fades in on
+   its own animation-delay, set inline per element in SupportCase.tsx, and
+   then STAYS — no fade-out mid-conversation, so messages accumulate top to
+   bottom like a real chat log), then the entire thread blanks out and the
+   cycle restarts from empty. .pc-thread's own "reset" animation is what
+   drives the restart: every child's delay is relative to this shared
+   parent timeline, so at CYCLE_LENGTH all children are still in their
+   post-animation "visible" state (forwards fill-mode) until .pc-thread
+   itself snaps opacity back to 0 for an instant and the next iteration's
+   delays replay each message in order again. */
+.pc-thread {
+  flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 5px;
+  font-size: 7.5px; line-height: 1.35; overflow: hidden;
+  animation: pc-thread-cycle 6s step-end infinite;
+}
+@keyframes pc-msg-in {
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.pc-msg, .pc-tool {
+  opacity: 0;
+  animation: pc-msg-in 0.4s ease-out forwards;
+}
+@keyframes pc-thread-cycle {
+  0%, 99.5% { opacity: 1; }
+  99.6%, 100% { opacity: 0; }
+}
+.pc-msg { max-width: 84%; padding: 5px 7px; border-radius: 9px; }
+.pc-msg.pc-from-user { align-self: flex-end; background: var(--grad); color: #1a1408; border-bottom-right-radius: 2px; font-weight: 500; }
+.pc-msg.pc-from-ai { align-self: flex-start; background: #fff; color: #2b2718; border: 1px solid #efe9d8; border-bottom-left-radius: 2px; }
+.pc-tool {
+  align-self: flex-start; width: 88%; background: #f6efdc;
+  border: 1px dashed rgba(201,162,75,0.55); border-radius: 7px; padding: 4px 6px;
+  font-family: var(--mono); font-size: 6.5px; color: #7a5e1e;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.pc-tool-result { color: #a89b82; }
+.pc-typing { display: flex; align-items: center; gap: 3px; padding: 7px 8px; }
+.pc-typing span { width: 4px; height: 4px; border-radius: 50%; background: #c9a24b; opacity: 0.4; }
+.pc-typing .pc-dot-1 { opacity: 1; }
+.pc-input { display: flex; align-items: center; gap: 5px; padding: 6px 8px; border-top: 1px solid #f0ead9; background: #fff; }
+.pc-input-field { flex: 1; height: 16px; border-radius: 8px; background: #f3efe4; font-size: 6.5px; color: #a89b82; display: flex; align-items: center; padding: 0 6px; }
+.pc-send { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--grad); flex: none; }
+.pc-send svg { width: 8px; height: 8px; stroke: #1a1408; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+.tag-1 { left: -6px; top: 30px; transform: rotate(-6deg); }
+.tag-2 { right: -10px; top: 100px; transform: rotate(4deg); }
+.tag-3 { left: 6px; bottom: 18px; transform: rotate(-3deg); }
+.b-bolt { width: 34px; height: 34px; right: 14px; top: -14px; background: var(--grad); color: #1a1408; }
+.b-bolt svg { width: 16px; height: 16px; }
+
+/* --- SupportDemo.tsx: the "/support" demo shell --- */
+
+/* Deliberately light-themed, unlike every other page here (dark, matching
+   the marketing site) — a support-widget demo reads more convincingly as
+   "a real customer's website" on a plain light background. site-mock
+   is the backdrop (never interactive — a visitor's own site would sit
+   here); the phone-framed chat panel floats over its bottom-right corner,
+   same as a real embedded support widget would. */
+.support-shell {
+  --sl-bg: #f4f1ea;
+  --sl-panel: #ffffff;
+  --sl-border: #e7e0cf;
+  --sl-text: #2b2718;
+  --sl-text-2: #6b6250;
+  --sl-text-3: #9a917c;
+  position: relative;
+  max-width: var(--max); margin: 0 auto; min-height: 600px;
+  border: 1px solid var(--sl-border); border-radius: 20px; overflow: hidden;
+  box-shadow: var(--shadow);
+  background: var(--sl-bg);
+}
+.site-mock { padding: 40px 48px; pointer-events: none; user-select: none; height: 100%; }
+.site-mock-nav { display: flex; align-items: center; gap: 12px; margin-bottom: 40px; }
+.site-mock-logo { width: 28px; height: 28px; border-radius: 8px; background: var(--sl-text); flex: none; }
+.site-mock-links { display: flex; gap: 16px; margin-left: auto; }
+.ph { display: inline-block; height: 10px; border-radius: 5px; background: #e2dccb; }
+.site-mock-title { height: 22px; width: 55%; margin-bottom: 14px; }
+.site-mock-hero { display: flex; flex-direction: column; gap: 10px; max-width: 420px; }
+.site-mock-cards { display: flex; gap: 14px; margin-top: 24px; }
+.site-mock-card { flex: 1; height: 110px; border-radius: 12px; background: var(--sl-panel); border: 1px solid var(--sl-border); }
+
+/* The chat panel itself, framed as a phone rather than the flat sidebar
+   panel an earlier version of this file used — floats bottom-right over
+   site-mock, the way a real embedded widget bubble expands into a chat
+   window. */
+.cs-phone-dock {
+  position: absolute; right: 28px; bottom: 28px;
+  width: 340px; height: 560px;
+  background: #0a0906; border-radius: 34px; padding: 10px;
+  border: 2px solid #3a3222;
+  box-shadow: 0 40px 70px -20px rgba(0,0,0,0.45);
+}
+.cs-phone-notch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 90px; height: 8px; border-radius: 5px; background: #1f1a10; z-index: 1; }
+.cs-panel { width: 100%; height: 100%; border-radius: 26px; overflow: hidden; display: flex; flex-direction: column; background: var(--sl-panel); }
+.cs-panel-header { height: 60px; padding: 0 18px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--sl-border); flex: none; }
+.cs-avatar { display: grid; place-items: center; border-radius: 50%; background: var(--grad); color: #1a1408; flex: none; }
+.cs-avatar svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.cs-avatar-lg { width: 36px; height: 36px; }
+.cs-avatar-lg svg { width: 18px; height: 18px; }
+.cs-panel-title { font-weight: 700; font-size: 15px; color: var(--sl-text); }
+.cs-panel-subtitle { font-size: 12px; color: var(--sl-text-3); display: flex; align-items: center; gap: 4px; }
+.cs-dot { width: 6px; height: 6px; border-radius: 50%; background: #3fa86a; display: inline-block; }
+.cs-panel-thread { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.cs-day-divider { text-align: center; font-size: 11px; color: var(--sl-text-3); margin-bottom: 4px; }
+.cs-row { display: flex; gap: 8px; align-items: flex-end; }
+.cs-row.from-user { flex-direction: row-reverse; }
+.cs-bubble { max-width: 78%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.5; }
+.cs-row.from-ai .cs-bubble { background: var(--sl-bg); border: 1px solid var(--sl-border); color: var(--sl-text); border-bottom-left-radius: 4px; }
+.cs-row.from-user .cs-bubble { background: var(--grad); color: #1a1408; font-weight: 500; border-bottom-right-radius: 4px; }
+.cs-bubble-meta { font-size: 11px; color: var(--sl-text-3); margin-top: 4px; font-family: var(--mono); }
+.cs-tool-card {
+  align-self: flex-start; width: min(78%, 320px);
+  border-radius: 12px; border: 1px solid rgba(201,162,75,0.35); background: var(--accent-soft); overflow: hidden;
+}
+.cs-tool-head {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border-bottom: 1px dashed rgba(201,162,75,0.3); font-family: var(--mono); font-size: 12.5px; color: #9c7a2e;
+}
+.cs-tool-head svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.cs-tool-head span:nth-child(2) { flex: 1; }
+.cs-tool-status { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; background: rgba(63,168,106,0.15); color: #2f8a53; }
+.cs-tool-body { padding: 8px 12px; font-family: var(--mono); font-size: 12px; color: var(--sl-text-2); display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; }
+.cs-tool-body span:nth-child(odd) { color: var(--sl-text-3); }
+.cs-quick-replies { display: flex; flex-wrap: wrap; gap: 6px; }
+.cs-chip { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--sl-border); color: var(--sl-text-2); font-size: 12.5px; background: transparent; }
+.cs-panel-input { padding: 12px 14px 8px; border-top: 1px solid var(--sl-border); flex: none; }
+.cs-input-row { display: flex; align-items: center; gap: 8px; border: 1px solid var(--sl-border); border-radius: 14px; padding: 6px 6px 6px 14px; background: var(--sl-bg); }
+.cs-input-row:focus-within { border-color: rgba(201,162,75,0.6); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cs-textarea {
+  flex: 1; border: 0; outline: 0; background: transparent; color: var(--sl-text);
+  font: inherit; font-size: 14px; padding: 4px 0;
+}
+.cs-textarea::placeholder { color: var(--sl-text-3); }
+.cs-textarea:disabled { cursor: not-allowed; }
+.cs-send-btn {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--grad); flex: none; border: none; cursor: pointer;
+  transition: opacity 0.15s;
+}
+.cs-send-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.cs-send-btn svg { width: 15px; height: 15px; stroke: #1a1408; fill: none; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+.cs-powered { text-align: center; font-size: 11px; color: var(--sl-text-3); margin-top: 8px; }
+.cs-powered b { color: var(--accent); }
+
+/* Typing indicator, shown while the reply is in flight — three dots
+   pulsing in sequence, replacing the last message row until
+   onAssistantMessage/onError fires. */
+.cs-thinking { display: flex; align-items: center; gap: 4px; padding: 12px 14px; }
+.cs-thinking span { width: 6px; height: 6px; border-radius: 50%; background: var(--sl-text-3); animation: cs-thinking-pulse 1.2s ease-in-out infinite; }
+.cs-thinking span:nth-child(2) { animation-delay: 0.15s; }
+.cs-thinking span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes cs-thinking-pulse {
+  0%, 60%, 100% { opacity: 0.3; transform: scale(0.85); }
+  30% { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 1024px) {
+  .cs-phone-dock { width: 300px; height: 520px; right: 20px; bottom: 20px; }
+}
+@media (max-width: 640px) {
+  .support-shell { min-height: 640px; }
+  .site-mock { display: none; }
+  .cs-phone-dock {
+    position: static; width: 100%; height: 100%; border: 0; border-radius: 0; padding: 0; box-shadow: none;
+  }
+  .cs-phone-notch { display: none; }
+  .cs-panel { border-radius: 0; }
+}

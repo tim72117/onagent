@@ -2,7 +2,7 @@
   "name": "@onagent/landing",
   "version": "0.1.0",
   "private": true,
-  "description": "Marketing landing page for onagent. A single self-contained static page — Vite just serves/builds it, no framework.",
+  "description": "Marketing landing page for onagent. Every page is a self-contained static HTML file — Vite just serves/builds them, no framework — except /showcase/, which mounts a small React SPA (see showcase/src/) with its own client-side router for /showcase/<case>/ sub-routes.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,9 +11,16 @@
   },
   "dependencies": {
     "@onagent/bridge": "^0.0.2",
-    "marked": "^18.0.11"
+    "marked": "^18.0.11",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.6"
   },
   "devDependencies": {
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "typescript": "^5.9.3",
     "vite": "^6.0.2"
   }
 }

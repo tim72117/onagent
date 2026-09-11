@@ -1,0 +1,57 @@
+/* Marketing case's browser-window collage — MarketingCase.tsx. Shared
+   ".case-*"/".chat"/".bubble-u"/".demo-panel" rules live in base.css.
+   Light-theme background (a soft cream gradient, not the dark-site
+   collage this used to be) so the "app window" card reads as sitting on
+   top of the page rather than punching a dark hole through it. */
+.collage {
+  position: relative; width: 100%; height: 230px; border-radius: 16px; overflow: visible;
+  background: radial-gradient(120% 100% at 20% 0%, #efe8d3 0%, #e7ddc0 55%, #ddcfa8 100%);
+}
+.win {
+  position: absolute; left: 18px; top: 18px; width: 78%;
+  background: #fff; border-radius: 10px; overflow: hidden;
+  box-shadow: 0 22px 44px -16px rgba(43,39,24,0.22);
+}
+.win-bar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #f0ead9; }
+.win-dot { width: 7px; height: 7px; border-radius: 50%; background: #e6e1d3; }
+.win-search { flex: 1; margin-left: 6px; height: 12px; border-radius: 6px; background: #f3efe4; max-width: 100px; }
+.win-body { display: flex; }
+.win-side { width: 34px; padding: 10px 8px; display: flex; flex-direction: column; gap: 7px; border-right: 1px solid #f3efe4; }
+.win-side i { display: block; height: 4px; border-radius: 2px; background: #eee8d8; }
+.win-side i.on { background: var(--accent); }
+.win-main { flex: 1; padding: 10px 12px; }
+.win-kpis { display: flex; gap: 8px; margin-bottom: 8px; }
+.kpi { flex: 1; background: #faf8f2; border-radius: 6px; padding: 6px 8px; }
+.kpi-label { height: 4px; width: 60%; border-radius: 2px; background: #e6e1d3; margin-bottom: 5px; }
+.kpi-value { font-family: var(--mono); font-size: 12px; font-weight: 700; color: #2b2718; }
+.win-chart { height: 46px; border-radius: 6px; background: #faf8f2; position: relative; overflow: hidden; }
+.win-chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.float-chart {
+  position: absolute; right: 4px; bottom: -6px; width: 158px;
+  background: #fff; border-radius: 10px; padding: 10px 12px 8px;
+  box-shadow: 0 20px 40px -14px rgba(43,39,24,0.28);
+  transform: rotate(-1.5deg);
+}
+.float-chart-title { font-size: 12px; font-weight: 700; color: #2b2718; margin-bottom: 8px; }
+.float-bars { display: flex; align-items: flex-end; gap: 5px; height: 44px; }
+.float-bars .b { flex: 1; border-radius: 2px 2px 0 0; }
+.float-bars .b.dark { background: #c9a24b; }
+.float-bars .b.light { background: #f0dfae; }
+.float-labels { display: flex; gap: 5px; margin-top: 4px; }
+.float-labels span { flex: 1; text-align: center; font-size: 7.5px; color: #a89b82; }
+
+/* Decorative floating bubbles — .b-plus/.b-chat/.b-mini are marketing-only;
+   .b-ring is reused by the support card too (base .bubble rule covers
+   both), so it stays here alongside its marketing-specific position. */
+.bubble {
+  position: absolute; display: grid; place-items: center; border-radius: 50%;
+  box-shadow: 0 10px 22px -8px rgba(43,39,24,0.32);
+}
+.bubble svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.b-plus { width: 34px; height: 34px; right: 14px; top: -14px; background: var(--grad); color: #1a1408; }
+.b-plus svg { width: 16px; height: 16px; }
+.b-chat { width: 30px; height: 30px; left: 4px; bottom: 30px; background: #fff; color: var(--accent); }
+.b-chat svg { width: 14px; height: 14px; }
+.b-ring { width: 22px; height: 22px; left: 44%; bottom: -10px; border: 3px solid var(--accent-2); background: transparent; box-shadow: none; }
+.b-mini { width: 26px; height: 26px; left: -8px; top: 40px; background: #fff; color: var(--accent); }
+.b-mini svg { width: 13px; height: 13px; }
