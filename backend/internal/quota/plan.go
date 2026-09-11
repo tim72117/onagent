@@ -17,6 +17,18 @@ const (
 	// TierFree is the tier every account starts on at signup, and the tier
 	// any user with no subscriptions row is treated as.
 	TierFree Tier = "free"
+
+	// TierUltra is admin-assignable only — there is no developer-facing
+	// console surface that lets a user pick their own tier at all (every
+	// caller of SetTier is admin.go's setUserPlan, itself behind
+	// adminconsole's withAdmin), so adding it here does not expose any
+	// self-service path to it. Existing purely as a manual "grant this one
+	// account a much larger allowance" lever, distinct from
+	// subscriptions.monthly_quota's per-user override (see
+	// userStandingRow.limit): that column has no write path at all today,
+	// while this is a normal tier an admin assigns via the existing
+	// SetTier/setUserPlan endpoint.
+	TierUltra Tier = "ultra"
 )
 
 // DefaultTier is assigned to new accounts and assumed for any user whose
@@ -45,12 +57,21 @@ type Plan struct {
 }
 
 // plans is the authoritative table of every defined plan, keyed by tier.
-// Only the free tier exists today; paid tiers get added here.
 var plans = map[Tier]Plan{
 	TierFree: {
 		Tier:          TierFree,
 		Name:          "Free",
 		MonthlyTokens: 100_000,
+	},
+	// Ultra is not self-service — see TierUltra's own doc comment. An admin
+	// assigns it via PUT /admin/api/users/{userId}/plan the same way any
+	// other tier is set; it appears in GET /admin/api/plans (AllPlans)
+	// automatically, since that endpoint reads this table directly rather
+	// than hardcoding a tier list.
+	TierUltra: {
+		Tier:          TierUltra,
+		Name:          "Ultra",
+		MonthlyTokens: 10_000_000,
 	},
 }
 

@@ -128,6 +128,14 @@ func TestPlanFor(t *testing.T) {
 	if got := PlanFor(TierFree); got.Tier != TierFree {
 		t.Errorf("PlanFor(TierFree).Tier = %q, want %q", got.Tier, TierFree)
 	}
+	// TierUltra is a real defined plan (admin-assignable only — see its own
+	// doc comment) and must resolve to itself, not fall back to Free.
+	if got := PlanFor(TierUltra); got.Tier != TierUltra {
+		t.Errorf("PlanFor(TierUltra).Tier = %q, want %q", got.Tier, TierUltra)
+	}
+	if got := PlanFor(TierUltra); got.MonthlyTokens != 10_000_000 {
+		t.Errorf("PlanFor(TierUltra).MonthlyTokens = %d, want %d", got.MonthlyTokens, 10_000_000)
+	}
 	// An undefined tier (a paid tier since removed, or a typo from a manual
 	// UPDATE) must fall back to the free plan — fail safe, not error or
 	// unlimited.

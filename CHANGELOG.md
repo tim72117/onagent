@@ -6,6 +6,28 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.5.1
+
+No breaking changes.
+
+- `quota.Plan` gains a new admin-only tier, `TierUltra` ("Ultra",
+  10,000,000 tokens/month). Assignable only via the admin console's `PUT
+  /admin/api/users/{userId}/plan` (behind `withAdmin`) — the
+  developer-facing console has no tier-selection surface at all, so this
+  introduces no self-service path to it. Appears automatically in `GET
+  /admin/api/plans`, which reads the plan table directly rather than
+  hardcoding tier names.
+- A whole-project audit pass recorded its findings in `docs/audit-
+  security.md`, `docs/audit-stability.md`, and `docs/audit-functional.md`
+  (six parallel agents across backend core logic, auth/quota/session,
+  concurrency, security, the console frontend, and SDK/protocol
+  consistency; every high-severity finding re-verified by reading the
+  code directly). No code changed as part of this pass — see those files
+  for the findings themselves, including an unfixed SSRF via
+  `backendDispatch.endpoint`, a quota bypass via an omitted `requestId`,
+  and a `BackendDispatch` silent-overwrite bug (the same class of bug as
+  the tool `kind` fix in v0.5.0 below, not yet fixed for this field).
+
 ## v0.5.0
 
 Fixes:
