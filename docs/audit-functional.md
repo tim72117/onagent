@@ -8,7 +8,7 @@
 
 ## 最新掃描：2026-09-11
 
-> 方法：從一次 Playground 實測（`get_weather` 查詢工具的假資料回傳，LLM 卻只收到「executed successfully」罐頭訊息）反查根因，人工逐檔追蹤前後端資料鏈。
+> 方法：本日兩輪。第一輪從一次 Playground 實測（`get_weather` 查詢工具的假資料回傳，LLM 卻只收到「executed successfully」罐頭訊息）反查根因，人工逐檔追蹤前後端資料鏈。第二輪為全專案 6-agent 並行稽核（後端核心邏輯、auth/quota/session、並發穩定性、安全、console 前端、SDK/協定一致性），每個 agent 被要求「必須讀過實際程式碼、必須給出具體失敗情境」才能提報，主 session 再對每一項高嚴重度發現親自讀碼複核，剔除無實際觸發路徑者（例如一項被提報為 CRITICAL 的 `tool_call` requestId 不對應問題，經查證正式路徑永不觸發而降為 🟡）。安全類發現記於 `docs/audit-security.md`，並發/穩定性類記於 `docs/audit-stability.md`。
 
 ### 🔴 Console 編輯畫面完全沒有 `kind`/`backendDispatch` 欄位，經它存檔一次就會把這兩個既有值靜默覆寫成預設值（新發現，已實測重現）
 - **位置**：前端型別 `apps/console/src/schema.ts:17-40`（`Tool` interface 缺 `kind`/`backendDispatch`，只有 `id`/`name`/`description`/`parameters`/`returns`/`sourceTemplate`）；整個工具編輯 UI（桌面版 `ToolForm.tsx`、手機版 `ToolEditSheet.tsx` 及其四個子欄位 sheet、`ToolWizard.tsx`）都沒有任何 `kind`/`backendDispatch` 相關輸入或顯示；後端全欄位覆寫寫入邏輯在 `backend/internal/toolschema/registry.go:404-407`（`kind` 空字串時預設回填 `ToolKindAction`）與 `:428-434`（`Updates(map[string]any{...})` 明確把 `kind`、`backend_dispatch` 列入覆寫欄位，非 partial update）。
@@ -16,10 +16,114 @@
 - **repro**：實測時建立一個 `get_weather` 查詢工具（有 `returns` schema，理應是 `kind: query`），Playground 的假資料回傳邏輯（`fakeDataFromSchema`）正確產生並送出了 `{ok: true, result: {temperature: ..., conditions: ...}}`，但 `agent_WS-PG-1-mya.json` 推論 log 顯示 LLM 收到的 `tool_result` 內容始終只有「`"get_weather" executed successfully."`」這句罐頭訊息，資料完全沒有送達。追查後端 `internal/inference/agent_roles.go` 的 `toolFactoryFor`（179-193 行）發現：`kind: action` 的工具會走 `forwardingTool.Call`（205-225 行），該函式**故意**丟棄 `askPage` 回傳的實際內容，只回一句罐頭成功訊息；只有 `kind: query` 才會走 `queryTool.Call`（265-282 行），把頁面實際回傳的 `answerJSON` 交給 LLM。確認 `get_weather` 的 `kind` 是空/`action`，而不是預期的 `query`——這正是本條目描述的存檔覆寫問題導致的結果。
 - **影響範圍**：不只是「AI tool builder 產生的查詢工具沒被正確標註 kind」這一種情境（那是原因之一，仍待修），而是**任何** app 的**任何**工具，只要曾經（透過 CLI 手動 YAML、或未來補上 kind UI 之前的任何管道）被設成 `kind: query` 或帶有 `backendDispatch`，之後只要有人在 console 網頁編輯畫面存檔一次，就會被靜默改回預設值，沒有任何錯誤或警告，且下次要診斷「工具明明設對了但 LLM 拿不到資料」時完全沒有痕跡可查。
 - **修法**：(1) 前端 `schema.ts` 的 `Tool` interface 加上 `kind?: 'action' | 'query'` 欄位；(2) `ToolForm.tsx`/`ToolEditSheet.tsx`（含手機版子欄位 sheet）新增可編輯的 `kind` 選擇器，並正確帶著現有值往返；(3) `aiToolGenerator.ts` 的 `toTool()` 保留 LLM 回傳的 `kind`；(4) `tool-builder-tools.yaml` 的 `propose_tool` schema 加上明確 `kind` 欄位讓 AI 產生工具時能標註；(5) `backendDispatch` 若短期內不打算做完整編輯 UI，至少要讓前端存檔時把既有值原樣帶回（而非整個遺漏），避免同樣的靜默覆寫；(6) 手動修正這次已在正式機建立、被錯誤覆寫成 `action` 的 `get_weather` 工具。
+- **現況（2026-09-11 複核）**：`kind` 的半邊已於 v0.5.0 修復——修法 (1)~(4) 均已落地（`schema.ts` 有 `kind?: ToolKind`、兩個編輯畫面都有「Query tool」欄位、`toTool()` 保留 `kind`、`propose_tool` schema 有必填 `kind` enum）。**`backendDispatch` 的半邊（修法 (5)）仍未修**：前端 `Tool` 型別至今沒有這個欄位，任何工具只要經 console 存檔一次，既有的 `backend_dispatch` 設定仍會被 `registry.go:428-434` 的全欄位覆寫寫成 `null`。修法 (6) 屬正式機資料，非程式碼問題。
+
+### 🔴 六個 console handler 在 `OwnerOf`（DB）與 `Get`（快取）不一致時會 nil 解參照 panic（2026-09-11 新發現）
+
+- **位置**：`backend/internal/console/console.go:587`、`:616`、`:678`、`:728`、`:753`、`:779` — 六處皆為 `app, _ := h.Apps.Get(appID)` 後直接 `len(app.Tools)`（已逐行複核確認）
+- **問題**：授權走 `withOwnedApp` → `Registry.OwnerOf`（`registry.go:225-233`，**即時查 DB**），取資料走 `h.Apps.Get`（`registry.go:79-84`，**記憶體快取**）——兩個不同的真實來源。六處都用 `app, _ :=` 丟棄 `ok` 後解參照，而 `Get` miss 時回傳 `nil` 指標。
+- **佐證這不是理論問題**：同一個檔案的 `listApps`（`:518-521`）對**完全相同**的呼叫明確檢查了 `ok`，並附註解「owner_id row exists but Registry cache hasn't caught up; skip rather than fake zero tools」——證明這個分歧是**已知的真實狀況**，只是其他六處沒有比照防護。
+- **具體失敗情境**：多實例部署時，實例 A 服務 `POST /console/apps` 建立 `myapp`（DB 已 commit），實例 B 的 `Registry` 快取尚未重載（`Reload` 只在 B **自己**的寫入時觸發，沒有任何跨實例失效機制）。使用者下一個 `GET /console/apps/myapp` 打到 B：`OwnerOf` 在共用 Postgres 找到列因而授權通過，`Get` 在 B 的舊快取 miss 回傳 nil，handler 解參照 → panic。`SaveTool` 內部 `Reload()` 失敗時（`registry.go:146-148` 回傳錯誤但快取留在舊狀態）亦同。
+- **修法**：六處比照 `listApps` 加上 `app, ok := ...; if !ok { http.Error(w, "unknown appId", 404); return }`。更根本的作法是讓 `ownedAppOrNotFound` 從 `Get` 讀取的**同一份**快取解析 ownership，使授權與取資料無法分歧。
+
+### 🔴 超長 app id 使 `sessionKeyFor` 摺疊成 `""`，不同使用者共用同一個對話 orchestrator（2026-09-11 新發現）
+
+- **位置**：`backend/internal/inference/want.go:349`（`sessionIDRE = ^[a-zA-Z0-9_-]{1,128}$`）、`:356-361`（`sessionKeyFor`）、`:194-210`（`getOrCreate`）；`backend/internal/toolschema/loader.go:18`（`appIDRE`）
+- **問題**：`sessionKeyFor` 對不符 `sessionIDRE` 的 id 一律回傳 `""`，而 `getOrCreate` 就以 `s.sessions[""]` 當鍵——**所有落到這條路徑的呼叫者共用同一個 orchestrator、同一份對話歷史**（該函式自己的註解也承認 `""` 是「a single shared orchestrator for every caller」）。關鍵在於 `appIDRE` 是 `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`，用 `*` 量詞、**完全沒有長度上限**（已複核確認），`apps.app_id`/`tools.app_id` 在 schema 中也是無長度限制的 `TEXT`。
+- **具體失敗情境**：Playground 的 sessionID 是 `PG-<userID>-<appID>`（`playground.go:208`），所以 appID 超過約 122 字元就會讓整串超過 128 而被摺疊成 `""`。開發者 Alice 用一個 130 字元的 app id 建立 app（`Create` → `ValidAppID` 正常放行）並開 Playground → key 為 `""`；開發者 Bob 對他自己的長 id app 做同樣的事 → key 也是 `""`。兩人此刻共用同一個 `*orchestrator.Orchestrator` 與同一份對話 transcript，Bob 的 prompt 看得到 Alice 先前的對話內容，反之亦然。這是經由完全正常、通過驗證的建立流程即可達成的跨租戶對話洩漏。`?fresh=1` 與 tool-builder 的隨機後綴（`playground.go:209-211`）多加 17 字元，只會讓觸發更容易。
+- **修法**：(1) 在 `loader.go` 的 `appIDRE` 加上長度上限（例如 `{1,64}`），確保任何衍生 id 都不可能溢出；(2) 讓 `sessionKeyFor` **fail closed**——回傳錯誤或改用雜湊，而不是靜默落到「所有人共用」的 `""` 鍵。
+
+### 🔴 前端 `refreshDraftForSwitch` 的捨棄確認是無窮迴圈，桌面版導覽會完全卡死（2026-09-11 新發現）
+
+- **位置**：`apps/console/src/App.tsx:697-719`，關鍵在 `:704`
+- **問題**：`confirmDiscard('Discard unsaved tool changes?', () => refreshDraftForSwitch(switchView))` 的回呼是**遞迴呼叫自己**，而 `draft` 是同一個物件、`isToolDirty` 讀的是同一份 `savedToolsRef.current`——點擊與重新進入之間沒有任何東西清除或覆寫髒資料狀態，所以 `anyDirty` 必然仍為 `true`，立刻again 跳出同一個對話框（已逐行複核確認）。
+- **repro（桌面版）**：選一個有至少一個已存工具的 app → 點工具 A → 編輯它的 Description 但不存檔 → 點側欄的工具 B → 跳出「Discard unsaved tool changes?」→ 點 **Discard** → **同一個對話框立刻再次出現**，之後每次 Discard 都一樣。只有 Cancel 能脫身，使用者永遠離不開工具 A。
+- **影響範圍**：`selectTool`、`selectAgent`、`selectPlayground`、`selectSettings`、`selectAppSettings`、`selectPreview` 全都經由此函式——只要有任何一個工具處於未存檔狀態，**整個桌面版導覽都被鎖死**。
+- **修法**：確認的回呼必須繞過髒資料檢查——把函式尾段（`switchView()` + 重新抓取）抽成不含 `anyDirty` 閘門的 `doSwitch`，讓 `confirmDiscard` 呼叫它。（重新抓取本來就會用伺服器狀態覆寫 `draft`，正是「捨棄」該有的語意。）
+
+### 🟠 Escape 鍵會同時關閉巢狀子 sheet 與父層 `ToolEditSheet`，靜默丟棄所有批次編輯（2026-09-11 新發現）
+
+- **位置**：`apps/console/src/BottomSheet.tsx:67-74`（document 層級 Escape handler，只以自身 `open` 為條件）、`ToolEditSheet.tsx:128-134`、`:244-271`
+- **問題**：每個 `BottomSheet` 都常駐掛載並各自註冊 document 層級的 Escape handler，而 `ToolEditSheet` 把四個子 sheet 渲染在**自己內部**——所以子 sheet 開啟時，兩者的 `open` 都是 `true`，一次 Escape **兩個 handler 都會觸發**。handler 沒有 `stopPropagation`，也沒有任何「最上層才反應」的判斷（為 z-index 新增的 `SheetDepthContext` 在此並未被參考）。而 `ToolEditSheet` 的 `handleClose` 只在 `isNew` 時才有 `onConfirmDiscard` 保護，一般既有工具的實例（`MobileWorkspaceCards.tsx:188-198`）沒有傳這個 prop，會直接關閉。
+- **repro**：開啟一個工具 → 點 **Name** → 改成 `renamed_tool` → 點 Done → 點 **Description** → 重寫內容 → 按 **Escape**。ToolDescriptionSheet 關閉，**ToolEditSheet 也一併關閉**，名稱與描述兩筆修改（都只存在 `ToolEditSheet` 的本地 `draft`、從未寫進 `draft.tools`）全部消失，無任何確認或錯誤提示。
+- **修法**：讓 `BottomSheet` 只在自己是最上層開啟的 sheet 時才處理 Escape（例如以 context 維護一個開啟中的 sheet 堆疊），或由子層 handler `stopPropagation` 並確保捕獲順序。
+
+### 🟠 已輸入但未按 Add 的 origin 在存檔時被靜默丟棄（2026-09-11 新發現）
+
+- **位置**：`apps/console/src/AppSettingsView.tsx:69-78`、`apps/console/src/OriginEditSheet.tsx:70-79`，對應 `App.tsx:418-425`
+- **問題**：`onOriginDraftsChange([...originDrafts, trimmed])`（即 `setOriginDrafts`）之後，**同一個同步流程**立刻呼叫 `onSaveOrigins(e)`；React 不會在這兩行之間套用狀態更新，而 `saveOrigins`（`App.tsx:422`）的 `await api.setOrigins(draft.appId, originDrafts)` 讀的是**當次 render 閉包裡的舊陣列**，新 origin 從未被送出。更糟的是存檔後會 `refreshSummaries()`，而 `App.tsx:298-301` 的 effect 會用伺服器回應重設 `setOriginDrafts`，把樂觀新增的本地項目也一併覆蓋掉。
+- **repro**：App settings → 在 origin 輸入框打 `https://example.com` → **不按 Add**，直接按 **Save origins**（按鈕此時是啟用的）→ 請求送出、走成功路徑 → 但 origins 清單回來後沒有 `https://example.com`，使用者的輸入完全消失。由於 app 沒有任何 allowed origin 時**所有** WebSocket 連線都會被拒絕，這正是靜默丟失最要命的欄位。
+- **修法**：把合併後的清單顯式傳下去——`onSaveOrigins` 改為接受 origins 陣列（`onSaveOrigins(e, [...originDrafts, trimmed])`），`saveOrigins` 送出該參數而非讀取 state。
+
+### 🟠 Playground 連線中斷後 UI 完全死鎖，只能重整頁面（2026-09-11 新發現）
+
+- **位置**：`apps/console/src/Playground.tsx:141`、`:212-298`、`:504`
+- **問題**：`sending` 在 `sendPrompt`（`:445`）設為 `true`，只在 `onAssistantMessage`（`:268`）與 `onError`（`:278`）清除——**`onClose`/`onConnectionError` 都沒有清除**，連線 effect 的重設區塊（`:213-216`）也只重設 `messages`/`toolCalls`/`state`/`ready`，沒有 `sending`。而系統沒有自動重連。
+- **具體後果**：送出 prompt 後連線中斷時，Send 按鈕停用（`!connected`）、輸入框停用（`!connected`）、**連「Reset context」也停用**（`resetDisabled = sending || ...`，而 `sending` 仍是 `true`）。Reset context 是唯一能重跑連線 effect 的控制項，三個全部停用等於頁面內無任何復原手段。
+- **repro**：開啟 Playground、送出 prompt，在助理回覆前關掉後端或斷網。狀態顯示「Disconnected」、「Thinking…」永久停留，所有控制項灰掉，只有整頁重新整理能救。
+- **修法**：在 `onClose` 與 `onConnectionError` 都補上 `setSending(false)`，並把它加進連線 effect 的重設區塊。
+
+### 🟠 CLI 授權失敗時留下孤兒 bearer token，且註解宣稱的正好相反（2026-09-11 新發現）
+
+- **位置**：`backend/internal/console/console.go:933-959`（`approveCliAuth`），`Issue` 在 `:943`、`Approve` 在 `:948`、錯誤註解在 `:951-954`；`usertoken.Issue` 的持久化在 `usertoken.go:85-88`
+- **問題**：handler **先**鑄出 token（`h.Tokens.Issue` 內部 `s.db.Create(&row)`，立刻寫入一列有效的 `user_tokens`），**才**呼叫 `h.CliAuth.Approve`。當 `Approve` 回傳 `ok=false` 時 handler 回 409，並附註解說「The minted token above was never persisted anywhere or shown to anyone」——**這句話與程式碼事實不符**：`Issue` 早已 commit 該列。明文被丟棄了，但 hash 列存活下來，成為一把沒人看得到、無法稽核、也無從刻意撤銷的有效憑證。
+- **具體失敗情境**：使用者在兩個分頁開啟 CLI 同意頁並都按核准（雙擊／上一頁的常見操作）。分頁 1：`Issue` 建立 token #1、`Approve` 成功 → 200。分頁 2：`Issue` 建立 token #2（有效、hash 已存），`Approve` 的條件式 `WHERE ... approved = false` 匹配 0 列 → `ok=false` → 409。token #2 就此留在 `user_tokens`，名稱同為 `"browser login"`，在 `GET /console/tokens` 中與正牌的那一把**完全無法區分**，且 `user_tokens` 無 expiry 欄位、`usertoken.Verify` 也不檢查到期——永久有效。使用者看到兩筆一模一樣的項目，撤銷錯的那一把就會弄壞正在運作的 CLI。
+- **修法**：改為先做單次宣告再鑄 token——新增 `cliauth.Claim(id)` 只執行 `approved=false → true` 的條件式 UPDATE，成功後才 `Issue` 並回寫。或在 `Approve` 回傳 false 時以 `Issue` 已回傳的 id（目前被 `_` 丟棄，而它回傳 `id int64` 正是為了讓呼叫端日後能參照）呼叫 `h.Tokens.Revoke` 補償。無論採哪種，都要修正那段錯誤註解。
+
+### 🟠 `schemaCheckTargets` 漏掉 schema.sql 十四張表中的兩張，漂移檢查回報 `ok: true` 卻對它們完全盲目（2026-09-11 新發現）
+
+- **位置**：`backend/internal/adminconsole/schema_check.go:153-166`（`schemaCheckTargets`）對照 `backend/internal/db/schema.sql` — 缺 `identities`（`schema.sql:38`）與 `agent_experiences`（`:402`）
+- **問題**：`schema.sql` 宣告 14 張表，註冊表只列 10 張。該函式自己的註解警告「add a table's reference struct above and an entry here whenever schema.sql gains one, or the new table silently drops out of this check」——這件事**已經發生兩次**且無任何機制偵測。`schemaCheck`（`:178-190`）只在**列入清單**的表失敗時才設 `ok = false`，所以 `GET /admin/api/schema-check` 會回傳 `{"ok": true, ...}` 與 10 筆 `tables`，而兩張表根本沒被檢查。
+- **具體失敗情境**：`agent_experiences` 正是這個檢查最該盯的表——`schema.sql:415` 對它套用手寫遷移 `ALTER TABLE agent_experiences ADD COLUMN IF NOT EXISTS app_id TEXT NOT NULL DEFAULT ''`。若有人在 `schema.sql` 改名 `exp_id` 卻沒同步 `sessionstore.experienceRow`（`sessionstore.go:23-29`），每次 `Append` 都會因缺欄位而失敗、整個對話歷史功能損壞，但 admin 的 schema-check 頁面仍顯示十張表全綠、`ok: true`，主動誤導正在排查的人。`identities`（支撐 Google 登入）同樣暴露。
+- **修法**：補上 `identitiesFull`／`agentExperiencesFull` 參考結構與註冊表條目。更根本的作法是讓 `schemaCheck` 先查 `information_schema.tables` 取得實際表清單，對任何「資料庫有、註冊表沒有」的表回報為一項失敗，讓未來的遺漏能自我暴露。
+
+### 🟡 `session.go` 事後補送 `tool_call` 的迴圈使用 prompt 的 requestId，回覆永遠無法對應（2026-09-11 新發現）
+
+- **位置**：`backend/internal/ws/session.go:329-334`
+- **問題**：`Complete` 返回後的 `for _, tc := range result.ToolCalls` 迴圈以 `env.RequestID`（**prompt 的** requestId）送出 `TypeToolCall`，且從未在 `s.pendingCalls` 登記任何條目。真正能對應的路徑是 `AskInteraction`（`:392-412`），它自行產生 `requestID := randomID()`、登記 `pendingCalls` 後才送出。同一個訊息類型存在兩套互不相容的 requestId 慣例。
+- **現況（為何降為 MEDIUM 而非 CRITICAL）**：已複核 `want.go:335-341` 的註解與實作——正式的 want 路徑**刻意讓 `Result.ToolCalls` 永遠為空**（工具呼叫改由 `forwardingTool`/`queryTool` 經 `askPage` 直接同步送出），唯一會填充它的是 `MockService`（`mock.go:28`），而該服務只在 `cmd/server/main.go:541` 的非預設開發分支可達。**正式環境不會觸發**，因此是死碼與架構債，而非 live bug。
+- **潛在後果**：若未來任何 `inference.Service` 實作重新填充 `Result.ToolCalls`，瀏覽器會執行工具並回送一個帶著 prompt requestId 的 `tool_result`，`handleToolResult`（`:350-363`）找不到對應的 pending channel，只會靜默記一行 log 丟棄——工具在客戶頁面上真的執行了，結果卻無聲消失，雙方都收不到錯誤。
+- **修法**：依 `want.go:335` 已陳述的現實直接刪除該迴圈（讓 `AskInteraction` 成為唯一的 `tool_call` 發送者），並從 `inference.Result` 移除 `ToolCalls` 欄位；或讓迴圈為每次呼叫以新的 `randomID()` 登記 `pendingCalls` 使回覆可對應。前者較符合既有設計。
+
+### 🟡 手機版在頁面載入時就開啟真實的 Playground WebSocket，使用者根本還沒點開（2026-09-11 新發現）
+
+- **位置**：`apps/console/src/PlaygroundSheet.tsx:34-47`、`MobileNav.tsx:68`、`BottomSheet.module.css:24`
+- **問題**：`BottomSheet` 關閉時只是 `transform: translateY(100%)`，**子元件仍保持掛載並持續運作**。而 `PlaygroundSheet` 對 `<Playground>` 的渲染條件是 `appId &&`——**不是** `open &&`。所以手機版只要選了 app（`App.tsx:315-320` 會自動選），`Playground` 就掛載、連線 effect 執行、呼叫 `refreshQuota()` 並開啟一條到 `/console/apps/{appId}/playground` 的 WebSocket。
+- **repro**：在手機（或 <860px 視窗）以已登入、至少有一個 app 的狀態載入 console，完全不碰底部工具列。DevTools Network 會看到一個 `GET /console/quota` 與一條開啟中的 playground WS。從上方選單切換 app 會拆掉再開一條。後端為一個使用者從未開啟的 Playground 配置了 want orchestrator 與 session。
+- **修法**：渲染條件改為 `open && appId`，或維持掛載但傳入 `paused`/`enabled` prop 讓連線 effect 遵守。
+
+### 🟡 重新命名 schema 屬性會讓該列跳到清單最下方並奪走焦點（2026-09-11 新發現）
+
+- **位置**：`apps/console/src/SchemaEditor.tsx:72-85`
+- **問題**：`const nextProps = { ...properties }; delete nextProps[oldName]; nextProps[newName] = properties[oldName]` — JS 物件的字串鍵維持插入順序，先刪再插會把該屬性移到**最後**。而列表（`:172`）以 `Object.keys(properties)` 迭代、每列 `key={name}`，於是每按一個鍵該列就從原位置卸載、在底部重新掛載，焦點隨之消失。
+- **repro**：工具參數依序為 `alpha`、`beta`、`gamma`。點進 `alpha` 的名稱欄位打一個字使其成為 `alphax`——該列立刻跳到 `gamma` 下方、input 被重新掛載、游標丟失，因此要打完一個多字元的新名稱必須每按一鍵就重新點一次欄位；同時該參數在 schema 中的位置（也就是 LLM 看到的工具定義順序）被靜默重排。
+- **修法**：改為保留位置的重建方式 `Object.fromEntries(Object.entries(properties).map(([k, v]) => [k === oldName ? newName : k, v]))`，並給該列一個能跨越改名的穩定 key。
+
+### 🟡 `interaction.go` 的 `AgentIDToSessionID` 註解描述已被移除的行為，且引用了不存在的函式（2026-09-11 新發現）
+
+- **位置**：`backend/internal/inference/interaction.go:65-79`
+- **問題**：註解宣稱「只剝除 `WS-`；Playground 的 `PG-<userID>-<appID>` session **從不註冊 asker**，所以從 Playground 使用 query tool 會正確地以 "no page connected" 失敗」。兩項宣稱自 Playground 遷移至共用 `ws.Session` 後皆已不成立：(1) `want.go:206` 對**每一個** session 都加 `"WS-"` 前綴，Playground session 的 AgentID 是 `WS-PG-1-myapp`，剝掉後得 `PG-1-myapp`；(2) `ws/session.go:118` **無條件** `RegisterAsker(s.id, s)`，Playground 的 `PG-…` id 確實有註冊。
+- **具體風險**：維護者讀了這段註解會以為 query tool 到不了 Playground、且 `"PG-"` 的情況已被處理。若據此「補上」缺少的 `PG-` 剝除，`WS-PG-1-myapp` 會變成 `1-myapp`，對不上任何已註冊的 asker，**靜默弄壞 Playground 裡所有 query tool 與 action tool**。這段註解正把讀者導向該迴歸。
+- **附帶**：本註解（`:25`）與 `agent_roles.go:257` 的交叉引用都提到 **`sanitizeSessionID`** 這個**已不存在**的函式（全 repo 零個定義，只剩這兩處懸空引用），它已更名為 `sessionKeyFor`。
+- **修法**：改寫註解陳述現況（所有 session 一律帶 `WS-` 前綴；Playground 的 id 位於該前綴**之內**且確實註冊 asker），並把兩處 `sanitizeSessionID` 更新為 `sessionKeyFor`。
+
+### 🟡 `apps_without_owner` 完整性檢查永遠不可能觸發，且說明描述的是已不存在的程式碼（2026-09-11 新發現）
+
+- **位置**：`backend/internal/quota/integrity.go:56-62` 對照 `backend/internal/db/schema.sql:132-133`
+- **問題**：兩個獨立缺陷。(1) `schema.sql:132-133` 在**每次啟動**都執行 `UPDATE apps SET owner_id = 1 WHERE owner_id IS NULL;` 後接 `ALTER TABLE apps ALTER COLUMN owner_id SET NOT NULL;`（`db.Open` 每次開機套用整份檔案），所以任何伺服器成功啟動過的資料庫該欄位都是 `NOT NULL`，`SELECT count(*) FROM apps WHERE owner_id IS NULL` 結構上保證回傳 0。(2) 它的 `detail` 寫著「ownerStanding requires owner_id IS NOT NULL, so Check() fails open」——`ownerStanding` 已更名為 `userStanding`（`quota.go:319`），且 `Check` 早已完全不碰 `apps` 表（改為直接收 `userID`、只 join `users`+`subscriptions`，`quota.go:125-151`）。所描述的失效模式來自 `userID` 改版前的設計。
+- **具體後果**：維運人員開啟 admin 完整性頁面排查計費異常，看到 `apps_without_owner: 0, ok: true, severity: critical`——看似安心，實則是套套邏輯而非證據；同時該條目的文字把他導向閱讀一個不存在的符號、推敲一條已被移除的 fail-open 路徑。這個檢查佔著一個「專門用來抓靜默帳本損壞」的註冊表名額，卻提供零訊號。
+- **修法**：刪除該條目（`NOT NULL` 約束本身就是更強的保證），或改指向一個真的可能被違反的不變量——例如 `usage_events` 中 `owner_id` 與同 `app_id` 現行 `apps.owner_id` 不一致的列（`Record` 的去正規化寫入在 app 易主時確實會產生這種漂移）。無論何者都要改寫 `detail` 以符合改版後的 `Check`。
+
+### ⚪ 其他已驗證的小問題
+
+- **`playgroundStatus` 是死的 export，且註解描述了不存在的 prop**（`apps/console/src/Playground.tsx:27-32`）：以「供 `onStatusChange` 回報給父層 PlaygroundSheet」為由 export，但全 repo 沒有任何檔案 import 它，且 `Playground` 根本沒有 `onStatusChange` prop（實際機制是 `renderHeaderExtras`，傳的是已渲染好的節點）。export 的理由不成立。修法：拿掉 `export` 與註解中過時的那半段。
+- **`Template.noParameters` 不可達且潛在錯誤**（`apps/console/src/ToolWizard.tsx:140`、`:322`）：`TEMPLATES`（`:145-269`）沒有任何一項設定它，`visibleSteps` 恆為完整五步，該 `filter` 分支是死碼。同時它潛在不正確——`pickTemplate`（`:336-340`）硬寫 `setStepIndex(1)`，而 `back()`/`next()` 以索引走訪 `visibleSteps`，所以若真有模板設了此旗標，「Parameters」那一步對應的索引會被靜默位移。
+- **`session.Login` 未 trim 也未正規化它回傳的 email**（`backend/internal/session/session.go:184-201`，`adminauth.Login` 同）：`Register`（`:120`）有 `strings.TrimSpace`，`Login` 沒有，所以密碼管理員補上的尾隨空白會導致「帳密錯誤」而使用者無從得知原因；且它回傳呼叫端傳入的 `email` 而非資料庫的 `row.Email`，使得以 `TIM@X.COM` 登入時 `POST /console/login` 回 `{"email":"TIM@X.COM"}` 而 `GET /console/me` 回 `{"email":"tim@x.com"}`，重新整理後顯示的帳號身分會改變。
+- **`quota` 套件的死欄位**（`backend/internal/quota/quota.go:35-41`、`:61-66`）：`usageEventRow` 只被當作 `Model(&usageEventRow{})` 用來指定表名，五個宣告欄位無一被讀寫（`Record` 走原生 SQL）；`standingScanRow.OwnerID` 從未被 `userStanding` 的 `Select(...)` 選取，恆為 0，而其註解仍描述著 `StandingFor`/`ownerStanding` 兩個呼叫者的分工——該安排在 `StandingFor` 改為委派給 `userStanding` 後已不存在。
 
 ---
 
-## 最新掃描：2026-09-09
+## 舊掃描：2026-09-09
 
 > 方法：3 路並行掃描——(1) console 前端這次未提交的手機版重構（邏輯不一致＋過時註解）、(2) backend 邏輯不一致（排除已記錄條目）、(3) 專案級文件（README/CHANGELOG/apps 說明/`.env.example`/skill 文件）跟實際程式碼現況比對。全部發現皆已人工複核程式碼驗證，非直接採信 agent 結論。
 

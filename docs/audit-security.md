@@ -6,7 +6,56 @@
 
 ---
 
-## 最新掃描：2026-09-05
+## 最新掃描：2026-09-11
+
+> 方法：6 個並行 agent 分面向全專案掃描（後端核心邏輯、auth/quota/session、並發穩定性、安全、console 前端、SDK/協定一致性），每個 agent 要求「必須讀過實際程式碼、必須給出具體攻擊路徑」才能提報；主 session 再對每一項高嚴重度發現親自讀碼複核，剔除無實際利用路徑者。本節只列安全類發現。
+
+### 🔴 `BackendDispatch.Endpoint` 未做任何目標位址驗證，任何已登入使用者可對後端內網發動 full-read SSRF（2026-09-11 新發現）
+
+- **Sink**：`backend/internal/inference/backend_dispatch.go:107`（`http.NewRequestWithContext(ctx, POST, config.Endpoint, ...)`）、`:113`（`http.DefaultClient.Do` — 預設會跟隨 redirect）、`:119`（讀回上游 body，上限 1MiB）、`:125`（非 2xx 時把 `string(respBody)` **原文**包進 error 回傳）
+- **Source**：`backend/internal/console/console.go:658` `saveTool` / `:704` `saveToolByID`，`decodeJSON` 直接解出整個 `toolschema.Tool`（含 `BackendDispatch.Endpoint`）
+- **唯一驗證**：`backend/internal/toolschema/loader.go:111-113` — **只檢查 `Endpoint != ""`**（已複核確認），無 scheme allowlist、無 host/IP 過濾、無 redirect 限制
+- **攻擊路徑**：(1) 攻擊者自行註冊帳號（`POST /auth/register` 無審核）並建立自己的 app；(2) `PUT /console/apps/{myApp}/tools/leak` 帶 `backendDispatch.endpoint` 指向 `http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token`——因為 app 確實是他自己的，`withOwnedApp` 正常放行，`Validate()` 只看非空；(3) `toolFactoryFor`（`agent_roles.go:181`）因 `BackendDispatch != nil` 優先選 `backendDispatchTool`；(4) 攻擊者開自己 app 的 Playground 送 prompt 誘導 LLM 呼叫該工具；(5) 請求**從後端自己的網路位置**發出，回應 body 經 `EmitToolResult`／`TextBlock` 進入 LLM context 再回到攻擊者畫面，即使非 2xx 也會由 `:125` 的 error 字串原文回傳。
+- **影響**：`docs/deployment.md` 確認正式環境跑在 Google Cloud Run，`169.254.169.254` metadata server 可達 → 可取得 service account 的 OAuth access token 與專案 metadata，橫向移動到該 SA 有權限的所有 GCP 資源（Artifact Registry、Secret Manager、Cloud SQL…）；亦可掃描/讀取任何內網服務。
+- **與既有 PoC 註解的區別**：`toolschema/schema.go:70-73` 只承認「no request signing/auth — 不要指向你自己不信任的 endpoint」，那是對**開發者自己**的告誡，前提是 endpoint 由可信的 app 擁有者設定；完全未涵蓋「任意註冊使用者把它指向 onagent 自己的內網」這個平台自身被攻擊的面向，因此屬於超出既有 doc comment 範圍的可利用漏洞。
+- **修法**：(1) `Validate()` 強制 `Endpoint` 為 `https://` 且解析後必須是 public unicast IP（拒絕 loopback／link-local `169.254.0.0/16`／RFC1918／CGNAT／`::1`／ULA／`0.0.0.0/8`）；(2) `dispatchBackend` 改用專屬 `http.Client`，`CheckRedirect` 拒絕跨 host redirect，並於 `DialContext` 的 `Control` hook 再驗一次目標 IP（防 DNS rebinding／TOCTOU）；(3) `:125` 不要回傳上游 body 原文，只回 status code。
+
+### 🔴 空 `requestId` 完全繞過計費，quota 可無限制突破（2026-09-11 新發現）
+
+- **位置**：`backend/internal/inference/want.go:288`（`if s.quota != nil && req.RequestID != ""`）；值來源 `backend/internal/ws/session.go:321`（`RequestID: env.RequestID`），型別定義 `internal/protocol/message.go:59`（`json:"requestId,omitempty"`）
+- **問題**：`quota.Record` 是 `usage_events` 的**唯一**寫入者，而它被 `req.RequestID != ""` 這個條件擋住。`RequestID` 100% 由客戶端透過公開 WebSocket 提供，`handlePrompt` 全程**沒有任何非空驗證**（已複核：該函式只驗 payload JSON 與 `app != nil`）。`quota.Check`（`quota.go:141`）以 `SUM(total_tokens)` 計算 `used`，沒有列就永遠是 0，`used < limit` 恆真。
+- **攻擊路徑**：以合法 API key 建立 WS 連線後，送 `{"type":"prompt","payload":{"text":"..."}}` 但**省略 `requestId` 欄位**（`omitempty` 使其為空字串）。推論正常執行並回傳結果，但 `want.go:288` 判定為 false，不寫任何 usage 列。無限重複即可在零記錄用量下消耗無上限的真實 LLM 花費；兩個 enforcement point（`ws/handler.go:182` 握手、`ws/session.go:307` 每 prompt）都只會看到 `Used: 0`。
+- **附帶影響**：admin `/admin/api/users` 與開發者 `/console/quota` 兩個監控介面也都顯示 0，這個繞過在所有監控面向上**完全隱形**。
+- **修法**：`handlePrompt` 對空 `RequestID` 的 prompt 直接回覆 coded 協定錯誤；或 `WantService.Complete` 在 `req.RequestID == ""` 時自行產生 server-side fallback id 並無條件記錄。`event_id` 已被明文記載為「僅供稽核、不再是 dedup key」（`quota.go:196-205`），所以當初「空 id 就跳過」的理由已隨 `ON CONFLICT` 設計一併移除，用 server 端產生的 id 記錄嚴格優於不記錄。
+
+### 🟠 `cliauth.Exchange` 漏掉 `expires_at` 檢查，已核准未領取的明文 token 可無限期重放兌換（2026-09-11 新發現）
+
+- **位置**：`backend/internal/cliauth/cliauth.go:121-138`（`Exchange`）
+- **問題**：本套件三個查詢裡唯一漏掉過期檢查的一個——`NameFor`（`:85`）與 `Approve`（`:105`）都有 `expires_at > ?`，`Exchange`（`:125`）的 `Where` 卻只有 `id = ? AND approved = ? AND token IS NOT NULL`。而 `cli_auth_sessions.token` 存的是 `usertoken.Issue` 回傳的**明文 bearer token**（非 hash），`user_tokens` 表本身**無 expiry 欄位**、`usertoken.Verify` 也不檢查任何到期時間，且全 repo 沒有任何清理 job 會刪除過期列。
+- **攻擊路徑**：使用者跑 `onagent login --web` 並在瀏覽器點核准（此時 token 已鑄出並寫入 DB），但 CLI 在 `Exchange` 前掛掉／使用者關掉分頁／網路中斷 → token 留在 DB。10 分鐘 TTL 過後 session 名義上已過期，但 `POST /console/cli-auth/{id}/exchange`（**未認證端點**，`console.go:210`）仍然成功回傳該明文 token。任何取得該 id 的人（DB backup、read replica、log、瀏覽器歷史中 redirect URL 上的 `?code=<id>`）可在任意時間後兌換出受害者的完整帳號 bearer token。
+- **與既有記錄的區別**：既有稽核記的是「明文 token 無限期滯留」這個**資料滯留**風險（DB dump 面向）；這裡指出的是 `Exchange` **查詢條件本身漏了過期檢查**，讓一個對外開放的未認證 HTTP 端點可被無限期重放——TTL 的安全保證在此路徑上形同虛設。
+- **修法**：`Exchange` 的 `Where` 補上 `AND expires_at > ?` 與 `NameFor`/`Approve` 一致；並補上定期清理 job（或至少在兌換後清空 `token` 欄位）。
+
+### 🟡 `interaction.go` 的安全假設與實作不符，Playground 的 query tool 實際可達（2026-09-11 新發現）
+
+- **位置**：`backend/internal/inference/interaction.go:65-79`（`AgentIDToSessionID` doc comment）vs `backend/internal/inference/want.go:206`（`orch.AgentID = "WS-" + key`）、`backend/internal/ws/session.go:118`（`RegisterAsker(s.id, s)` 無條件執行）
+- **問題**：註解明確寫「Playground 的 `PG-<userID>-<appID>` session 從不註冊 asker，所以 query tool 從 Playground 呼叫會正確地失敗」。但 `want.go:206` **無條件**加 `"WS-"` 前綴，Playground session 的 AgentID 是 `WS-PG-42-myapp`，剝掉 `WS-` 正好得到 `PG-42-myapp`——就是 `RegisterAsker` 使用的 key。**askPage 在 Playground 完全可以成功。**
+- **影響**：本身不構成直接越權（`askers` 的 key 內嵌呼叫者自己的 userID，碰不到別人的 session），但這是一個**被文件標示為「已關閉」、實際上開著的攻擊面**：既有稽核 S2 記載的「用 `ToolKindQuery` 不回答來卡住 orchestrator」在 Playground 這條路徑上，文件說不成立、實際成立。任何依據這段註解做的安全判斷都是錯的。
+- **修法**：擇一並讓文件與程式碼一致——要嘛修正註解並據此重新評估 S2 的適用範圍，要嘛讓 `askPage` 對 `PG-` 前綴明確拒絕。
+
+### 本次複核為安全、無須處理
+
+- **SQL injection：無**。全 repo 只有 `registry.go:386`、`:455` 兩處 `Raw`，皆為 `?` 參數化常數字串；其餘走 GORM builder，無任何 `fmt.Sprintf` 拼接 SQL。
+- **Path traversal：無**。`sessionKeyFor`（`want.go:349`）限制 `^[a-zA-Z0-9_-]{1,128}$`；`ValidAppID` 排除 `/`、`..`、前導點；`web.go` 的 SPA fallback 走 `fs.FS`（自帶 `..` 防護）。
+- **Command injection：無**。唯一的 `exec.Command`（`cmd/onagent/main.go:433-437`）第一參數為常數，URL 作為獨立 argv 元素，未經 shell。
+- **端點 ownership 對照**：逐一比對 `console.Register`（`console.go:137-211`）每條路由——所有 `{appId}` 路由皆在 `withOwnedApp` 後；`/console/quota`、`/console/tokens*` 無 `{appId}` 但各自以 `user.ID` scope。`adminconsole.Register` 除 login/logout 外全數 `withAdmin`。未發現任何一條路由漏掉鄰居都有的檢查。
+- **Playground Public app 跨租戶隔離：正確**。`ownedOrPublicApp` 放行非擁有者，但 sessionID 為 `PG-<自己的userID>-<appID>`，`sessionstore` 又以 `(app_id, session_id)` 雙重 scope，訪客讀不到擁有者的對話；quota 亦已正確 bill `user.ID`。
+- **Timing-unsafe 比較：無**。`auth.Verify`/`usertoken.Verify` 先 SHA256 再送 DB 索引等值查詢；密碼走 `bcrypt.CompareHashAndPassword`（本身 constant-time）。
+- **Google OAuth**：state cookie CSRF 防護（`googleauth.go:169`）、`idtoken.Validate` 驗簽 + audience（`:207`）、`email_verified` 檢查（`:219`）三項齊備。
+
+---
+
+## 舊掃描：2026-09-05
 
 > 方法：針對本次請求範圍（`backend/internal/auth/`、`backend/internal/session/`、`backend/internal/ws/`、`backend/cmd/server/main.go`）做的機密資料處理與傳輸安全定向複核——API key/token 產生與比對方式、cookie 屬性、CORS/Origin 檢查、WebSocket 升級流程。單一 agent 人工逐檔複核，非多 agent 對抗式驗證。
 
