@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { AgentBridge, defineTool } from '@onagent/bridge'
+import { usePageMeta } from '../../usePageMeta'
 import styles from './SupportDemo.module.css'
 
 // AI customer support agent — the "/support" demo shell. Unlike the old
@@ -97,40 +98,39 @@ interface DayCellData {
   bookedBy?: string
 }
 type WeekData = { day: string; date: number; byTime: Partial<Record<(typeof TIME_ROWS)[number], DayCellData>> }[]
-const INITIAL_WEEK: WeekData = [
-  { day: 'Mon', date: 8, byTime: {} },
-  {
-    day: 'Tue', date: 9, byTime: {
-      '10am': { stylist: 'Amy', booked: true },
-      '2pm': { stylist: 'Jordan', booked: false },
-    },
-  },
-  {
-    day: 'Wed', date: 10, byTime: {
-      '11am': { stylist: 'Amy', booked: false },
-      '2pm': { stylist: 'Priya', booked: true },
-    },
-  },
-  {
-    day: 'Thu', date: 11, byTime: {
-      '10am': { stylist: 'Jordan', booked: true },
-      '3pm': { stylist: 'Priya', booked: false },
-    },
-  },
-  {
-    day: 'Fri', date: 12, byTime: {
-      '2pm': { stylist: 'Amy', booked: false },
-      '3pm': { stylist: 'Priya', booked: true },
-    },
-  },
-  {
-    day: 'Sat', date: 13, byTime: {
-      '11am': { stylist: 'Jordan', booked: true },
-      '1pm': { stylist: 'Priya', booked: true },
-    },
-  },
-  { day: 'Sun', date: 14, byTime: {} },
+
+// The mock schedule's byTime content (which stylist/slot is booked) is
+// fixed, hand-authored demo data — only the calendar's date NUMBERS
+// underneath each day are computed from the real current week, so the
+// grid always shows this actual week's dates (matching
+// get_today_date's own real wall-clock answer) instead of a permanently
+// stale "Mon 8 – Sun 14."
+const WEEK_BY_TIME: Partial<Record<(typeof TIME_ROWS)[number], DayCellData>>[] = [
+  {},
+  { '10am': { stylist: 'Amy', booked: true }, '2pm': { stylist: 'Jordan', booked: false } },
+  { '11am': { stylist: 'Amy', booked: false }, '2pm': { stylist: 'Priya', booked: true } },
+  { '10am': { stylist: 'Jordan', booked: true }, '3pm': { stylist: 'Priya', booked: false } },
+  { '2pm': { stylist: 'Amy', booked: false }, '3pm': { stylist: 'Priya', booked: true } },
+  { '11am': { stylist: 'Jordan', booked: true }, '1pm': { stylist: 'Priya', booked: true } },
+  {},
 ]
+const WEEK_DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+
+function buildInitialWeek(): WeekData {
+  const now = new Date()
+  // getDay(): 0=Sun..6=Sat. Converts to a Monday-first offset (0=Mon..
+  // 6=Sun) so "this Monday" is always <= today, then walks forward to
+  // fill in the rest of the current Mon–Sun week.
+  const mondayOffset = (now.getDay() + 6) % 7
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - mondayOffset)
+  return WEEK_DAY_NAMES.map((day, i) => {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    return { day, date: d.getDate(), byTime: WEEK_BY_TIME[i] }
+  })
+}
+const INITIAL_WEEK: WeekData = buildInitialWeek()
 
 // slotId is just "<day>-<time>" (e.g. "Tue-2pm") — day+time is already the
 // natural unique key for a slot (single-chair-per-slot, see WEEK's own
@@ -151,6 +151,38 @@ function slotId(day: string, time: string): string {
 // know who's chatting.
 const CURRENT_CUSTOMER = { name: 'Jordan Lee' }
 
+// The demo's own static UI copy, switchable independently of the rest of
+// showcase (which has no i18n at all yet — see this component's own
+// language-toggle button below) since a salon-booking assistant is a
+// plausible bilingual storefront in a way the marketing-analytics demo
+// isn't. Deliberately NOT the LLM's own reply language — that's set by
+// support-app-tools.yaml's `thought` on the backend and unaffected by
+// this toggle; only the page's own static labels/placeholder/greeting
+// switch here.
+type Lang = 'en' | 'zh'
+const STRINGS: Record<Lang, {
+  scheduleTitle: string
+  stylistsLabel: string
+  greeting: string
+  inputPlaceholder: string
+  inputPlaceholderOffline: string
+}> = {
+  en: {
+    scheduleTitle: "Acme Salon's Bookings",
+    stylistsLabel: 'Stylists:',
+    greeting: "Hi! I'm Acme Salon's assistant. Ask me who's free this week, or anything else about booking an appointment.",
+    inputPlaceholder: 'Ask who has an opening this week…',
+    inputPlaceholderOffline: 'Demo not wired up (missing API key)',
+  },
+  zh: {
+    scheduleTitle: 'Acme 沙龍預約',
+    stylistsLabel: '設計師：',
+    greeting: '嗨！我是 Acme 沙龍的預約助理。歡迎問我這週誰有空檔，或任何跟預約有關的問題。',
+    inputPlaceholder: '問問這週誰有空檔…',
+    inputPlaceholderOffline: 'Demo 尚未接上線（缺少 API key）',
+  },
+}
+
 interface ToolCallEntry {
   kind: 'tool'
   id: number
@@ -168,9 +200,30 @@ type Entry = ToolCallEntry | ChatEntry
 let nextEntryId = 0
 
 export function SupportDemo() {
+  // Defaults to English; toggled via the phone-frame's own language
+  // button (see the JSX below) — a page-load-time-only choice (not
+  // synced with the browser's locale or the rest of showcase), the
+  // same "explicit toggle, not auto-detected" approach
+  // src/marketing-demo/widget.js's own lang param uses.
+  const [lang, setLang] = useState<Lang>('en')
+  const t = STRINGS[lang]
   const [entries, setEntries] = useState<Entry[]>([
-    { kind: 'assistant', id: nextEntryId++, text: "Hi! I'm Acme Salon's assistant. Ask me who's free this week, or anything else about booking an appointment." },
+    { kind: 'assistant', id: nextEntryId++, text: STRINGS.en.greeting },
   ])
+  // Re-translates the greeting in place when the visitor switches
+  // language — but only while it's still the sole, untouched entry (a
+  // visitor who hasn't sent anything yet). Once a real conversation has
+  // started, switching language must not rewrite messages already sent
+  // — matching every other STRINGS lookup here, which is applied at
+  // render/send time going forward, never retroactively.
+  useEffect(() => {
+    setEntries((es) =>
+      es.length === 1 && es[0].kind === 'assistant' ? [{ ...es[0], text: t.greeting }] : es,
+    )
+    // Only fires on a lang change, not on every entries update — this
+    // effect's own setEntries call would otherwise re-trigger itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lang])
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
   // Mirrors getPromptCount() >= MAX_PROMPTS_PER_BROWSER — kept as its own
@@ -264,6 +317,18 @@ export function SupportDemo() {
     window.dataLayer.push({ event: 'demo_open', demo_id: 'showcase-support' })
   }, [])
 
+  // Overrides showcase/index.html's shared, marketing-demo-flavored
+  // <title>/meta tags (see usePageMeta's own comment) with this page's
+  // own — leads with "AI customer support" and "appointment booking" as
+  // the two terms most likely to match what someone would actually
+  // search for landing on this specific demo, rather than the generic
+  // showcase-wide copy every other /showcase/* route falls back to.
+  usePageMeta({
+    title: 'AI Customer Support & Appointment Booking Demo — onagent',
+    description: 'Try a live AI customer support assistant that books, looks up, and cancels real appointments — a real AgentBridge connection, not a mock.',
+    path: '/support',
+  })
+
   // Same "unlock the moment the AgentBridge instance is constructed"
   // pattern src/marketing-demo/widget.js's own comment explains — there is
   // no reliable "connection actually succeeded" signal to gate on that
@@ -289,6 +354,27 @@ export function SupportDemo() {
         setEntries((es) => [...es, { kind: 'assistant', id: nextEntryId++, text: "This demo has hit its usage limit for now — please check back later." }])
       },
       tools: [
+        defineTool(
+          'get_today_date',
+          () => ({}),
+          () => {
+            // Real wall-clock time, not a value anchored to
+            // INITIAL_WEEK's own Mon 8 – Sun 14 mock dates — this tool
+            // only answers "what day is it really," so the LLM can
+            // reason about relative-date phrases ("tomorrow," "next
+            // Friday") in absolute terms; it deliberately does NOT try
+            // to map "today" onto one of the mock week's specific
+            // dates, since the two numbering schemes have no real
+            // relationship to reconcile.
+            const now = new Date()
+            const result = {
+              isoDate: now.toISOString().slice(0, 10),
+              weekday: now.toLocaleDateString('en-US', { weekday: 'long' }),
+            }
+            setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'get_today_date', args: {}, result }])
+            return result
+          },
+        ),
         defineTool(
           'check_availability',
           (raw) => {
@@ -488,7 +574,7 @@ export function SupportDemo() {
       <div className={styles.siteMock}>
         <div className={styles.siteMockNav}>
           <div className={styles.siteMockLogo} />
-          <span className={styles.siteMockTitleText}>This week</span>
+          <span className={styles.siteMockTitleText}>{t.scheduleTitle}</span>
         </div>
         <table className={styles.weekGrid}>
           <thead>
@@ -544,6 +630,7 @@ export function SupportDemo() {
           </tbody>
         </table>
         <div className={styles.legend}>
+          <span className={styles.legendLabel}>{t.stylistsLabel}</span>
           {STYLISTS.map((name) => (
             <span key={name} className={styles.legendItem}>
               <span className={styles.legendAvatar} style={{ borderColor: STYLIST_COLORS[name] }}>
@@ -570,8 +657,22 @@ export function SupportDemo() {
             <span className={`${styles.csAvatar} ${styles.csAvatarLg}`}>
               <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
             </span>
-            <div>
-              <div className={styles.csPanelTitle}>Support</div>
+            <div className={styles.csPanelHeaderText}>
+              <div className={styles.csPanelTitleRow}>
+                <div className={styles.csPanelTitle}>Support</div>
+                {/* This demo's own static copy (title/legend/greeting/
+                    placeholder, see the STRINGS dict above) switches
+                    language on click; the LLM's own reply language is
+                    unaffected (that's set by support-app-tools.yaml's
+                    thought on the backend, not by this toggle). */}
+                <button
+                  type="button"
+                  className={styles.langToggle}
+                  onClick={() => setLang((l) => (l === 'en' ? 'zh' : 'en'))}
+                >
+                  {lang === 'en' ? '中文' : 'EN'}
+                </button>
+              </div>
               {/* Same signal the input's own placeholder/disabled state
                   already uses (API_KEY presence) — not a real "connection
                   succeeded" check, since this component has no reliable one
@@ -634,7 +735,7 @@ export function SupportDemo() {
               >
                 <input
                   className={styles.csTextarea}
-                  placeholder={API_KEY ? 'Ask who has an opening this week…' : 'Demo not wired up (missing API key)'}
+                  placeholder={API_KEY ? t.inputPlaceholder : t.inputPlaceholderOffline}
                   value={input}
                   disabled={!API_KEY}
                   onChange={(e) => setInput(e.target.value)}

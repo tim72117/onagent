@@ -368,8 +368,16 @@
        sits on its own row below the illustration+text row, centered
        rather than stretched — one action for the whole card, not tied to
        either column's width. */
-    .case-try-row { grid-column: 1 / -1; display: flex; justify-content: center; margin-top: 28px; }
+    .case-try-row { grid-column: 1 / -1; display: flex; justify-content: center; gap: 14px; margin-top: 28px; }
     .case-try-btn { width: auto; min-width: 260px; padding: 15px 28px; font-size: 16.5px; }
+    /* Hidden by default (mobile/tablet); shown only at desktop widths —
+       see .case-try-btn's own comment on why /showcase/support isn't
+       worth the same "open inline" treatment as the marketing widget's
+       modal on a narrow screen. */
+    .case-showcase-link { display: none; }
+    @media (min-width: 761px) {
+      .case-showcase-link { display: inline-flex; }
+    }
     /* Fixed width, not 100% — .collage's children (the app window, the
        overlapping chart card, the floating bubbles) are all absolutely
        positioned in real pixels, so letting this stretch to whatever
@@ -850,6 +858,15 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
             <button type="button" class="btn btn-primary case-try-btn" id="marketing-demo-toggle">
               Try it live →
             </button>
+            <!-- Desktop-only (see .case-showcase-link's own media query):
+                 /showcase/support's phone-framed chat panel needs real
+                 width to read as anything but a cramped accordion, the
+                 same reason the modal above opens near-full-page rather
+                 than inline — not worth the same tradeoff on a phone
+                 screen that's already at "full page" by default. -->
+            <a class="btn btn-ghost case-try-btn case-showcase-link" href="/showcase/">
+              See more examples →
+            </a>
           </div>
         </div>
       </div>

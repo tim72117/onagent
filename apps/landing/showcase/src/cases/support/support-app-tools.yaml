@@ -38,7 +38,35 @@ thought: |
   slotId that get_my_appointments actually returned; if it isn't in that
   list, tell the visitor you can't find that booking under their name
   rather than attempting the cancellation anyway.
+
+  If the visitor uses a relative date phrase (e.g. "today," "tomorrow,"
+  "this Friday," "next week") and you need to resolve it to an actual
+  weekday before calling check_availability, call get_today_date first —
+  it takes no arguments and returns the real current date/weekday. Don't
+  guess what day it is from context.
 tools:
+  - name: get_today_date
+    description: >
+      Returns the real current date and day of the week. Call this
+      whenever the visitor uses a relative date phrase (e.g. "today,"
+      "tomorrow," "this Friday") and you need to resolve it to an
+      actual weekday before calling check_availability — never guess
+      what day it is.
+    kind: query
+    parameters:
+      type: object
+      properties: {}
+    returns:
+      type: object
+      description: The real current date, in two forms.
+      properties:
+        isoDate:
+          type: string
+          description: Today's date as YYYY-MM-DD.
+        weekday:
+          type: string
+          description: Today's day of the week, e.g. "Wednesday".
+
   - name: check_availability
     description: >
       Looks up which appointment slots are open or already booked this

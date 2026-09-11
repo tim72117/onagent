@@ -146,7 +146,8 @@
   .badgeFly { animation-duration: 0.01s; }
 }
 
-.legend { display: flex; gap: 16px; margin-top: 16px; }
+.legend { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
+.legendLabel { font-size: 12.5px; font-weight: 600; color: var(--sl-text-3); }
 .legendItem { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--sl-text-2); }
 .legendAvatar {
   display: grid; place-items: center;
@@ -184,8 +185,23 @@
 .csAvatar svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .csAvatarLg { width: 36px; height: 36px; }
 .csAvatarLg svg { width: 18px; height: 18px; }
+/* Fills the header's remaining width (avatar is flex: none) so
+   .csPanelTitleRow's own justify-content: space-between has a real
+   right edge to push .langToggle against, instead of the row only ever
+   being as wide as "Support" + the button. */
+.csPanelHeaderText { flex: 1; min-width: 0; }
+.csPanelTitleRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .csPanelTitle { font-weight: 700; font-size: 15px; color: var(--sl-text); }
 .csPanelSubtitle { font-size: 12px; color: var(--sl-text-3); display: flex; align-items: center; gap: 4px; }
+/* Same-row toggle next to "Support" (see SupportDemo.tsx's
+   csPanelTitleRow) — this demo's own static copy only (STRINGS/lang
+   state), not the rest of showcase. */
+.langToggle {
+  padding: 3px 10px; border: 1px solid var(--sl-border); border-radius: 999px;
+  background: var(--sl-bg); color: var(--sl-text);
+  font-size: 11px; font-weight: 600; cursor: pointer; flex: none;
+}
+.langToggle:hover { border-color: rgba(201,162,75,0.6); }
 .csDot { width: 6px; height: 6px; border-radius: 50%; background: #3fa86a; display: inline-block; }
 /* No API key set (SupportDemo.tsx's API_KEY) — same "not wired up" state
    the input's own disabled/placeholder already communicates, so the dot
@@ -349,6 +365,21 @@
      at the page, at the cost of the covered fraction of the card itself
      varying slightly with how tall its content happens to render. */
   .csPhoneDock {
+    /* align-self: stretch overrides the desktop rule's align-self: end
+       (SupportDemo.module.css's base .csPhoneDock rule) — that value
+       survives into position: fixed on WebKit/iOS Safari (confirmed on
+       a real device) even though this element is no longer a grid item
+       at this breakpoint, so top/bottom alone didn't actually stretch
+       the box to fill that span; WebKit sized it to its content's
+       height instead and pinned it to the bottom, and .csPanel's own
+       height: 100% then resolved against that auto height as 0,
+       collapsing the entire chat panel down to just this box's own
+       padding — on-screen this reads as the chat panel disappearing
+       entirely, leaving only the schedule card and a sliver of black
+       padding. Chrome's box model happened to mask this (it fell back
+       to using the content height directly), which is why it wasn't
+       caught in Chrome DevTools' device emulation. */
+    align-self: stretch;
     position: fixed; z-index: 10; left: 0; right: 0;
     top: 50%; bottom: 0;
     margin: 0; width: auto; height: auto;
