@@ -48,19 +48,25 @@ jobs:
           DOCKER_BUILDKIT: "1"
           GH_PAT: ${{ secrets.GH_PAT }}
           LANDING_ANALYSIS_API_KEY: ${{ secrets.LANDING_ANALYSIS_API_KEY }}
+          LANDING_SUPPORT_API_KEY: ${{ secrets.LANDING_SUPPORT_API_KEY }}
         run: |
           # --secret (not --build-arg) so these never land in the image's
           # layer history — each only exists as a file during the one RUN
           # step in the Dockerfile that reads it. LANDING_ANALYSIS_API_KEY
           # wires up the marketing-demo widget's real AgentBridge
-          # connection (see Dockerfile's landing-build stage); it's fine
-          # for that value to end up embedded in the built JS bundle
-          # (it's a browser-facing app key, not a server secret) — the
-          # secret mount here is only to keep it out of the image's layer
-          # history along the way, not to keep it out of the final bundle.
+          # connection, LANDING_SUPPORT_API_KEY wires up the
+          # /showcase/support demo's own connection (see Dockerfile's
+          # landing-build stage); it's fine for these values to end up
+          # embedded in the built JS bundle (they're browser-facing app
+          # keys, not server secrets) — the secret mount here is only to
+          # keep them out of the image's layer history along the way, not
+          # to keep them out of the final bundle. Both are optional: a
+          # missing GitHub secret just leaves that one demo in its
+          # "not wired up yet" state, same as a local build without it.
           docker build \
             --secret id=gh_pat,env=GH_PAT \
             --secret id=landing_analysis_api_key,env=LANDING_ANALYSIS_API_KEY \
+            --secret id=landing_support_api_key,env=LANDING_SUPPORT_API_KEY \
             -t ${{ env.IMAGE }}:${{ github.sha }} \
             -t ${{ env.IMAGE }}:latest \
             .
