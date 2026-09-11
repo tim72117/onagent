@@ -1,0 +1,13 @@
+.head { max-width: 640px; margin: 0 auto 40px; text-align: center; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600;
+  color: var(--accent-2); background: var(--accent-soft); border: 1px solid rgba(201,162,75,0.3);
+  padding: 5px 12px; border-radius: 999px; margin-bottom: 18px;
+}
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.head h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 800; margin-bottom: 14px; }
+.gradText { background: var(--grad-text); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.head p { color: var(--text-2); font-size: 16px; line-height: 1.65; }
+
+.caseList { display: flex; flex-direction: column; }
+.caseDivider { border-top: 1px dashed var(--border); max-width: 640px; margin: 64px auto; width: 100%; }

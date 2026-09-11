@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import shared from '../../Shared.module.css'
 
 declare global {
   interface Window {
@@ -53,8 +54,8 @@ export function MarketingDemo() {
   }, [])
 
   return (
-    <div className="demo-panel">
-      {loading && <div className="demo-loading">Loading demo…</div>}
+    <div className={shared.demoPanel}>
+      {loading && <div className={shared.demoLoading}>Loading demo…</div>}
       <div ref={hostRef} style={{ display: loading ? 'none' : undefined }} />
     </div>
   )

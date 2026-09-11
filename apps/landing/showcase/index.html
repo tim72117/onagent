@@ -50,38 +50,16 @@
 height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <!-- End Google Tag Manager (noscript) -->
 <body>
-  <div class="bg-fx"></div>
-
-  <!-- Static chrome (topbar/head-copy/footer) lives here, outside #root —
-       it's pure links and copy with no state or interactivity, so there's
-       no reason to route it through React. Only the actual demo toggle
-       (illustration card -> live widget) is a React app — see src/App.tsx. -->
-  <header class="topbar">
-    <a class="brand" href="../index.html"><span class="mark">⌘</span>onagent<span class="sep">/</span><span class="tag">showcase</span></a>
-    <div class="topbar-links">
-      <a href="../index.html">Home</a>
-      <a href="/pricing/">Pricing</a>
-      <a href="/docs/">Docs</a>
-    </div>
-  </header>
-
-  <!-- .head (the "Live demo" eyebrow/title/subtitle) moved into
-       ShowcaseList.tsx itself, not left here as shared static chrome — it
-       only makes sense on the case list, not on an individual case's own
-       demo route (/marketing, /support), which now render only their own
-       content directly into #root with no shared banner above them. -->
-  <main>
-    <div class="wrap">
-      <div id="root"></div>
-    </div>
-  </main>
-
-  <footer>
-    <div class="wrap foot-bottom">
-      <span>© 2026 onagent</span>
-      <span><a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a></span>
-    </div>
-  </footer>
+  <!-- Everything (topbar, routed page content, footer) is React now — see
+       src/App.tsx's Topbar/Routes/Footer. Moved off static markup here
+       specifically so every part of this page can use CSS Modules'
+       hashed class names; static HTML outside #root has no way to
+       reference a module's generated names, which is exactly the gap a
+       real class-name collision fell into before this (a bare ".tag" used
+       here as plain decoration text collided with an unrelated ".tag"
+       rule for feature bubbles, absolutely-positioning this text and
+       breaking the topbar's layout). -->
+  <div id="root"></div>
 
   <script type="module" src="/showcase/src/main.tsx"></script>
 </body>

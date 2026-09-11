@@ -1,0 +1,59 @@
+/* Styling for MarketingCase.tsx alone (the browser-window collage on the
+   list page). Shared ".case-*"/".chat"/".bubble-u" rules live in
+   ../../Shared.module.css instead; MarketingDemo.tsx (the "/marketing"
+   route) has no styling of its own at all — it only uses Shared's
+   .demoPanel. */
+.collage {
+  position: relative; width: 100%; height: 230px; border-radius: 16px; overflow: visible;
+  background: radial-gradient(120% 100% at 20% 0%, #efe8d3 0%, #e7ddc0 55%, #ddcfa8 100%);
+}
+.win {
+  position: absolute; left: 18px; top: 18px; width: 78%;
+  background: #fff; border-radius: 10px; overflow: hidden;
+  box-shadow: 0 22px 44px -16px rgba(43,39,24,0.22);
+}
+.winBar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid #f0ead9; }
+.winDot { width: 7px; height: 7px; border-radius: 50%; background: #e6e1d3; }
+.winSearch { flex: 1; margin-left: 6px; height: 12px; border-radius: 6px; background: #f3efe4; max-width: 100px; }
+.winBody { display: flex; }
+.winSide { width: 34px; padding: 10px 8px; display: flex; flex-direction: column; gap: 7px; border-right: 1px solid #f3efe4; }
+.winSide i { display: block; height: 4px; border-radius: 2px; background: #eee8d8; }
+.on { background: var(--accent); }
+.winMain { flex: 1; padding: 10px 12px; }
+.winKpis { display: flex; gap: 8px; margin-bottom: 8px; }
+.kpi { flex: 1; background: #faf8f2; border-radius: 6px; padding: 6px 8px; }
+.kpiLabel { height: 4px; width: 60%; border-radius: 2px; background: #e6e1d3; margin-bottom: 5px; }
+.kpiValue { font-family: var(--mono); font-size: 12px; font-weight: 700; color: #2b2718; }
+.winChart { height: 46px; border-radius: 6px; background: #faf8f2; position: relative; overflow: hidden; }
+.winChart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.floatChart {
+  position: absolute; right: 4px; bottom: -6px; width: 158px;
+  background: #fff; border-radius: 10px; padding: 10px 12px 8px;
+  box-shadow: 0 20px 40px -14px rgba(43,39,24,0.28);
+  transform: rotate(-1.5deg);
+}
+.floatChartTitle { font-size: 12px; font-weight: 700; color: #2b2718; margin-bottom: 8px; }
+.floatBars { display: flex; align-items: flex-end; gap: 5px; height: 44px; }
+.b { flex: 1; border-radius: 2px 2px 0 0; }
+.dark { background: #c9a24b; }
+.light { background: #f0dfae; }
+.floatLabels { display: flex; gap: 5px; margin-top: 4px; }
+.floatLabels span { flex: 1; text-align: center; font-size: 7.5px; color: #a89b82; }
+
+/* Decorative floating bubbles — all exclusive to this component; the
+   support case has its own, separately-named equivalents in
+   SupportCase.module.css even though visually similar. As a CSS Module,
+   these can never collide with SupportCase.module.css's own classes even
+   if the source names matched exactly. */
+.bubble {
+  position: absolute; display: grid; place-items: center; border-radius: 50%;
+  box-shadow: 0 10px 22px -8px rgba(43,39,24,0.32);
+}
+.bubble svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.bPlus { width: 34px; height: 34px; right: 14px; top: -14px; background: var(--grad); color: #1a1408; }
+.bPlus svg { width: 16px; height: 16px; }
+.bChat { width: 30px; height: 30px; left: 4px; bottom: 30px; background: #fff; color: var(--accent); }
+.bChat svg { width: 14px; height: 14px; }
+.bRing { width: 22px; height: 22px; left: 44%; bottom: -10px; border: 3px solid var(--accent-2); background: transparent; box-shadow: none; }
+.bMini { width: 26px; height: 26px; left: -8px; top: 40px; background: #fff; color: var(--accent); }
+.bMini svg { width: 13px; height: 13px; }

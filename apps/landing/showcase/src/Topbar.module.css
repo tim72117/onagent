@@ -1,0 +1,27 @@
+.bgFx {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(60rem 40rem at 88% -10%, rgba(224, 201, 138, 0.06), transparent 60%),
+    radial-gradient(50rem 40rem at 4% 0%, rgba(201, 162, 75, 0.07), transparent 55%);
+}
+.topbar {
+  position: sticky; top: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: space-between;
+  height: 60px; padding: 0 20px;
+  background: rgba(244, 241, 234, 0.9); backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-soft);
+}
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; color: var(--text); }
+.mark {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px;
+  background: var(--grad); color: #1a1408; font-size: 14px; font-weight: 700;
+}
+.sep { color: var(--text-3); font-weight: 400; margin: 0 2px; }
+.suffix { color: var(--text-2); font-weight: 600; font-size: 14px; }
+.links { display: flex; align-items: center; gap: 18px; font-size: 13.5px; color: var(--text-2); }
+.links a { color: var(--text-2); }
+.links a:hover { color: var(--text); }
+
+@media (max-width: 640px) {
+  .links a { display: none; }
+}

@@ -1,0 +1,184 @@
+/* Styling for SupportDemo.tsx alone (the "/support" route's live demo
+   shell). Fully distinct from SupportCase.module.css — see that file's
+   own header comment for why they're kept in separate files, not just
+   separately-scoped names. */
+
+/* Deliberately light-themed, unlike every other route here (dark,
+   matching the marketing site) — a support-widget demo reads more
+   convincingly as "a real customer's website" on a plain light
+   background. siteMock is the backdrop (a salon's own weekly stylist
+   schedule); the phone-framed chat panel floats over its bottom-right
+   corner, same as a real embedded support widget would. */
+.supportShell {
+  --sl-bg: #f4f1ea;
+  --sl-panel: #ffffff;
+  --sl-border: #e7e0cf;
+  --sl-text: #2b2718;
+  --sl-text-2: #6b6250;
+  --sl-text-3: #9a917c;
+  position: relative;
+  max-width: var(--max); margin: 0 auto; min-height: 600px;
+  border: 1px solid var(--sl-border); border-radius: 20px; overflow: hidden;
+  box-shadow: var(--shadow);
+  background: var(--sl-bg);
+}
+
+/* The salon's own weekly stylist schedule — styling only for now; not yet
+   wired to check_availability/book_appointment's actual results (see
+   SupportDemo.tsx's header comment). pointer-events/user-select stay
+   enabled (a real booking calendar would be a real, usable page, even
+   though this demo's slots are static content). */
+/* Right padding is wide enough to clear csPhoneDock's footprint (340px
+   wide + 28px right offset, see below) so the week grid never sits under
+   the phone. */
+.siteMock { padding: 32px 400px 32px 36px; height: 100%; overflow: auto; }
+.siteMockNav { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+.siteMockLogo { width: 28px; height: 28px; border-radius: 8px; background: var(--sl-text); flex: none; }
+.siteMockTitleText { font-size: 18px; font-weight: 700; color: var(--sl-text); }
+
+/* Real calendar-app-style grid — a fixed time axis running down the
+   far-left column, Mon-Sun as columns across the top, and each (day,
+   time) cell showing the stylists with an opening or an existing booking
+   then as small colored cartoon-emoji avatars (see SupportDemo.tsx's
+   STYLIST_COLORS/STYLIST_AVATARS/TIME_ROWS), so a visitor can tell at a
+   glance who's free (or already booked) at which time on which day. */
+.weekGrid { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.timeAxisHead { width: 46px; }
+.dayHead { padding: 0 4px 8px; text-align: center; }
+.dayLabel { font-size: 10.5px; font-weight: 700; color: var(--sl-text-3); text-transform: uppercase; letter-spacing: 0.03em; }
+.dayDate { font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--sl-text); }
+.timeAxisCell {
+  width: 46px; font-family: var(--mono); font-size: 10.5px; color: var(--sl-text-3);
+  text-align: left; vertical-align: middle; padding-right: 6px; white-space: nowrap;
+}
+.dayCell {
+  border: 1px solid var(--sl-border);
+  padding: 6px; height: 60px; text-align: center; vertical-align: middle;
+}
+.dayAvatarWrap { position: relative; display: inline-block; }
+.dayAvatar {
+  display: grid; place-items: center;
+  width: 34px; height: 34px; border-radius: 50%;
+  font-size: 18px; line-height: 1;
+  background: var(--sl-panel);
+  border: 2px solid;
+}
+/* Booked-that-slot badge — a small calendar-icon perched above the
+   stylist's avatar, distinct from the avatar's own border color so it
+   reads as "has a booking" independent of which stylist it is. Plain
+   line icon (stroke, no fill) to match the chat panel's own icons
+   (csAvatar/csToolHead/csSendBtn below), not a colored emoji. */
+.bookedBadge {
+  position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  display: grid; place-items: center;
+  width: 17px; height: 17px; border-radius: 50%;
+  background: var(--sl-panel); box-shadow: 0 0 0 1.5px var(--sl-border);
+  z-index: 1;
+}
+.bookedBadge svg {
+  width: 11px; height: 11px;
+  stroke: var(--sl-text-3); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+
+.legend { display: flex; gap: 16px; margin-top: 16px; }
+.legendItem { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--sl-text-2); }
+.legendAvatar {
+  display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: 50%;
+  font-size: 16px; line-height: 1;
+  background: var(--sl-panel);
+  border: 1.5px solid;
+}
+
+/* Highlight target for the day box check_availability/book_appointment
+   actually touched — added now, wired up once the tool-call result is
+   threaded back to this grid. */
+.scheduleSlotHighlight { background: var(--accent-soft); transition: background 0.4s; }
+
+/* The chat panel itself, framed as a phone rather than a flat sidebar
+   panel — floats bottom-right over siteMock, the way a real embedded
+   widget bubble expands into a chat window. */
+.csPhoneDock {
+  position: absolute; right: 28px; bottom: 28px;
+  width: 340px; height: 560px;
+  background: #0a0906; border-radius: 34px; padding: 10px;
+  border: 2px solid #3a3222;
+  box-shadow: 0 40px 70px -20px rgba(0,0,0,0.45);
+}
+.csPhoneNotch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 90px; height: 8px; border-radius: 5px; background: #1f1a10; z-index: 1; }
+.csPanel { width: 100%; height: 100%; border-radius: 26px; overflow: hidden; display: flex; flex-direction: column; background: var(--sl-panel); }
+.csPanelHeader { height: 60px; padding: 0 18px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--sl-border); flex: none; }
+.csAvatar { display: grid; place-items: center; border-radius: 50%; background: var(--grad); color: #1a1408; flex: none; }
+.csAvatar svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.csAvatarLg { width: 36px; height: 36px; }
+.csAvatarLg svg { width: 18px; height: 18px; }
+.csPanelTitle { font-weight: 700; font-size: 15px; color: var(--sl-text); }
+.csPanelSubtitle { font-size: 12px; color: var(--sl-text-3); display: flex; align-items: center; gap: 4px; }
+.csDot { width: 6px; height: 6px; border-radius: 50%; background: #3fa86a; display: inline-block; }
+.csPanelThread { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.csDayDivider { text-align: center; font-size: 11px; color: var(--sl-text-3); margin-bottom: 4px; }
+.csRow { display: flex; gap: 8px; align-items: flex-end; }
+.csRow.fromUser { flex-direction: row-reverse; }
+.csBubble { max-width: 78%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.5; }
+.csRow.fromAi .csBubble { background: var(--sl-bg); border: 1px solid var(--sl-border); color: var(--sl-text); border-bottom-left-radius: 4px; }
+.csRow.fromUser .csBubble { background: var(--grad); color: #1a1408; font-weight: 500; border-bottom-right-radius: 4px; }
+.csBubbleMeta { font-size: 11px; color: var(--sl-text-3); margin-top: 4px; font-family: var(--mono); }
+.csToolCard {
+  align-self: flex-start; width: min(78%, 320px);
+  border-radius: 12px; border: 1px solid rgba(201,162,75,0.35); background: var(--accent-soft); overflow: hidden;
+}
+.csToolHead {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border-bottom: 1px dashed rgba(201,162,75,0.3); font-family: var(--mono); font-size: 12.5px; color: #9c7a2e;
+}
+.csToolHead svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.csToolHead span:nth-child(2) { flex: 1; }
+.csToolStatus { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; background: rgba(63,168,106,0.15); color: #2f8a53; }
+.csToolBody { padding: 8px 12px; font-family: var(--mono); font-size: 12px; color: var(--sl-text-2); display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; }
+.csToolBody span:nth-child(odd) { color: var(--sl-text-3); }
+.csQuickReplies { display: flex; flex-wrap: wrap; gap: 6px; }
+.csChip { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--sl-border); color: var(--sl-text-2); font-size: 12.5px; background: transparent; }
+.csPanelInput { padding: 12px 14px 8px; border-top: 1px solid var(--sl-border); flex: none; }
+.csInputRow { display: flex; align-items: center; gap: 8px; border: 1px solid var(--sl-border); border-radius: 14px; padding: 6px 6px 6px 14px; background: var(--sl-bg); }
+.csInputRow:focus-within { border-color: rgba(201,162,75,0.6); box-shadow: 0 0 0 3px var(--accent-soft); }
+.csTextarea {
+  flex: 1; border: 0; outline: 0; background: transparent; color: var(--sl-text);
+  font: inherit; font-size: 14px; padding: 4px 0;
+}
+.csTextarea::placeholder { color: var(--sl-text-3); }
+.csTextarea:disabled { cursor: not-allowed; }
+.csSendBtn {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--grad); flex: none; border: none; cursor: pointer;
+  transition: opacity 0.15s;
+}
+.csSendBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+.csSendBtn svg { width: 15px; height: 15px; stroke: #1a1408; fill: none; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+.csPowered { text-align: center; font-size: 11px; color: var(--sl-text-3); margin-top: 8px; }
+.csPowered b { color: var(--accent); }
+
+/* Typing indicator, shown while the reply is in flight — three dots
+   pulsing in sequence, replacing the last message row until
+   onAssistantMessage/onError fires. */
+.csThinking { display: flex; align-items: center; gap: 4px; padding: 12px 14px; }
+.csThinking span { width: 6px; height: 6px; border-radius: 50%; background: var(--sl-text-3); animation: thinkingPulse 1.2s ease-in-out infinite; }
+.csThinking span:nth-child(2) { animation-delay: 0.15s; }
+.csThinking span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes thinkingPulse {
+  0%, 60%, 100% { opacity: 0.3; transform: scale(0.85); }
+  30% { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 1024px) {
+  .csPhoneDock { width: 300px; height: 520px; right: 20px; bottom: 20px; }
+  .siteMock { padding-right: 340px; }
+}
+@media (max-width: 640px) {
+  .supportShell { min-height: 640px; }
+  .siteMock { display: none; }
+  .csPhoneDock {
+    position: static; width: 100%; height: 100%; border: 0; border-radius: 0; padding: 0; box-shadow: none;
+  }
+  .csPhoneNotch { display: none; }
+  .csPanel { border-radius: 0; }
+}

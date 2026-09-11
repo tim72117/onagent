@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { AgentBridge, defineTool } from '@onagent/bridge'
+import styles from './SupportDemo.module.css'
 
 // AI customer support agent — the "/support" demo shell. Unlike the old
 // static mock this replaced, this is a real, working AgentBridge
@@ -14,12 +15,20 @@ import { AgentBridge, defineTool } from '@onagent/bridge'
 // which mocks its own data the same way) — but the AI's tool-calling
 // decision, the WebSocket round trip, and the reply are all real.
 //
-// The chat panel is framed as a phone (.cs-phone-dock), floating over the
-// light .site-mock backdrop's bottom-right corner — the way a real
+// The chat panel is framed as a phone (.csPhoneDock), floating over the
+// light .siteMock backdrop's bottom-right corner — the way a real
 // embedded support widget expands from its launcher bubble — rather than
-// a flat sidebar panel. Classes here are ".cs-*" ("chat shell"), distinct
-// from SupportCase.tsx's ".pc-*" ("phone card") even though both render a
-// support conversation.
+// a flat sidebar panel. This component's module (SupportDemo.module.css)
+// is fully distinct from SupportCase.tsx's own (SupportCase.module.css)
+// even though both render a support conversation.
+//
+// .siteMock is the salon's own weekly stylist schedule (styling only for
+// now — its slots are static JSX below, not driven by any tool call's
+// actual result). The plan is to highlight whichever slot a completed
+// check_availability/book_appointment call touched
+// (.scheduleSlotHighlight already exists for this), so a visitor can see
+// the AI's tool call actually touch "their own" calendar — not wired up
+// yet.
 
 const WS_URL = import.meta.env.VITE_SUPPORT_WS_URL ?? 'wss://onagent.shuttle.tools/ws'
 const APP_ID = import.meta.env.VITE_SUPPORT_APP_ID ?? 'support-app'
@@ -34,6 +43,66 @@ const ORDERS: Record<string, { status: string; carrier: string; eta: string }> =
   '48213': { status: 'in_transit', carrier: 'UPS · 1Z 999 AA1 01', eta: 'Today, by 6:00 pm' },
   default: { status: 'processing', carrier: 'Not yet shipped', eta: 'Within 2-3 business days' },
 }
+
+// Each stylist's color + a simple cartoon-avatar emoji, used on the week
+// grid's checkmarks and the legend below (keys match STYLISTS[].name).
+const STYLISTS = ['Amy', 'Jordan', 'Priya'] as const
+const STYLIST_COLORS: Record<(typeof STYLISTS)[number], string> = {
+  Amy: '#2f8a53',
+  Jordan: '#3f7cc9',
+  Priya: '#c9578f',
+}
+const STYLIST_AVATARS: Record<(typeof STYLISTS)[number], string> = {
+  Amy: '👩‍🦰',
+  Jordan: '👨‍🦱',
+  Priya: '👩🏽‍🦱',
+}
+
+// Mock weekly schedule for siteMock's backdrop — a real calendar-app-style
+// grid: TIME_ROWS is the shared time axis running down the far-left
+// column, Mon-Sun run across the top as columns, and each (day, time)
+// cell holds at most one stylist (single-chair-per-slot, matching a real
+// salon's own booking grid — see this file's header comment on the
+// eventual highlight wiring), either open or already booked.
+const TIME_ROWS = ['10am', '11am', '1pm', '2pm', '3pm'] as const
+interface DayCellData {
+  stylist: (typeof STYLISTS)[number]
+  booked: boolean
+}
+const WEEK: { day: string; date: number; byTime: Partial<Record<(typeof TIME_ROWS)[number], DayCellData>> }[] = [
+  { day: 'Mon', date: 8, byTime: {} },
+  {
+    day: 'Tue', date: 9, byTime: {
+      '10am': { stylist: 'Amy', booked: true },
+      '2pm': { stylist: 'Jordan', booked: false },
+    },
+  },
+  {
+    day: 'Wed', date: 10, byTime: {
+      '11am': { stylist: 'Amy', booked: false },
+      '2pm': { stylist: 'Priya', booked: true },
+    },
+  },
+  {
+    day: 'Thu', date: 11, byTime: {
+      '10am': { stylist: 'Jordan', booked: true },
+      '3pm': { stylist: 'Priya', booked: false },
+    },
+  },
+  {
+    day: 'Fri', date: 12, byTime: {
+      '2pm': { stylist: 'Amy', booked: false },
+      '3pm': { stylist: 'Priya', booked: true },
+    },
+  },
+  {
+    day: 'Sat', date: 13, byTime: {
+      '11am': { stylist: 'Jordan', booked: true },
+      '1pm': { stylist: 'Priya', booked: true },
+    },
+  },
+  { day: 'Sun', date: 14, byTime: {} },
+]
 
 interface ToolCallEntry {
   kind: 'tool'
@@ -130,60 +199,100 @@ export function SupportDemo() {
   }
 
   return (
-    <div className="support-shell">
-      {/* Backdrop: a generic "customer's own site" — never interactive
-          (pointer-events: none in CSS), just enough visual weight to
-          justify the floating phone being "embedded" in something. */}
-      <div className="site-mock" aria-hidden="true">
-        <div className="site-mock-nav">
-          <div className="site-mock-logo" />
-          <div className="site-mock-links">
-            <span className="ph" style={{ width: 48 }} />
-            <span className="ph" style={{ width: 60 }} />
-            <span className="ph" style={{ width: 40 }} />
-          </div>
+    <div className={styles.supportShell}>
+      {/* Backdrop: the salon's own weekly stylist schedule — a plausible
+          "why is a support widget embedded in this page" justification,
+          and (styling only for now, see this component's header comment)
+          the eventual target for highlighting whichever slot a tool call
+          actually touched. */}
+      <div className={styles.siteMock}>
+        <div className={styles.siteMockNav}>
+          <div className={styles.siteMockLogo} />
+          <span className={styles.siteMockTitleText}>This week</span>
         </div>
-        <div className="site-mock-hero">
-          <div className="ph site-mock-title" />
-          <span className="ph" style={{ width: '85%' }} />
-          <span className="ph" style={{ width: '70%' }} />
-          <span className="ph" style={{ width: '60%' }} />
-          <div className="site-mock-cards">
-            <div className="site-mock-card" />
-            <div className="site-mock-card" />
-            <div className="site-mock-card" />
-          </div>
+        <table className={styles.weekGrid}>
+          <thead>
+            <tr>
+              <th className={styles.timeAxisHead} />
+              {WEEK.map((d) => (
+                <th key={d.day} className={styles.dayHead}>
+                  <div className={styles.dayLabel}>{d.day}</div>
+                  <div className={styles.dayDate}>{d.date}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {TIME_ROWS.map((time) => (
+              <tr key={time}>
+                <td className={styles.timeAxisCell}>{time}</td>
+                {WEEK.map((d) => {
+                  const cell = d.byTime[time]
+                  return (
+                    <td className={styles.dayCell} key={d.day}>
+                      {cell && (
+                        <span
+                          className={styles.dayAvatarWrap}
+                          aria-label={`${cell.stylist}${cell.booked ? ' — booked' : ' available'} ${d.day} ${time}`}
+                          title={cell.stylist}
+                        >
+                          {cell.booked && (
+                            <span className={styles.bookedBadge} aria-hidden="true">
+                              <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
+                            </span>
+                          )}
+                          <span className={styles.dayAvatar} style={{ borderColor: STYLIST_COLORS[cell.stylist] }}>
+                            {STYLIST_AVATARS[cell.stylist]}
+                          </span>
+                        </span>
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className={styles.legend}>
+          {STYLISTS.map((name) => (
+            <span key={name} className={styles.legendItem}>
+              <span className={styles.legendAvatar} style={{ borderColor: STYLIST_COLORS[name] }}>
+                {STYLIST_AVATARS[name]}
+              </span>
+              {name}
+            </span>
+          ))}
         </div>
       </div>
 
       {/* The support widget itself — the actual subject of this demo,
           framed as a phone, wired to a real AgentBridge connection. */}
-      <div className="cs-phone-dock">
-        <div className="cs-phone-notch" />
-        <div className="cs-panel">
-          <div className="cs-panel-header">
-            <span className="cs-avatar cs-avatar-lg">
+      <div className={styles.csPhoneDock}>
+        <div className={styles.csPhoneNotch} />
+        <div className={styles.csPanel}>
+          <div className={styles.csPanelHeader}>
+            <span className={`${styles.csAvatar} ${styles.csAvatarLg}`}>
               <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
             </span>
             <div>
-              <div className="cs-panel-title">Support</div>
-              <div className="cs-panel-subtitle"><span className="cs-dot" />Online · usually replies instantly</div>
+              <div className={styles.csPanelTitle}>Support</div>
+              <div className={styles.csPanelSubtitle}><span className={styles.csDot} />Online · usually replies instantly</div>
             </div>
           </div>
 
-          <div className="cs-panel-thread" ref={threadRef}>
-            <div className="cs-day-divider">Today</div>
+          <div className={styles.csPanelThread} ref={threadRef}>
+            <div className={styles.csDayDivider}>Today</div>
 
             {entries.map((entry) =>
               entry.kind === 'tool' ? (
-                <div className="cs-tool-card" key={entry.id}>
-                  <div className="cs-tool-head">
+                <div className={styles.csToolCard} key={entry.id}>
+                  <div className={styles.csToolHead}>
                     <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3M12 2a10 10 0 100 20 10 10 0 000-20z" /></svg>
                     <span>{entry.name}</span>
-                    <span className="cs-tool-status">done</span>
+                    <span className={styles.csToolStatus}>done</span>
                   </div>
                   {entry.result && (
-                    <div className="cs-tool-body">
+                    <div className={styles.csToolBody}>
                       {Object.entries(entry.result).map(([k, v]) => (
                         <>
                           <span key={`${entry.id}-${k}-key`}>{k}</span>
@@ -194,44 +303,50 @@ export function SupportDemo() {
                   )}
                 </div>
               ) : (
-                <div className={`cs-row ${entry.kind === 'user' ? 'from-user' : 'from-ai'}`} key={entry.id}>
-                  <div className="cs-bubble">{entry.text}</div>
+                <div className={`${styles.csRow} ${entry.kind === 'user' ? styles.fromUser : styles.fromAi}`} key={entry.id}>
+                  <div className={styles.csBubble}>{entry.text}</div>
                 </div>
               ),
             )}
 
             {thinking && (
-              <div className="cs-row from-ai">
-                <div className="cs-bubble cs-thinking">
+              <div className={`${styles.csRow} ${styles.fromAi}`}>
+                <div className={`${styles.csBubble} ${styles.csThinking}`}>
                   <span /><span /><span />
                 </div>
               </div>
             )}
           </div>
 
-          <div className="cs-panel-input">
+          <div className={styles.csPanelInput}>
             <form
-              className="cs-input-row"
+              className={styles.csInputRow}
               onSubmit={(e) => {
                 e.preventDefault()
                 handleSend()
               }}
             >
               <input
-                className="cs-textarea"
+                className={styles.csTextarea}
                 placeholder={API_KEY ? 'Ask about an order, a return, or anything else…' : 'Demo not wired up (missing API key)'}
                 value={input}
                 disabled={!API_KEY}
                 onChange={(e) => setInput(e.target.value)}
               />
-              <button type="submit" className="cs-send-btn" disabled={!API_KEY || !input.trim()} aria-label="Send">
+              <button type="submit" className={styles.csSendBtn} disabled={!API_KEY || !input.trim()} aria-label="Send">
                 <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
               </button>
             </form>
-            <div className="cs-powered">Powered by <b>onagent</b></div>
+            <div className={styles.csPowered}>Powered by <b>onagent</b></div>
           </div>
         </div>
       </div>
     </div>
   )
+}
+
+declare global {
+  interface Window {
+    dataLayer?: unknown[]
+  }
 }
