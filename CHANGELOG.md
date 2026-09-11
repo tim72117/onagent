@@ -6,6 +6,22 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.5.3
+
+No breaking changes.
+
+- Wire up the `/showcase/support` demo's production connection: created
+  the `support-app` app on the production backend with its
+  `check_availability`/`get_my_appointments`/`book_appointment` tools
+  and system prompt, issued its API key, and set its allowed origin to
+  `https://onagent.shuttle.tools`. `Dockerfile` and
+  `.github/workflows/deploy-cloudrun.yml` gain a `landing_support_api_key`
+  BuildKit secret (and matching `LANDING_SUPPORT_API_KEY` GitHub Actions
+  secret) that injects `VITE_SUPPORT_API_KEY` into the production build,
+  mirroring the existing `landing_analysis_api_key` wiring for the
+  marketing demo — both secrets are independently optional, so a missing
+  one only leaves that one demo in its "not wired up yet" state.
+
 ## v0.5.2
 
 No breaking changes.
