@@ -6,9 +6,27 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
-## v0.5.1
+## v0.5.2
 
 No breaking changes.
+
+- Add `/showcase/` — a React SPA on the landing site with two live
+  AgentBridge-integration demos: `/showcase/marketing` (the existing
+  analysis widget, moved off the homepage modal onto its own page) and
+  `/showcase/support`, a salon-booking assistant with real
+  `check_availability`/`get_my_appointments`/`book_appointment` tool
+  calls visualized in a phone-framed chat panel over a live weekly
+  schedule. `backend/cmd/server/web.go`'s `mountLanding` gains
+  SPA-fallback handling for `/showcase/*`, the same pattern
+  `mountConsole` already uses for `/app/*`. Added to `public/sitemap.xml`.
+  Showcase's plain CSS was since migrated to CSS Modules, and the support
+  demo's mobile layout was redesigned (schedule card and chat panel
+  stacked vertically instead of side-by-side) with a per-browser
+  10-prompt usage cap matching the marketing demo's own.
+- Fix `adminconsole`'s `schemaCheck` endpoint reporting the `tools` table
+  as "Drifted" (expected `(app_id, name)`, actual `(id)`) — its own
+  `toolsFull` reference struct still declared the pre-migration composite
+  primary key after `tools.id` became the table's surrogate key.
 
 - `quota.Plan` gains a new admin-only tier, `TierUltra` ("Ultra",
   10,000,000 tokens/month). Assignable only via the admin console's `PUT
