@@ -1,7 +1,7 @@
-import type { Tool } from './schema'
-import { connectPlayground, send } from './playgroundProtocol'
-import type { ToolCallPayload } from './playgroundProtocol'
-import { randomRequestId } from './randomRequestId'
+import type { Tool } from '../schema'
+import { connectPlayground, send } from '../playgroundProtocol'
+import type { ToolCallPayload } from '../playgroundProtocol'
+import { randomRequestId } from '../randomRequestId'
 
 // Talks to the *existing* Playground WebSocket endpoint
 // (backend/internal/console/playground.go) via playgroundProtocol.ts's
@@ -12,7 +12,7 @@ import { randomRequestId } from './randomRequestId'
 // playgroundProtocol.ts's own header comment on why that used to be two
 // independently-maintained implementations). tool-builder's only tool is
 // propose_tool (kind: action, per
-// backend/internal/console/tool-builder-tools.yaml: its acknowledgement is
+// ./tool-builder-tools.yaml: its acknowledgement is
 // never reasoned about further, so it's fire-and-forget, not a blocking
 // query — see toolschema.Tool.Kind's doc comment). Fire-and-forget still
 // means the backend's ws.Session.AskInteraction blocks waiting for a

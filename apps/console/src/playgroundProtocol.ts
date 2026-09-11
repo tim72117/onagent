@@ -4,8 +4,8 @@ import { randomRequestId } from './randomRequestId'
 // Shared wire-protocol layer for backend/internal/console/playground.go's
 // WebSocket endpoint — connection setup, the hello/ack handshake, and
 // message parsing/dispatch, factored out of Playground.tsx and
-// aiToolGenerator.ts, which used to each hand-roll their own copy of this
-// exact logic. That duplication is what let aiToolGenerator.ts's protocol
+// aiToolGenerator/aiToolGenerator.ts, which used to each hand-roll their own copy of this
+// exact logic. That duplication is what let aiToolGenerator/aiToolGenerator.ts's protocol
 // assumptions drift out of sync with the real wire format (it once listened
 // for the wrong message type — see docs/audit-functional.md) without
 // Playground.tsx's already-correct handling of the same wire format ever
@@ -16,7 +16,7 @@ import { randomRequestId } from './randomRequestId'
 // stay that way: Playground.tsx opens one connection per selected app and
 // keeps it alive across the whole editing session (a stable backend
 // sessionID, "PG-<userID>-<appID>", so the conversation persists across
-// reconnects/reloads); aiToolGenerator.ts opens a brand-new connection per
+// reconnects/reloads); aiToolGenerator/aiToolGenerator.ts opens a brand-new connection per
 // "Generate" click and closes it the moment that one request finishes (the
 // backend appends a random suffix to sessionID specifically for
 // appId === "tool-builder", so each Generate attempt gets its own

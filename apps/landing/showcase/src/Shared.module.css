@@ -1,0 +1,76 @@
+/* Cross-case shapes: every case card (MarketingCase.tsx, SupportCase.tsx,
+   ...) imports this alongside its own <Case>.module.css for its
+   component-specific styling. Being a CSS Module, none of these class
+   names can collide with anything imported elsewhere — each import site
+   gets its own local binding (e.g. shared.caseSplit), so two files using
+   "caseSplit" as a key never fight over one global ".case-split" selector
+   the way base.css's old plain classes could. */
+
+.wrap { width: 100%; max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: var(--sans); font-weight: 600; font-size: 14.5px;
+  padding: 11px 18px; border-radius: 10px; border: 1px solid transparent;
+  cursor: pointer; transition: transform 0.15s ease, box-shadow 0.2s;
+  white-space: nowrap;
+}
+.btnPrimary { background: var(--grad); color: #1a1408; box-shadow: 0 10px 30px -10px rgba(201, 162, 75, 0.5); }
+.btnPrimary:hover { transform: translateY(-1px); box-shadow: 0 16px 40px -12px rgba(201, 162, 75, 0.65); }
+
+.main { flex: 1; padding: 56px 0 100px; }
+
+/* The card shape every case builds on: illustration + copy, ending in a
+   "Try it live" link. Case-specific illustration internals (the collage/
+   phone mockups) live in each case's own module. */
+.caseSplit { display: grid; grid-template-columns: 0.8fr 1.3fr; gap: 32px; align-items: center; max-width: 760px; margin: 0 auto; }
+.caseIllustration { display: flex; align-items: center; }
+.caseBadge {
+  display: inline-block; font-family: var(--mono); font-size: 12px; color: var(--accent-2);
+  background: var(--accent-soft); border: 1px solid rgba(201,162,75,0.28); padding: 4px 10px; border-radius: 7px; margin-bottom: 16px;
+}
+.caseContent h2 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
+.caseContent p { color: var(--text-2); font-size: 15px; line-height: 1.6; margin-bottom: 18px; }
+.chat { font-family: var(--mono); font-size: 13px; border-top: 1px dashed var(--border); padding-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.bubbleU { align-self: flex-end; padding: 7px 12px; border-radius: 12px 12px 3px 12px; max-width: 85%; font-weight: 500; background: #fbfaf7; color: #2b2718; }
+.caseTryRow { display: flex; justify-content: center; margin-top: 32px; }
+.caseTryBtn { width: auto; min-width: 260px; padding: 15px 28px; font-size: 16.5px; }
+
+@media (max-width: 760px) {
+  .caseSplit { grid-template-columns: 1fr; justify-items: center; }
+  .caseIllustration, .caseContent { width: 100%; max-width: 380px; }
+}
+
+/* Feature-tag bubbles overlaid on a case's illustration — shared shape,
+   each case picks its own text/icon/position via its own module's
+   position rules composed alongside these. */
+.tag {
+  position: absolute; display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 11px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  white-space: nowrap; box-shadow: 0 12px 24px -10px rgba(0,0,0,0.55);
+}
+.tag svg { width: 12px; height: 12px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tagGold { background: var(--grad); color: #1a1408; }
+.tagCream { background: #fff; color: #7a5e1e; border: 1px solid #efe4c3; }
+.tagDark { background: #221c11; color: var(--accent-2); border: 1px solid rgba(201,162,75,0.4); }
+
+/* Demo panel: the dark-theme container a case's real widget (or, for a
+   UI-preview case, its static shell) replaces the illustration card with
+   once its route mounts. SupportDemo.tsx uses its own light
+   ".supportShell" instead — see SupportDemo.module.css. */
+.demoPanel {
+  max-width: var(--max); margin: 0 auto;
+  border: 1px solid var(--border); border-radius: 20px;
+  background: var(--panel); box-shadow: var(--shadow);
+  overflow: hidden;
+  min-height: 560px;
+}
+.demoLoading {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 560px; color: var(--text-3); font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .main { padding: 40px 0 80px; }
+  .demoPanel, .demoLoading { min-height: 420px; }
+}

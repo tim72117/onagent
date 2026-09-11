@@ -1,6 +1,33 @@
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+
+// Dev-server-only counterpart to backend/cmd/server/web.go's mountLanding
+// SPA-fallback handling for "/showcase/*" — without this, Vite's own dev
+// server has no idea /showcase/marketing or /showcase/support should
+// serve showcase/index.html (there's no file at that path), so it falls
+// through to its default "any unmatched path in a project with an
+// index.html gets index.html" behavior — the ROOT index.html, not
+// showcase's — which is why /showcase/support rendered the homepage
+// instead of the showcase app during local dev. `vite build`'s actual
+// output is unaffected (this only patches the dev middleware chain);
+// production behavior is covered by web.go's own fallback instead.
+function showcaseDevFallback(): Plugin {
+  return {
+    name: 'showcase-dev-fallback',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = req.url ?? ''
+        if (!url.startsWith('/showcase')) return next()
+        const afterPrefix = url.slice('/showcase'.length).replace(/^\//, '').split('?')[0]
+        if (afterPrefix && existsSync(resolve(__dirname, 'showcase', afterPrefix))) return next()
+        req.url = '/showcase/index.html'
+        next()
+      })
+    },
+  }
+}
 
 // Static pages, same design: English at "/", zh-Hant (Taiwan) at "/zh-tw/",
 // the integration docs at "/docs/", pricing at "/pricing/" (linked from
@@ -22,7 +49,7 @@ import react from '@vitejs/plugin-react'
 // dropped from `vite build`'s output — an omitted entry here 404s at
 // runtime even though its source file exists and is linked to.
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), showcaseDevFallback()],
   build: {
     rollupOptions: {
       input: {

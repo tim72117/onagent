@@ -18,7 +18,7 @@ function paramCount(schema: Tool['parameters']): number {
 
 // One-line preview of the Parameters row's value — each parameter's own
 // name and description, not just a bare count, so a developer (or someone
-// reviewing an AI-generated tool, see aiToolGenerator.ts) can tell at a
+// reviewing an AI-generated tool, see aiToolGenerator/aiToolGenerator.ts) can tell at a
 // glance whether the parameters actually look right without opening
 // ToolParametersSheet. .rowValue already truncates with an ellipsis
 // (ToolEditSheet.module.css), so this can run long without breaking layout.

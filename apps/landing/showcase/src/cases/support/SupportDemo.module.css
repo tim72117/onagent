@@ -1,0 +1,360 @@
+/* Styling for SupportDemo.tsx alone (the "/support" route's live demo
+   shell). Fully distinct from SupportCase.module.css — see that file's
+   own header comment for why they're kept in separate files, not just
+   separately-scoped names. */
+
+/* Deliberately light-themed, unlike every other route here (dark,
+   matching the marketing site) — a support-widget demo reads more
+   convincingly as "a real customer's website" on a plain light
+   background. siteMock is the backdrop (a salon's own weekly stylist
+   schedule); the phone-framed chat panel floats over its bottom-right
+   corner, same as a real embedded support widget would. */
+.supportShell {
+  --sl-bg: #f4f1ea;
+  --sl-panel: #ffffff;
+  --sl-border: #e7e0cf;
+  --sl-text: #2b2718;
+  --sl-text-2: #6b6250;
+  --sl-text-3: #9a917c;
+  max-width: var(--max); margin: 0 auto;
+  /* Single-cell grid overlay: .siteMock and .csPhoneDock both occupy
+     grid-area 1/1, so the phone floats over the calendar's bottom-right
+     corner (dock aligns itself end/end with its own margin) while BOTH
+     children still contribute to this container's natural height — the
+     row is as tall as the taller of the two. This replaces the old
+     "absolute-positioned dock + arbitrary min-height" pairing, which
+     needed a hand-maintained pixel count (600? 616?) to avoid either
+     clipping the phone (too short + overflow: hidden) or leaving a dead
+     blank band under the calendar (too tall) — the band that made the
+     whole page grow a scrollbar. */
+  display: grid;
+  border: 1px solid var(--sl-border); border-radius: 20px; overflow: hidden;
+  box-shadow: var(--shadow);
+  background: var(--sl-bg);
+}
+
+/* The salon's own weekly stylist schedule — styling only for now; not yet
+   wired to check_availability/book_appointment's actual results (see
+   SupportDemo.tsx's header comment). pointer-events/user-select stay
+   enabled (a real booking calendar would be a real, usable page, even
+   though this demo's slots are static content). */
+/* Right padding is wide enough to clear csPhoneDock's footprint (340px
+   wide + 28px right margin, see below) so the week grid never sits under
+   the phone. */
+/* No height rule: as a stretched grid item it always fills the shell's
+   row exactly (the old `height: 100%` was a no-op — a percentage can't
+   resolve against a parent with only min-height, so it computed to auto
+   and left a blank band below the calendar). .weekGrid's flex: 1 then
+   spreads any spare height across the calendar's rows, so the phone-
+   dictated height is filled with calendar, not blank backdrop. */
+.siteMock { grid-area: 1 / 1; min-width: 0; padding: 32px 400px 32px 36px; display: flex; flex-direction: column; }
+.siteMockNav { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+.siteMockLogo { width: 28px; height: 28px; border-radius: 8px; background: var(--sl-text); flex: none; }
+.siteMockTitleText { font-size: 18px; font-weight: 700; color: var(--sl-text); }
+
+/* Real calendar-app-style grid — a fixed time axis running down the
+   far-left column, Mon-Sun as columns across the top, and each (day,
+   time) cell showing the stylists with an opening or an existing booking
+   then as small colored cartoon-emoji avatars (see SupportDemo.tsx's
+   STYLIST_COLORS/STYLIST_AVATARS/TIME_ROWS), so a visitor can tell at a
+   glance who's free (or already booked) at which time on which day. */
+/* flex: 1 — when the phone dock (the shell's other grid-area 1/1 child)
+   is taller than the calendar's natural height, the table absorbs the
+   difference and the table height algorithm distributes it across the
+   rows (.dayCell's height: 60px is effectively each row's minimum), so
+   the backdrop fills the shell instead of ending in a blank band. */
+.weekGrid { width: 100%; border-collapse: collapse; table-layout: fixed; flex: 1; }
+.timeAxisHead { width: 46px; }
+.dayHead { padding: 0 4px 8px; text-align: center; }
+.dayLabel { font-size: 10.5px; font-weight: 700; color: var(--sl-text-3); text-transform: uppercase; letter-spacing: 0.03em; }
+.dayDate { font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--sl-text); }
+.timeAxisCell {
+  width: 46px; font-family: var(--mono); font-size: 10.5px; color: var(--sl-text-3);
+  text-align: left; vertical-align: middle; padding-right: 6px; white-space: nowrap;
+}
+.dayCell {
+  border: 1px solid var(--sl-border);
+  padding: 6px; height: 60px; text-align: center; vertical-align: middle;
+}
+.dayAvatarWrap { position: relative; display: inline-block; }
+.dayAvatar {
+  display: grid; place-items: center;
+  width: 34px; height: 34px; border-radius: 50%;
+  font-size: 18px; line-height: 1;
+  background: var(--sl-panel);
+  border: 2px solid;
+}
+/* Booked-that-slot badge — a small calendar-icon perched top-right of the
+   stylist's avatar. Solid fill (not the outline style csAvatar/csToolHead/
+   csSendBtn use), since a plain-white circle with a thin outline read as
+   barely-there at this 20px size — a filled badge is what actually reads
+   as "booked" at a glance in the week grid. The fill color itself comes
+   from SupportDemo.tsx as an inline style (each stylist's own
+   STYLIST_COLORS entry, matching their avatar ring) rather than a single
+   static color here — a brand-gold dot on top of an unrelated
+   green/blue/pink ring read as two clashing colors, not one stylist's
+   "booked" marker. */
+.bookedBadge {
+  position: absolute; top: -6px; right: -6px;
+  display: grid; place-items: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--sl-panel);
+  z-index: 1;
+}
+.bookedBadge svg {
+  width: 13px; height: 13px;
+  stroke: var(--sl-panel); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* The "achievement unlocked" flying badge SupportDemo.tsx overlays when
+   book_appointment succeeds — a fixed-position clone of .bookedBadge
+   (same 20px circle, same SVG, same per-stylist fill via inline style)
+   whose left/top are set to the REAL badge's screen-space center, so its
+   resting state (translate(0,0) scale(1)) lands pixel-exact on the badge
+   already rendering underneath. --fly-dx/--fly-dy (inline, from tsx) are
+   the offset back to the shell's center, where the keyframes start it
+   popped up at ~4x (≈80px) before flying home and shrinking. margin
+   centers the 20px box on its left/top anchor point. pointer-events off:
+   purely decorative, must never intercept clicks mid-flight. */
+.badgeFly {
+  position: fixed; z-index: 50; pointer-events: none;
+  width: 20px; height: 20px; margin: -10px 0 0 -10px;
+  border-radius: 50%;
+  display: grid; place-items: center;
+  box-shadow: 0 0 0 1.5px var(--sl-panel), 0 6px 20px rgba(0, 0, 0, 0.25);
+  animation: badgeFly 1.1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.badgeFly svg {
+  width: 13px; height: 13px;
+  stroke: var(--sl-panel); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+/* Pop in big at the center (slight overshoot at 20% reads as a "ding!"),
+   hold a beat so the visitor registers it, then fly to the cell while
+   shrinking to the real badge's exact size. Runs once per booking —
+   SupportDemo.tsx removes the element onAnimationEnd. */
+@keyframes badgeFly {
+  0% { opacity: 0; transform: translate(var(--fly-dx), var(--fly-dy)) scale(1.5); }
+  20% { opacity: 1; transform: translate(var(--fly-dx), var(--fly-dy)) scale(4.4); }
+  32% { opacity: 1; transform: translate(var(--fly-dx), var(--fly-dy)) scale(4); }
+  55% { opacity: 1; transform: translate(var(--fly-dx), var(--fly-dy)) scale(4); }
+  100% { opacity: 1; transform: translate(0, 0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Skip the flight, keep the cleanup: a near-instant run still fires
+     onAnimationEnd so the overlay removes itself (the 2.5s timeout in
+     SupportDemo.tsx is only the fallback). */
+  .badgeFly { animation-duration: 0.01s; }
+}
+
+.legend { display: flex; gap: 16px; margin-top: 16px; }
+.legendItem { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--sl-text-2); }
+.legendAvatar {
+  display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: 50%;
+  font-size: 16px; line-height: 1;
+  background: var(--sl-panel);
+  border: 1.5px solid;
+}
+
+/* Highlight target for the day box check_availability/book_appointment
+   actually touched — added now, wired up once the tool-call result is
+   threaded back to this grid. */
+.scheduleSlotHighlight { background: var(--accent-soft); transition: background 0.4s; }
+
+/* The chat panel itself, framed as a phone rather than a flat sidebar
+   panel — floats bottom-right over siteMock, the way a real embedded
+   widget bubble expands into a chat window. */
+.csPhoneDock {
+  /* Same grid cell as .siteMock (see .supportShell's comment): overlaps
+     the calendar's bottom-right corner via self-alignment + margin, but
+     unlike the old position: absolute, its 560px + 28px margins still
+     count toward the shell's natural height — no min-height guess needed
+     on the shell. position: relative only anchors .csPhoneNotch. */
+  grid-area: 1 / 1; justify-self: end; align-self: end; margin: 28px;
+  position: relative;
+  width: 340px; height: 560px;
+  background: #0a0906; border-radius: 34px; padding: 10px;
+  border: 2px solid #3a3222;
+  box-shadow: 0 40px 70px -20px rgba(0,0,0,0.45);
+}
+.csPhoneNotch { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 90px; height: 8px; border-radius: 5px; background: #1f1a10; z-index: 1; }
+.csPanel { width: 100%; height: 100%; border-radius: 26px; overflow: hidden; display: flex; flex-direction: column; background: var(--sl-panel); }
+.csPanelHeader { height: 60px; padding: 0 18px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--sl-border); flex: none; }
+.csAvatar { display: grid; place-items: center; border-radius: 50%; background: var(--grad); color: #1a1408; flex: none; }
+.csAvatar svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.csAvatarLg { width: 36px; height: 36px; }
+.csAvatarLg svg { width: 18px; height: 18px; }
+.csPanelTitle { font-weight: 700; font-size: 15px; color: var(--sl-text); }
+.csPanelSubtitle { font-size: 12px; color: var(--sl-text-3); display: flex; align-items: center; gap: 4px; }
+.csDot { width: 6px; height: 6px; border-radius: 50%; background: #3fa86a; display: inline-block; }
+/* No API key set (SupportDemo.tsx's API_KEY) — same "not wired up" state
+   the input's own disabled/placeholder already communicates, so the dot
+   doesn't keep claiming green/online while the rest of the panel admits
+   it isn't connected. */
+.csDotOffline { background: var(--sl-text-3); }
+.csPanelThread { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.csDayDivider { text-align: center; font-size: 11px; color: var(--sl-text-3); margin-bottom: 4px; }
+.csRow { display: flex; gap: 8px; align-items: flex-end; }
+.csRow.fromUser { flex-direction: row-reverse; }
+.csBubble { max-width: 78%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.5; }
+.csRow.fromAi .csBubble { background: var(--sl-bg); border: 1px solid var(--sl-border); color: var(--sl-text); border-bottom-left-radius: 4px; }
+.csRow.fromUser .csBubble { background: var(--grad); color: #1a1408; font-weight: 500; border-bottom-right-radius: 4px; }
+.csBubbleMeta { font-size: 11px; color: var(--sl-text-3); margin-top: 4px; font-family: var(--mono); }
+.csToolCard {
+  align-self: flex-start; width: min(78%, 320px);
+  border-radius: 12px; border: 1px solid rgba(201,162,75,0.35); background: var(--accent-soft); overflow: hidden;
+}
+.csToolHead {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border-bottom: 1px dashed rgba(201,162,75,0.3); font-family: var(--mono); font-size: 12.5px; color: #9c7a2e;
+}
+.csToolHead svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.csToolHead span:nth-child(2) { flex: 1; }
+.csToolStatus { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; background: rgba(63,168,106,0.15); color: #2f8a53; }
+.csToolBody { padding: 8px 12px; font-family: var(--mono); font-size: 12px; color: var(--sl-text-2); display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; }
+.csToolBody span:nth-child(odd) { color: var(--sl-text-3); }
+.csQuickReplies { display: flex; flex-wrap: wrap; gap: 6px; }
+.csChip { padding: 6px 12px; border-radius: 999px; border: 1px solid var(--sl-border); color: var(--sl-text-2); font-size: 12.5px; background: transparent; }
+.csPanelInput { padding: 12px 14px 8px; border-top: 1px solid var(--sl-border); flex: none; }
+.csInputRow { display: flex; align-items: center; gap: 8px; border: 1px solid var(--sl-border); border-radius: 14px; padding: 6px 6px 6px 14px; background: var(--sl-bg); }
+.csInputRow:focus-within { border-color: rgba(201,162,75,0.6); box-shadow: 0 0 0 3px var(--accent-soft); }
+.csTextarea {
+  flex: 1; border: 0; outline: 0; background: transparent; color: var(--sl-text);
+  font: inherit; font-size: 14px; padding: 4px 0;
+}
+.csTextarea::placeholder { color: var(--sl-text-3); }
+.csTextarea:disabled { cursor: not-allowed; }
+.csSendBtn {
+  display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--grad); flex: none; border: none; cursor: pointer;
+  transition: opacity 0.15s;
+}
+.csSendBtn:disabled { opacity: 0.35; cursor: not-allowed; }
+.csSendBtn svg { width: 15px; height: 15px; stroke: #1a1408; fill: none; stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+.csPowered { text-align: center; font-size: 11px; color: var(--sl-text-3); margin-top: 8px; }
+.csPowered b { color: var(--accent); }
+
+/* Replaces .csInputRow once MAX_PROMPTS_PER_BROWSER is hit — same slot,
+   same width, a CTA instead of a disabled-looking dead input. */
+.csLimitCta {
+  display: block; text-align: center;
+  padding: 10px 14px; border-radius: 14px;
+  background: var(--grad); color: #1a1408; font-weight: 600; font-size: 14px;
+  text-decoration: none;
+}
+.csLimitStatus { font-size: 11.5px; color: var(--sl-text-3); text-align: center; margin: 8px 0 0; line-height: 1.4; }
+
+/* Typing indicator, shown while the reply is in flight — three dots
+   pulsing in sequence, replacing the last message row until
+   onAssistantMessage/onError fires. */
+.csThinking { display: flex; align-items: center; gap: 4px; padding: 12px 14px; }
+.csThinking span { width: 6px; height: 6px; border-radius: 50%; background: var(--sl-text-3); animation: thinkingPulse 1.2s ease-in-out infinite; }
+.csThinking span:nth-child(2) { animation-delay: 0.15s; }
+.csThinking span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes thinkingPulse {
+  0%, 60%, 100% { opacity: 0.3; transform: scale(0.85); }
+  30% { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 1024px) {
+  .csPhoneDock { width: 300px; height: 520px; margin: 20px; }
+  .siteMock { padding-right: 340px; }
+}
+@media (max-width: 640px) {
+  /* Below 640px there's no room to show the calendar and the chat side
+     by side (the >640px layout overlaps them in one grid cell, which
+     only works because the phone dock floats over a corner of the much
+     wider calendar) — so .siteMock becomes a card stacked BEHIND and
+     ABOVE the chat panel: centered horizontally, pinned toward the top
+     of the viewport, with the chat panel permanently covering its bottom
+     third — two cards in a stack, like a book peeking out from under the
+     one on top, rather than a left/right drawer, and with no
+     open/close interaction: both are always at least partly visible.
+     Both use position: fixed (viewport-relative), NOT position: absolute
+     against .supportShell — .supportShell sits inside
+     Shared.module.css's .wrap, which adds its own 24px side padding and
+     .supportShell's own rounded card border on top of that, so anchoring
+     to .supportShell would park these off-center relative to the real
+     screen. Fixed positioning skips all of that and reads directly off
+     the viewport.
+
+     .siteMock's z-index sits BELOW .csPhoneDock — the schedule card
+     lives permanently behind the chat panel.
+
+     .supportShell itself gets an explicit height here: both .siteMock
+     and .csPhoneDock are position: fixed now, so neither contributes to
+     .supportShell's natural grid-row height any more (an empty grid row
+     would collapse to 0) — 100dvh keeps the shell (and this section of
+     the page) exactly one viewport tall, matching what the fixed
+     children already visually fill.
+
+     overflow: visible overrides the base rule's overflow: hidden
+     (needed there to clip the desktop layout's own rounded corners) —
+     .siteMock/.csPhoneDock are position: fixed and shouldn't be
+     clipped by their DOM ancestor's overflow at all in principle, but
+     some mobile WebViews (confirmed via a real iOS Safari device,
+     where .csPhoneDock rendered completely invisible off mobile
+     Chrome's own DevTools device emulation) clip fixed descendants
+     against an ancestor's overflow:hidden anyway despite no
+     transform/filter establishing a new containing block. Explicit
+     visible here removes any ambiguity. */
+  .supportShell { height: 100dvh; overflow: visible; }
+  /* top offset starts from Topbar.module.css's own .topbar height (60px,
+     position: sticky, z-index: 60) — that bar sits above EVERYTHING on
+     this page including these position: fixed elements (its z-index
+     beats both below), so anchoring at, say, top: 28px parked the
+     schedule card's own top edge underneath the topbar entirely, with
+     nothing on screen to show for it. This offset is measured from
+     y=60 (the topbar's own bottom edge), not y=0. */
+  .siteMock {
+    position: fixed; z-index: 5; left: 50%; top: 76px;
+    transform: translateX(-50%);
+    width: calc(100% - 16px); max-width: 460px; max-height: 70vh;
+    padding: 24px 20px;
+    border-radius: 16px;
+    background: var(--sl-panel);
+    box-shadow: 0 12px 28px rgba(0,0,0,0.18);
+    overflow-y: auto;
+  }
+  /* "This week" + the logo dot only make sense as backdrop chrome next
+     to the calendar's own nav bar on the wide desktop layout — on mobile
+     the card is small and title-less already reads as "the schedule",
+     so this row is just wasted vertical space inside the peeking card
+     (see .siteMock's own comment above). */
+  .siteMockNav { display: none; }
+  /* position: fixed (viewport-relative, like .siteMock above), not a
+     stretched grid item anymore — a grid item's height still counts
+     toward .supportShell's natural height even at position: relative,
+     so a tall dock (640px+) grew the whole page past one viewport and
+     forced page-level scrolling. Fixed positioning takes the dock out
+     of that flow entirely: it's pinned to the real viewport's bottom
+     edge and never affects .supportShell's own height, and its own
+     height is calc(100dvh - top) so top + height never exceeds the
+     actual viewport (100dvh, not vh, so mobile Safari/Chrome's
+     collapsing address bar doesn't leave a gap or clip at the bottom as
+     it shows/hides).
+
+     top: 50% covers exactly the bottom half of the VIEWPORT, not of
+     .siteMock's own content height — deliberately not tied to the
+     schedule card's real rendered height (an earlier version measured
+     .siteMock via ResizeObserver and computed an exact pixel offset from
+     its content height instead). That approach kept the covered
+     FRACTION OF THE CARD constant, but the covered fraction of the
+     SCREEN varied with viewport height instead — a taller phone (e.g.
+     iPhone X's 812px vs SE's 667px) leaves more empty space below a
+     fixed-height card, so the same "half the card" pixel offset reads
+     as covering much less than half the visible screen. A plain
+     viewport percentage covers half the screen consistently on every
+     device, which is what actually reads as "half" to someone looking
+     at the page, at the cost of the covered fraction of the card itself
+     varying slightly with how tall its content happens to render. */
+  .csPhoneDock {
+    position: fixed; z-index: 10; left: 0; right: 0;
+    top: 50%; bottom: 0;
+    margin: 0; width: auto; height: auto;
+    border: 0; border-radius: 16px 16px 0 0;
+    box-shadow: 0 -10px 24px rgba(0,0,0,0.14);
+  }
+  .csPhoneNotch { display: none; }
+  .csPanel { border-radius: 16px 16px 0 0; }
+}

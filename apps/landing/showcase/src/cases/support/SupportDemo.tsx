@@ -1,39 +1,155 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { AgentBridge, defineTool } from '@onagent/bridge'
+import styles from './SupportDemo.module.css'
 
 // AI customer support agent — the "/support" demo shell. Unlike the old
 // static mock this replaced, this is a real, working AgentBridge
 // connection to support-app (see .env.example's VITE_SUPPORT_* vars) —
 // a visitor can actually type a message and get a real LLM reply, and
-// lookup_order's tool call is really dispatched back into this page,
-// same mechanism a real developer's own site would use.
+// check_availability/get_my_appointments/book_appointment's tool calls
+// are really dispatched back into this page, same mechanism a real
+// developer's own site would use.
 //
-// lookup_order's "backend" here is a hardcoded mock table (ORDERS below),
-// not a real order database — that's the honest boundary of what a public
-// marketing demo can safely expose (see also src/marketing-demo/widget.js,
-// which mocks its own data the same way) — but the AI's tool-calling
-// decision, the WebSocket round trip, and the reply are all real.
+// The schedule these tools operate on is a hardcoded mock (INITIAL_WEEK
+// below), not a real booking database — that's the honest boundary of
+// what a public marketing demo can safely expose (see also
+// src/marketing-demo/widget.js, which mocks its own data the same way)
+// — but the AI's tool-calling decision, the WebSocket round trip, and
+// the reply are all real.
 //
-// The chat panel is framed as a phone (.cs-phone-dock), floating over the
-// light .site-mock backdrop's bottom-right corner — the way a real
+// The chat panel is framed as a phone (.csPhoneDock), floating over the
+// light .siteMock backdrop's bottom-right corner — the way a real
 // embedded support widget expands from its launcher bubble — rather than
-// a flat sidebar panel. Classes here are ".cs-*" ("chat shell"), distinct
-// from SupportCase.tsx's ".pc-*" ("phone card") even though both render a
-// support conversation.
+// a flat sidebar panel. This component's module (SupportDemo.module.css)
+// is fully distinct from SupportCase.tsx's own (SupportCase.module.css)
+// even though both render a support conversation.
+//
+// .siteMock is the salon's own weekly stylist schedule, and it's fully
+// wired to the tool calls above: check_availability/get_my_appointments
+// read the same `week` state this grid renders, and book_appointment's
+// success actually flips a cell's booked/bookedBy fields (see `week`
+// state and the onBookedRef celebration effect below) — a visitor can
+// watch the AI's tool call really touch "their own" calendar.
 
 const WS_URL = import.meta.env.VITE_SUPPORT_WS_URL ?? 'wss://onagent.shuttle.tools/ws'
 const APP_ID = import.meta.env.VITE_SUPPORT_APP_ID ?? 'support-app'
 const API_KEY = import.meta.env.VITE_SUPPORT_API_KEY
 
-// Mock order data lookup_order's handler serves — see this file's header
-// comment on why this is fake data, not a real store's database. Any
-// order id not in this table still gets a plausible answer (the `default`
-// entry) rather than a dead-end "not found", since the point of the demo
-// is showing the tool-call round trip, not testing error handling.
-const ORDERS: Record<string, { status: string; carrier: string; eta: string }> = {
-  '48213': { status: 'in_transit', carrier: 'UPS · 1Z 999 AA1 01', eta: 'Today, by 6:00 pm' },
-  default: { status: 'processing', carrier: 'Not yet shipped', eta: 'Within 2-3 business days' },
+// Frontend-only per-browser usage cap, same mechanism and same limit as
+// src/marketing-demo/widget.js's own MAX_PROMPTS_PER_BROWSER — independent
+// of and in addition to the backend's own quota system (onQuotaExceeded
+// below). This is what keeps a single visitor from running up real LLM
+// inference cost against the shared demo key; it's a courtesy limit, not a
+// security boundary (it lives in localStorage, so it's trivially reset by
+// clearing site data — an accepted tradeoff for a public marketing demo).
+const MAX_PROMPTS_PER_BROWSER = 10
+const USAGE_STORAGE_KEY = 'onagent-support-demo-prompt-count'
+
+function getPromptCount(): number {
+  try {
+    return Number(localStorage.getItem(USAGE_STORAGE_KEY)) || 0
+  } catch {
+    // Storage blocked (private browsing, disabled cookies, etc.) — fail
+    // open rather than breaking the demo for those visitors.
+    return 0
+  }
 }
+
+function incrementPromptCount(): void {
+  try {
+    localStorage.setItem(USAGE_STORAGE_KEY, String(getPromptCount() + 1))
+  } catch {
+    // Nothing to do if storage is blocked — see getPromptCount.
+  }
+}
+
+// Each stylist's color + a simple cartoon-avatar emoji, used on the week
+// grid's checkmarks and the legend below (keys match STYLISTS[].name).
+const STYLISTS = ['Amy', 'Jordan', 'Priya'] as const
+const STYLIST_COLORS: Record<(typeof STYLISTS)[number], string> = {
+  Amy: '#2f8a53',
+  Jordan: '#3f7cc9',
+  Priya: '#c9578f',
+}
+const STYLIST_AVATARS: Record<(typeof STYLISTS)[number], string> = {
+  Amy: '👩‍🦰',
+  Jordan: '👨‍🦱',
+  Priya: '👩🏽‍🦱',
+}
+
+// Mock weekly schedule for siteMock's backdrop — a real calendar-app-style
+// grid: TIME_ROWS is the shared time axis running down the far-left
+// column, Mon-Sun run across the top as columns, and each (day, time)
+// cell holds at most one stylist (single-chair-per-slot, matching a real
+// salon's own booking grid — see this file's header comment on the
+// eventual highlight wiring), either open or already booked.
+const TIME_ROWS = ['10am', '11am', '1pm', '2pm', '3pm'] as const
+interface DayCellData {
+  stylist: (typeof STYLISTS)[number]
+  booked: boolean
+  // Who holds this slot once booked: true — undefined for a slot that was
+  // already booked before the visitor ever opened this demo (an "other
+  // customer" placeholder; a real system would store that customer's own
+  // name here instead), or CURRENT_CUSTOMER.name once book_appointment
+  // itself books it. get_my_appointments filters on this rather than on
+  // `booked` alone, so it never claims someone else's pre-existing booking
+  // as the visitor's own.
+  bookedBy?: string
+}
+type WeekData = { day: string; date: number; byTime: Partial<Record<(typeof TIME_ROWS)[number], DayCellData>> }[]
+const INITIAL_WEEK: WeekData = [
+  { day: 'Mon', date: 8, byTime: {} },
+  {
+    day: 'Tue', date: 9, byTime: {
+      '10am': { stylist: 'Amy', booked: true },
+      '2pm': { stylist: 'Jordan', booked: false },
+    },
+  },
+  {
+    day: 'Wed', date: 10, byTime: {
+      '11am': { stylist: 'Amy', booked: false },
+      '2pm': { stylist: 'Priya', booked: true },
+    },
+  },
+  {
+    day: 'Thu', date: 11, byTime: {
+      '10am': { stylist: 'Jordan', booked: true },
+      '3pm': { stylist: 'Priya', booked: false },
+    },
+  },
+  {
+    day: 'Fri', date: 12, byTime: {
+      '2pm': { stylist: 'Amy', booked: false },
+      '3pm': { stylist: 'Priya', booked: true },
+    },
+  },
+  {
+    day: 'Sat', date: 13, byTime: {
+      '11am': { stylist: 'Jordan', booked: true },
+      '1pm': { stylist: 'Priya', booked: true },
+    },
+  },
+  { day: 'Sun', date: 14, byTime: {} },
+]
+
+// slotId is just "<day>-<time>" (e.g. "Tue-2pm") — day+time is already the
+// natural unique key for a slot (single-chair-per-slot, see WEEK's own
+// comment), so this doesn't need a separate id-generation scheme. Letting
+// check_availability hand back this exact string, and book_appointment
+// accept nothing but this string, means the LLM never has to reconstruct
+// day/time/stylist correctly from its own memory of the conversation — it
+// just echoes back an opaque value it was already given.
+function slotId(day: string, time: string): string {
+  return `${day}-${time}`
+}
+
+// Stands in for "the visitor is already logged in" — a real site would
+// resolve this from the visitor's actual session, but this demo has no
+// login system at all (see this file's header comment on what's mocked
+// vs. real). book_appointment reads this directly rather than asking the
+// LLM to collect a name, matching how a real embedded widget would already
+// know who's chatting.
+const CURRENT_CUSTOMER = { name: 'Jordan Lee' }
 
 interface ToolCallEntry {
   kind: 'tool'
@@ -53,12 +169,95 @@ let nextEntryId = 0
 
 export function SupportDemo() {
   const [entries, setEntries] = useState<Entry[]>([
-    { kind: 'assistant', id: nextEntryId++, text: "Hi! I'm Acme's assistant. Ask me about orders, returns, or anything on the site." },
+    { kind: 'assistant', id: nextEntryId++, text: "Hi! I'm Acme Salon's assistant. Ask me who's free this week, or anything else about booking an appointment." },
   ])
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
+  // Mirrors getPromptCount() >= MAX_PROMPTS_PER_BROWSER — kept as its own
+  // state (rather than re-reading localStorage on every render) so
+  // hitting the cap immediately disables the input/swaps the footer
+  // copy, matching widget.js's showUsageLimitReached() behavior.
+  const [usageLimitReached, setUsageLimitReached] = useState(() => getPromptCount() >= MAX_PROMPTS_PER_BROWSER)
+  // WEEK used to be a static, top-level constant — book_appointment needs
+  // to actually mutate a slot's `booked` flag (and have the week grid
+  // below re-render to show it), so it's state now. Read/written through
+  // weekRef too (see below) since the tool handlers are captured once
+  // inside the AgentBridge effect's closure and would otherwise only ever
+  // see this state's value from whichever render first created the
+  // bridge, not the latest one after a booking.
+  const [week, setWeek] = useState<WeekData>(INITIAL_WEEK)
+  const weekRef = useRef(week)
+  weekRef.current = week
+  // Fires once book_appointment actually succeeds, so the week grid can
+  // play a "you just got this slot" effect on the exact cell that
+  // changed. Not read directly by book_appointment's own handler for the
+  // same closure-staleness reason weekRef exists (see above) — .current
+  // is always this render's latest callback, even though the handler
+  // itself was captured once at mount.
+  const onBookedRef = useRef<((booking: { day: string; time: string; stylist: string }) => void) | null>(null)
   const bridgeRef = useRef<AgentBridge | null>(null)
   const threadRef = useRef<HTMLDivElement>(null)
+  const shellRef = useRef<HTMLDivElement>(null)
+  // The one in-flight "achievement unlocked" badge animation (see
+  // .badgeFly in SupportDemo.module.css): a fixed-position clone of
+  // .bookedBadge that pops up large near the shell's center, then flies
+  // down and shrinks onto the booked cell's real badge. endX/endY are the
+  // real badge's screen coordinates (measured at trigger time), dx/dy the
+  // offset back to the starting point — the keyframes animate the offset
+  // to zero. Keyed by id so back-to-back bookings each restart the
+  // animation cleanly instead of continuing the previous one.
+  const [celebration, setCelebration] = useState<{
+    id: number
+    stylist: (typeof STYLISTS)[number]
+    endX: number
+    endY: number
+    dx: number
+    dy: number
+  } | null>(null)
+
+  // Wires onBookedRef (called by book_appointment's handler the moment a
+  // booking succeeds — see the AgentBridge effect) to the celebration
+  // animation. Set once on mount: the ref pattern exists precisely so the
+  // tool handler's mount-time closure reads whatever's current.
+  useEffect(() => {
+    onBookedRef.current = ({ day, time, stylist }) => {
+      if (!(stylist in STYLIST_COLORS)) return
+      const wrap = document.querySelector(`[data-slot-id="${slotId(day, time)}"]`)
+      const shell = shellRef.current
+      if (!wrap || !shell) return
+      const wrapRect = wrap.getBoundingClientRect()
+      // Mobile layout hides .siteMock entirely — a zero-size rect means
+      // there's no visible target cell to fly to, so skip the animation.
+      if (wrapRect.width === 0) return
+      const shellRect = shell.getBoundingClientRect()
+      // .bookedBadge sits at top: -6 / right: -6 of the wrap, 20px round —
+      // its center is therefore (wrap.right - 4, wrap.top + 4).
+      const endX = wrapRect.right - 4
+      const endY = wrapRect.top + 4
+      const startX = shellRect.left + shellRect.width / 2
+      const startY = shellRect.top + shellRect.height / 2
+      setCelebration({
+        id: nextEntryId++,
+        stylist: stylist as (typeof STYLISTS)[number],
+        endX,
+        endY,
+        dx: startX - endX,
+        dy: startY - endY,
+      })
+    }
+    return () => {
+      onBookedRef.current = null
+    }
+  }, [])
+
+  // Safety net: onAnimationEnd is the normal cleanup, but if it never
+  // fires (element removed mid-flight, animation suppressed) the overlay
+  // must not linger over the calendar forever.
+  useEffect(() => {
+    if (!celebration) return
+    const t = setTimeout(() => setCelebration(null), 2500)
+    return () => clearTimeout(t)
+  }, [celebration])
 
   useEffect(() => {
     window.dataLayer = window.dataLayer || []
@@ -91,16 +290,160 @@ export function SupportDemo() {
       },
       tools: [
         defineTool(
-          'lookup_order',
+          'check_availability',
           (raw) => {
-            const args = raw as { order_id?: unknown }
-            if (typeof args.order_id !== 'string') throw new Error('order_id is required')
-            return { order_id: args.order_id.replace(/^#/, '') }
+            const args = raw as { day?: unknown; stylist?: unknown }
+            const day = typeof args.day === 'string' ? args.day : undefined
+            const stylist = typeof args.stylist === 'string' ? args.stylist : undefined
+            // Case/prefix-tolerant so "Tuesday"/"tues"/"amy" all resolve —
+            // an LLM won't reliably echo back WEEK's/STYLISTS' exact
+            // three-letter day names or capitalization, and this is a
+            // query tool (see toTool/kind:'query' elsewhere in this
+            // codebase's onagent app schemas) where a wrong day/stylist
+            // silently returning an empty result is worse than a lenient
+            // match here.
+            const dayMatch = day
+              ? weekRef.current.find((d) => {
+                  const a = d.day.toLowerCase()
+                  const b = day.toLowerCase()
+                  return a.startsWith(b) || b.startsWith(a)
+                })
+              : undefined
+            if (day && !dayMatch) throw new Error(`Unknown day: ${day}`)
+            const stylistMatch = stylist
+              ? STYLISTS.find((s) => s.toLowerCase() === stylist.toLowerCase())
+              : undefined
+            if (stylist && !stylistMatch) throw new Error(`Unknown stylist: ${stylist}`)
+            return { day: dayMatch?.day, stylist: stylistMatch }
           },
-          ({ order_id }) => {
-            const info = ORDERS[order_id] ?? ORDERS.default
-            const result = { order_id, ...info }
-            setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'lookup_order', args: { order_id }, result }])
+          ({ day, stylist }) => {
+            // Queries weekRef.current — the same state the week grid
+            // itself renders (see this file's header comment) — rather
+            // than a module-level constant, so a booking made earlier in
+            // this same conversation is reflected in later
+            // check_availability calls too. Reads through the ref, not
+            // `week` directly, because this callback is captured once
+            // inside the AgentBridge effect's closure (mount-once, see the
+            // effect's own eslint-disable) and would otherwise only ever
+            // see whichever `week` value existed at that first render.
+            const days = day ? weekRef.current.filter((d) => d.day === day) : weekRef.current
+            // Slots with no stylist scheduled at all are omitted entirely
+            // — that time simply isn't part of the salon's week, not a
+            // "false" availability worth stating. A slot that DOES have a
+            // stylist scheduled is always included, whether already
+            // booked or still open, with `available` distinguishing the
+            // two (see support-app-tools.yaml's thought for the same rule
+            // spelled out to the model: absence means "not on the
+            // schedule," not "booked").
+            const slots = days.flatMap((d) =>
+              TIME_ROWS.map((time) => {
+                const cell = d.byTime[time]
+                if (!cell) return null
+                if (stylist && cell.stylist !== stylist) return null
+                return { slotId: slotId(d.day, time), day: d.day, time, stylist: cell.stylist, available: !cell.booked }
+              }).filter((s): s is NonNullable<typeof s> => s !== null),
+            )
+            const result = { slots }
+            setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'check_availability', args: { day, stylist }, result }])
+            return result
+          },
+        ),
+        defineTool(
+          'get_my_appointments',
+          () => ({}),
+          () => {
+            // Filters on bookedBy, not just `booked` — a slot that was
+            // already booked before this demo even loaded (INITIAL_WEEK's
+            // hardcoded true/false, no bookedBy set) belongs to some other
+            // customer, not CURRENT_CUSTOMER, and must never show up here
+            // just because it happens to be occupied.
+            const appointments = weekRef.current.flatMap((d) =>
+              TIME_ROWS.map((time) => {
+                const cell = d.byTime[time]
+                if (!cell || cell.bookedBy !== CURRENT_CUSTOMER.name) return null
+                return { slotId: slotId(d.day, time), day: d.day, time, stylist: cell.stylist }
+              }).filter((a): a is NonNullable<typeof a> => a !== null),
+            )
+            const result = { appointments }
+            setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'get_my_appointments', args: {}, result }])
+            return result
+          },
+        ),
+        defineTool(
+          'book_appointment',
+          (raw) => {
+            const args = raw as { slotId?: unknown; action?: unknown }
+            if (typeof args.slotId !== 'string') throw new Error('slotId is required')
+            const action = args.action === undefined ? 'book' : args.action
+            if (action !== 'book' && action !== 'cancel') throw new Error(`Unknown action: ${String(action)} (expected "book" or "cancel")`)
+            return { slotId: args.slotId, action }
+          },
+          ({ slotId: id, action }) => {
+            // Parses the same "<day>-<time>" shape slotId() produces —
+            // deliberately re-derived here rather than trusting a
+            // client-supplied day/time pair, so an LLM can only ever act
+            // on an opaque id it was actually handed by check_availability,
+            // never fabricate its own day/time combination.
+            const [day, time] = id.split('-') as [string, string]
+            const dayEntry = weekRef.current.find((d) => d.day === day)
+            if (!dayEntry) throw new Error(`Unknown slotId: ${id}`)
+            const cell = dayEntry.byTime[time as (typeof TIME_ROWS)[number]]
+            if (!cell) throw new Error(`Unknown slotId: ${id} (no stylist scheduled for ${day} ${time})`)
+
+            if (action === 'cancel') {
+              // Cancelling isn't just "the inverse of booking" — it must
+              // never let the LLM free up a slot it doesn't own. A slot
+              // that's already open, or booked by someone else entirely
+              // (bookedBy unset or a different name), is the LLM's own
+              // mistake (it should have called get_my_appointments first),
+              // so this throws rather than silently no-op'ing.
+              if (!cell.booked || cell.bookedBy !== CURRENT_CUSTOMER.name) {
+                throw new Error(`Slot ${id} is not one of ${CURRENT_CUSTOMER.name}'s bookings`)
+              }
+              const stylist = cell.stylist
+              setWeek((w) =>
+                w.map((d) =>
+                  d.day !== day
+                    ? d
+                    : { ...d, byTime: { ...d.byTime, [time]: { ...cell, booked: false, bookedBy: undefined } } },
+                ),
+              )
+              const result = { cancelled: true, day, time, stylist }
+              setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'book_appointment', args: { slotId: id, action }, result }])
+              return result
+            }
+
+            // action === 'book'. Two different failure shapes on purpose,
+            // not one blanket { booked: false }: an unparseable/nonexistent
+            // slotId is the LLM's own mistake (it fabricated an id, or
+            // garbled one it was given) and throws, surfacing as a real
+            // tool error the model sees and can react to (re-check
+            // availability, tell the visitor something went wrong) — vs. a
+            // slotId that WAS valid when check_availability returned it but
+            // lost the race to another booking in between, which is a
+            // legitimate outcome a real salon's booking system would hit
+            // too, not a bug, so it returns booked:false instead of
+            // throwing.
+            if (cell.booked) {
+              const result = { booked: false, day, time, stylist: cell.stylist }
+              setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'book_appointment', args: { slotId: id, action }, result }])
+              return result
+            }
+            const stylist = cell.stylist
+            setWeek((w) =>
+              w.map((d) =>
+                d.day !== day
+                  ? d
+                  : { ...d, byTime: { ...d.byTime, [time]: { ...cell, booked: true, bookedBy: CURRENT_CUSTOMER.name } } },
+              ),
+            )
+            onBookedRef.current?.({ day, time, stylist })
+            // CURRENT_CUSTOMER stands in for a real visitor session (see
+            // its own doc comment) — echoed back here so the LLM can
+            // confirm the booking by name without ever having asked the
+            // visitor for it.
+            const result = { booked: true, day, time, stylist, customer: CURRENT_CUSTOMER.name }
+            setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'book_appointment', args: { slotId: id, action }, result }])
             return result
           },
         ),
@@ -123,115 +466,221 @@ export function SupportDemo() {
   function handleSend() {
     const text = input.trim()
     if (!text || !bridgeRef.current) return
+    if (getPromptCount() >= MAX_PROMPTS_PER_BROWSER) {
+      setUsageLimitReached(true)
+      return
+    }
+    incrementPromptCount()
     setEntries((es) => [...es, { kind: 'user', id: nextEntryId++, text }])
     setInput('')
     setThinking(true)
     bridgeRef.current.prompt(text)
+    if (getPromptCount() >= MAX_PROMPTS_PER_BROWSER) setUsageLimitReached(true)
   }
 
   return (
-    <div className="support-shell">
-      {/* Backdrop: a generic "customer's own site" — never interactive
-          (pointer-events: none in CSS), just enough visual weight to
-          justify the floating phone being "embedded" in something. */}
-      <div className="site-mock" aria-hidden="true">
-        <div className="site-mock-nav">
-          <div className="site-mock-logo" />
-          <div className="site-mock-links">
-            <span className="ph" style={{ width: 48 }} />
-            <span className="ph" style={{ width: 60 }} />
-            <span className="ph" style={{ width: 40 }} />
-          </div>
+    <div className={styles.supportShell} ref={shellRef}>
+      {/* Backdrop: the salon's own weekly stylist schedule — a plausible
+          "why is a support widget embedded in this page" justification,
+          and (styling only for now, see this component's header comment)
+          the eventual target for highlighting whichever slot a tool call
+          actually touched. */}
+      <div className={styles.siteMock}>
+        <div className={styles.siteMockNav}>
+          <div className={styles.siteMockLogo} />
+          <span className={styles.siteMockTitleText}>This week</span>
         </div>
-        <div className="site-mock-hero">
-          <div className="ph site-mock-title" />
-          <span className="ph" style={{ width: '85%' }} />
-          <span className="ph" style={{ width: '70%' }} />
-          <span className="ph" style={{ width: '60%' }} />
-          <div className="site-mock-cards">
-            <div className="site-mock-card" />
-            <div className="site-mock-card" />
-            <div className="site-mock-card" />
-          </div>
+        <table className={styles.weekGrid}>
+          <thead>
+            <tr>
+              <th className={styles.timeAxisHead} />
+              {week.map((d) => (
+                <th key={d.day} className={styles.dayHead}>
+                  <div className={styles.dayLabel}>{d.day}</div>
+                  <div className={styles.dayDate}>{d.date}</div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {TIME_ROWS.map((time) => (
+              <tr key={time}>
+                <td className={styles.timeAxisCell}>{time}</td>
+                {week.map((d) => {
+                  const cell = d.byTime[time]
+                  return (
+                    <td className={styles.dayCell} key={d.day}>
+                      {cell && (
+                        <span
+                          className={styles.dayAvatarWrap}
+                          data-slot-id={slotId(d.day, time)}
+                          aria-label={`${cell.stylist}${cell.booked ? ' — booked' : ' available'} ${d.day} ${time}`}
+                          title={cell.stylist}
+                        >
+                          {cell.booked && (
+                            /* Filled with the stylist's own color (same
+                               source as the avatar ring below) so the badge
+                               and ring read as one unit per stylist, rather
+                               than a brand-gold dot clashing with each
+                               ring's unrelated green/blue/pink. */
+                            <span
+                              className={styles.bookedBadge}
+                              style={{ background: STYLIST_COLORS[cell.stylist] }}
+                              aria-hidden="true"
+                            >
+                              <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
+                            </span>
+                          )}
+                          <span className={styles.dayAvatar} style={{ borderColor: STYLIST_COLORS[cell.stylist] }}>
+                            {STYLIST_AVATARS[cell.stylist]}
+                          </span>
+                        </span>
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className={styles.legend}>
+          {STYLISTS.map((name) => (
+            <span key={name} className={styles.legendItem}>
+              <span className={styles.legendAvatar} style={{ borderColor: STYLIST_COLORS[name] }}>
+                {STYLIST_AVATARS[name]}
+              </span>
+              {name}
+            </span>
+          ))}
         </div>
       </div>
 
       {/* The support widget itself — the actual subject of this demo,
-          framed as a phone, wired to a real AgentBridge connection. */}
-      <div className="cs-phone-dock">
-        <div className="cs-phone-notch" />
-        <div className="cs-panel">
-          <div className="cs-panel-header">
-            <span className="cs-avatar cs-avatar-lg">
+          framed as a phone, wired to a real AgentBridge connection.
+          On mobile (see SupportDemo.module.css's max-width: 640px block)
+          this right while the schedule drawer is open, so a strip of it
+          it's pinned low enough to cover only the bottom half of the
+          schedule card stacked behind it (see .csPhoneDock's own
+          comment), so both are visible at once with no open/close
+          interaction needed. */}
+      <div className={styles.csPhoneDock}>
+        <div className={styles.csPhoneNotch} />
+        <div className={styles.csPanel}>
+          <div className={styles.csPanelHeader}>
+            <span className={`${styles.csAvatar} ${styles.csAvatarLg}`}>
               <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
             </span>
             <div>
-              <div className="cs-panel-title">Support</div>
-              <div className="cs-panel-subtitle"><span className="cs-dot" />Online · usually replies instantly</div>
+              <div className={styles.csPanelTitle}>Support</div>
+              {/* Same signal the input's own placeholder/disabled state
+                  already uses (API_KEY presence) — not a real "connection
+                  succeeded" check, since this component has no reliable one
+                  to gate on (see the AgentBridge effect's own comment
+                  below), but at least this no longer claims "Online" while
+                  the demo is fully unwired (no key set at all). */}
+              <div className={styles.csPanelSubtitle}>
+                <span className={`${styles.csDot} ${API_KEY ? '' : styles.csDotOffline}`} />
+                {API_KEY ? 'Online · usually replies instantly' : 'Offline · demo not wired up'}
+              </div>
             </div>
           </div>
 
-          <div className="cs-panel-thread" ref={threadRef}>
-            <div className="cs-day-divider">Today</div>
+          <div className={styles.csPanelThread} ref={threadRef}>
+            <div className={styles.csDayDivider}>Today</div>
 
-            {entries.map((entry) =>
-              entry.kind === 'tool' ? (
-                <div className="cs-tool-card" key={entry.id}>
-                  <div className="cs-tool-head">
-                    <svg viewBox="0 0 24 24"><path d="M12 8v4l3 3M12 2a10 10 0 100 20 10 10 0 000-20z" /></svg>
-                    <span>{entry.name}</span>
-                    <span className="cs-tool-status">done</span>
-                  </div>
-                  {entry.result && (
-                    <div className="cs-tool-body">
-                      {Object.entries(entry.result).map(([k, v]) => (
-                        <>
-                          <span key={`${entry.id}-${k}-key`}>{k}</span>
-                          <span key={`${entry.id}-${k}-val`}>{String(v)}</span>
-                        </>
-                      ))}
-                    </div>
-                  )}
+            {/* Tool-call entries (check_availability's args/result) stay in
+                `entries` — the tool handler still appends them, see the
+                AgentBridge effect above — but are filtered out of what
+                actually renders here, so the thread reads as a real
+                customer-facing chat rather than exposing the tool-calling
+                mechanics under the hood. Kept in state rather than never
+                recorded at all, in case a future debug/dev view wants
+                them. */}
+            {entries
+              .filter((entry): entry is ChatEntry => entry.kind !== 'tool')
+              .map((entry) => (
+                <div className={`${styles.csRow} ${entry.kind === 'user' ? styles.fromUser : styles.fromAi}`} key={entry.id}>
+                  <div className={styles.csBubble}>{entry.text}</div>
                 </div>
-              ) : (
-                <div className={`cs-row ${entry.kind === 'user' ? 'from-user' : 'from-ai'}`} key={entry.id}>
-                  <div className="cs-bubble">{entry.text}</div>
-                </div>
-              ),
-            )}
+              ))}
 
             {thinking && (
-              <div className="cs-row from-ai">
-                <div className="cs-bubble cs-thinking">
+              <div className={`${styles.csRow} ${styles.fromAi}`}>
+                <div className={`${styles.csBubble} ${styles.csThinking}`}>
                   <span /><span /><span />
                 </div>
               </div>
             )}
           </div>
 
-          <div className="cs-panel-input">
-            <form
-              className="cs-input-row"
-              onSubmit={(e) => {
-                e.preventDefault()
-                handleSend()
-              }}
-            >
-              <input
-                className="cs-textarea"
-                placeholder={API_KEY ? 'Ask about an order, a return, or anything else…' : 'Demo not wired up (missing API key)'}
-                value={input}
-                disabled={!API_KEY}
-                onChange={(e) => setInput(e.target.value)}
-              />
-              <button type="submit" className="cs-send-btn" disabled={!API_KEY || !input.trim()} aria-label="Send">
-                <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
-              </button>
-            </form>
-            <div className="cs-powered">Powered by <b>onagent</b></div>
+          <div className={styles.csPanelInput}>
+            {/* Once the free per-browser cap is hit (see
+                MAX_PROMPTS_PER_BROWSER above, same mechanism as
+                src/marketing-demo/widget.js's own showUsageLimitReached),
+                the input has nothing left to do — swap it for a CTA into
+                the real product instead of just sitting there disabled. */}
+            {usageLimitReached ? (
+              <>
+                <a className={styles.csLimitCta} href="/app">Try it yourself →</a>
+                <p className={styles.csLimitStatus}>This browser has hit the demo's free-prompt limit ({MAX_PROMPTS_PER_BROWSER}) — create your own onagent account to keep going on your own quota.</p>
+              </>
+            ) : (
+              <form
+                className={styles.csInputRow}
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  handleSend()
+                }}
+              >
+                <input
+                  className={styles.csTextarea}
+                  placeholder={API_KEY ? 'Ask who has an opening this week…' : 'Demo not wired up (missing API key)'}
+                  value={input}
+                  disabled={!API_KEY}
+                  onChange={(e) => setInput(e.target.value)}
+                />
+                <button type="submit" className={styles.csSendBtn} disabled={!API_KEY || !input.trim()} aria-label="Send">
+                  <svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7" /></svg>
+                </button>
+              </form>
+            )}
+            <div className={styles.csPowered}>Powered by <b>onagent</b></div>
           </div>
         </div>
       </div>
+
+      {/* The flying achievement badge — a fixed-position clone of the
+          booked cell's .bookedBadge (same SVG, same stylist color) that
+          pops in large near the shell's center then shrinks onto the real
+          badge's exact screen position (measured in the onBookedRef
+          effect above). Purely decorative: book_appointment already set
+          week state, so the real .bookedBadge is rendering underneath —
+          this overlay just plays once and removes itself, revealing it. */}
+      {celebration && (
+        <span
+          key={celebration.id}
+          className={styles.badgeFly}
+          style={
+            {
+              left: celebration.endX,
+              top: celebration.endY,
+              background: STYLIST_COLORS[celebration.stylist],
+              '--fly-dx': `${celebration.dx}px`,
+              '--fly-dy': `${celebration.dy}px`,
+            } as CSSProperties
+          }
+          onAnimationEnd={() => setCelebration(null)}
+          aria-hidden="true"
+        >
+          <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></svg>
+        </span>
+      )}
     </div>
   )
+}
+
+declare global {
+  interface Window {
+    dataLayer?: unknown[]
+  }
 }

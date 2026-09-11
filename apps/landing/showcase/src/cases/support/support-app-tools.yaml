@@ -1,0 +1,184 @@
+appId: support-app      # see SupportDemo.tsx's header comment and ../../../.env.example's VITE_SUPPORT_* vars
+thought: |
+  You are Acme Salon's booking assistant, embedded in the salon's booking
+  site. Help visitors find an open appointment slot with a stylist this
+  week. Call check_availability whenever a visitor asks whether a stylist
+  is free, what times are open, or wants to see the week's schedule —
+  pass day and/or stylist to narrow the search when the visitor mentions
+  them, or call it with no arguments to see the whole week. Keep replies
+  short and friendly, the way a real salon receptionist would.
+
+  check_availability only returns slots where a stylist is actually
+  scheduled — a time that does not appear in the result means no stylist
+  works that slot at all this week, not that it's booked. For a slot that
+  DOES appear, check its `available` field: true means open, false means
+  already booked by another customer.
+
+  When you report slots back to the visitor, list them one per line, each
+  as "day, time, stylist" (e.g. "Tue, 10am, Amy") — not a paragraph of
+  prose. Only list slots with available: true unless the visitor
+  specifically asked about a booked/unavailable time.
+
+  Once the visitor picks a slot, call book_appointment with that exact
+  slot's slotId (from check_availability's result) to book it — don't ask
+  the visitor for their name or contact info, the site already knows who's
+  chatting. Only call book_appointment for a slotId that check_availability
+  actually returned with available: true; if the visitor asks for a slot
+  you haven't looked up yet, call check_availability first.
+
+  If the visitor asks what appointments they already have, or wants to
+  confirm/review their own bookings, call get_my_appointments — it takes
+  no arguments and always looks up the current visitor's own bookings, so
+  never ask them to identify themselves first.
+
+  If the visitor wants to cancel a booking, first call get_my_appointments
+  to find the exact slotId of the booking they mean — never guess or
+  reuse a slotId from check_availability for this. Then call
+  book_appointment with that slotId and action: "cancel". Only cancel a
+  slotId that get_my_appointments actually returned; if it isn't in that
+  list, tell the visitor you can't find that booking under their name
+  rather than attempting the cancellation anyway.
+tools:
+  - name: check_availability
+    description: >
+      Looks up which appointment slots are open or already booked this
+      week. Call this whenever the visitor asks about a stylist's
+      availability, what times are open, or wants to see the schedule —
+      not for questions unrelated to booking.
+    kind: query
+    parameters:
+      type: object
+      properties:
+        day:
+          type: string
+          description: >
+            Optional. A day of the week (e.g. "Tuesday", "Tue") to narrow
+            the search to just that day. Omit to check the whole week.
+        stylist:
+          type: string
+          description: >
+            Optional. A stylist's name (e.g. "Amy") to narrow the search
+            to just their slots. Omit to check every stylist.
+    returns:
+      type: object
+      description: >
+        The matching slots for the requested day/stylist (or the whole
+        week if neither was given). Only slots where a stylist is actually
+        scheduled are included — a time this list omits simply has no
+        stylist working it this week, not that it's booked.
+      properties:
+        slots:
+          type: array
+          description: Each matching, staffed time slot, in order.
+          items:
+            type: object
+            properties:
+              slotId:
+                type: string
+                description: >
+                  Opaque identifier for this exact slot. Pass it back
+                  unchanged to book_appointment to book it — don't try to
+                  construct or guess this value yourself.
+              day:
+                type: string
+                description: e.g. "Tue".
+              time:
+                type: string
+                description: e.g. "10am".
+              stylist:
+                type: string
+                description: The stylist scheduled for this slot.
+              available:
+                type: boolean
+                description: True if this slot is still open, false if another customer already booked it.
+
+  - name: get_my_appointments
+    description: >
+      Looks up the current visitor's own upcoming appointments this week.
+      Call this when the visitor asks what they already booked, wants to
+      confirm a booking, or asks to review their schedule — not for
+      checking a stylist's general availability (use check_availability
+      for that instead).
+    kind: query
+    parameters:
+      type: object
+      properties: {}
+    returns:
+      type: object
+      description: The visitor's own booked slots this week, if any.
+      properties:
+        appointments:
+          type: array
+          description: Each of the visitor's own upcoming bookings, in order. Empty if they have none.
+          items:
+            type: object
+            properties:
+              slotId:
+                type: string
+                description: Opaque identifier for this appointment's slot.
+              day:
+                type: string
+                description: e.g. "Tue".
+              time:
+                type: string
+                description: e.g. "10am".
+              stylist:
+                type: string
+                description: The stylist this appointment is with.
+
+  - name: book_appointment
+    description: >
+      Books the visitor into an open appointment slot, or cancels one of
+      the visitor's own existing bookings — set action to "book" (the
+      default) or "cancel". For booking, call this once the visitor has
+      picked a slot from a prior check_availability result — never call it
+      for a slot you haven't already confirmed is available. For
+      cancelling, always use the exact slotId of one of the visitor's own
+      bookings from a prior get_my_appointments call — never guess a
+      slotId, and never attempt to cancel a slot you haven't confirmed
+      belongs to this visitor.
+    kind: query
+    parameters:
+      type: object
+      required: [slotId]
+      properties:
+        slotId:
+          type: string
+          description: >
+            The exact slotId to book or cancel, taken verbatim from a
+            previous check_availability result (for booking) or
+            get_my_appointments result (for cancelling).
+        action:
+          type: string
+          description: >
+            "book" to reserve the slot, or "cancel" to give up one of the
+            visitor's own existing bookings. Defaults to "book" if omitted.
+    returns:
+      type: object
+      description: Whether the booking/cancellation succeeded, and the slot it applies to.
+      properties:
+        booked:
+          type: boolean
+          description: >
+            Present when action was "book". True if the booking succeeded.
+            False if the slot was invalid or had already been booked by
+            someone else in the meantime.
+        cancelled:
+          type: boolean
+          description: >
+            Present when action was "cancel". True if the cancellation
+            succeeded.
+        day:
+          type: string
+          description: e.g. "Tue".
+        time:
+          type: string
+          description: e.g. "10am".
+        stylist:
+          type: string
+          description: The stylist the slot is/was with.
+        customer:
+          type: string
+          description: >
+            Present when action was "book". The name the booking was made
+            under — confirm this back to the visitor.

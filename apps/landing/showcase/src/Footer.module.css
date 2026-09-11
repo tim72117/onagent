@@ -1,0 +1,5 @@
+.footer { border-top: 1px solid var(--border-soft); padding: 28px 0; text-align: center; color: var(--text-3); font-size: 13px; margin-top: 64px; }
+.wrap { width: 100%; max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+.bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.bottom a { color: var(--text-3); }
+.bottom a:hover { color: var(--text-2); }

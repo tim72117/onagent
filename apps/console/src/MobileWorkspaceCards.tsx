@@ -4,7 +4,7 @@ import { emptyTool } from './schema'
 import type { ValidationIssue } from './validate'
 import { ThoughtEditSheet } from './ThoughtEditSheet'
 import { ToolEditSheet } from './ToolEditSheet'
-import { AiToolGeneratorSheet } from './AiToolGeneratorSheet'
+import { AiToolGeneratorSheet } from './aiToolGenerator/AiToolGeneratorSheet'
 import { useSheet } from './useSheet'
 import styles from './MobileWorkspaceCards.module.css'
 

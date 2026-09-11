@@ -10,7 +10,7 @@
 
 構想方向：新增一種對話式引導建立 tool 的方式，作為現有兩種方式（console 手動編輯、YAML + CLI）之外的第三種選項，不取代、也不影響 YAML + `onagent tool create` 這條既有路徑——依序詢問使用者這個工具的用途、類型、可能的參數有哪些、參數類型，由介面（可能搭配 LLM）幫使用者組出完整的 tool 定義，不需要使用者自己寫 JSON Schema。
 
-（這個構想已實作為 AI Tool Builder——console 的「Generate with AI」流程，見 `apps/console/src/aiToolGenerator.ts`/`AiToolGeneratorSheet.tsx`，後端定義於 `backend/internal/console/tool-builder-tools.yaml`。設計文件已刪除，per-user provisioning、從 app 清單隱藏等尚未完成的部分見這兩個檔案的註解。這個功能本身曾經完全不能用（`tool_call`/`tool_query` 訊息類型不匹配）及其協定邏輯重複實作的架構債，記在 `docs/audit-functional.md`，不重複收錄於此。）
+（這個構想已實作為 AI Tool Builder——console 的「Generate with AI」流程，見 `apps/console/src/aiToolGenerator/aiToolGenerator.ts`/`AiToolGeneratorSheet.tsx`，其 onagent app 的 tool 定義（`tool-builder-tools.yaml`）也在同一個目錄下。設計文件已刪除，per-user provisioning、從 app 清單隱藏等尚未完成的部分見這兩個檔案的註解。這個功能本身曾經完全不能用（`tool_call`/`tool_query` 訊息類型不匹配）及其協定邏輯重複實作的架構債，記在 `docs/audit-functional.md`，不重複收錄於此。）
 
 尚未拍板的細節：
 - 是獨立的新 UI 流程，還是整合進現有 console 的 tool 編輯器？

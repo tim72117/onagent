@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Tool } from './schema'
+import type { Tool } from '../schema'
 import { generateToolFromDescription } from './aiToolGenerator'
-import { focusAndReveal } from './focusField'
-import { BottomSheet } from './BottomSheet'
-import { SheetHeader } from './SheetHeader'
-import styles from './ToolFieldSheet.module.css'
+import { focusAndReveal } from '../focusField'
+import { BottomSheet } from '../BottomSheet'
+import { SheetHeader } from '../SheetHeader'
+import styles from '../ToolFieldSheet.module.css'
 
 // Opened by MobileWorkspaceCards.tsx's "Generate with AI" button — collects a
 // plain-language description, then hands off to aiToolGenerator.ts (the

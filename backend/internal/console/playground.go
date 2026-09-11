@@ -16,7 +16,7 @@ import (
 
 // toolBuilderAppID identifies the platform-internal "Generate with AI" tool
 // builder app (see docs/ai-tool-builder-design-2026-09-09.md and
-// backend/internal/console/tool-builder-tools.yaml) — the one appID this
+// apps/console/src/aiToolGenerator/tool-builder-tools.yaml) — the one appID this
 // resolver special-cases to get a fresh session per connection instead of
 // Playground's usual stable one (see the sessionID comment below for why).
 const toolBuilderAppID = "tool-builder"
@@ -174,7 +174,7 @@ func (p *playgroundResolver) ResolveApp(r *http.Request) (appID, sessionID strin
 	// point being that a developer testing their own app expects it to
 	// remember the conversation so far.
 	//
-	// tool-builder is the one exception: aiToolGenerator.ts opens a fresh
+	// tool-builder is the one exception: apps/console/src/aiToolGenerator/aiToolGenerator.ts opens a fresh
 	// WebSocket connection per "Generate" click, each meant to be an
 	// independent, stateless request ("describe a tool, get a tool
 	// definition back") — not a continuation of whatever was asked in a

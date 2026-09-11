@@ -1,0 +1,86 @@
+/* Styling for SupportCase.tsx alone (the phone-mockup card on the list
+   page). Fully distinct from SupportDemo.module.css even though both
+   render a support conversation — as CSS Modules, they could reuse the
+   exact same class names with zero risk of collision, but keeping the
+   two components' styling in separate files (not just separate names) is
+   what actually makes "which file do I edit for the list card vs. the
+   live demo" unambiguous. */
+
+/* Overrides ./MarketingCase.module.css's .collage rule is no longer
+   possible/needed as a Module (that file's .collage never reaches this
+   one) — this component has its own .collage instead, with no background
+   panel of its own: the phone mockup sits directly on the page background
+   rather than floating on a card, unlike the marketing case. */
+.collage { position: relative; width: 100%; height: 280px; border-radius: 16px; overflow: visible; }
+.phone {
+  position: absolute; left: 50%; top: 20px; transform: translateX(-50%);
+  width: 148px; height: 248px;
+  background: #0a0906; border-radius: 22px; padding: 6px;
+  border: 1.5px solid #3a3222;
+  box-shadow: 0 28px 50px -18px rgba(0,0,0,0.7);
+}
+.notch { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); width: 44px; height: 5px; border-radius: 3px; background: #1f1a10; }
+.screen { width: 100%; height: 100%; border-radius: 17px; overflow: hidden; background: #fbfaf7; display: flex; flex-direction: column; }
+.header { display: flex; align-items: center; gap: 6px; padding: 12px 10px 7px; border-bottom: 1px solid #f0ead9; background: #fff; }
+.avatar { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--grad); color: #1a1408; flex: none; }
+.avatar svg { width: 11px; height: 11px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.headerName { font-size: 8.5px; font-weight: 700; color: #2b2718; }
+.headerStatus { font-size: 6.5px; color: #71664f; display: flex; align-items: center; gap: 3px; }
+.dot { width: 5px; height: 5px; border-radius: 50%; background: #3fa86a; display: inline-block; }
+
+/* The whole thread plays through once (each message/tool-card fades in on
+   its own animation-delay, set inline per element in SupportCase.tsx, and
+   then STAYS — no fade-out mid-conversation, so messages accumulate top
+   to bottom like a real chat log), then the entire thread blanks out and
+   the cycle restarts from empty. .thread's own "reset" animation drives
+   the restart: every child's delay is relative to this shared parent
+   timeline, so at CYCLE_LENGTH all children are still in their
+   post-animation "visible" state (forwards fill-mode) until .thread
+   itself snaps opacity back to 0 for an instant and the next iteration's
+   delays replay each message in order again. */
+.thread {
+  flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 5px;
+  font-size: 7.5px; line-height: 1.35; overflow: hidden;
+  animation: threadCycle 6s step-end infinite;
+}
+@keyframes msgIn {
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.msg, .tool {
+  opacity: 0;
+  animation: msgIn 0.4s ease-out forwards;
+}
+@keyframes threadCycle {
+  0%, 99.5% { opacity: 1; }
+  99.6%, 100% { opacity: 0; }
+}
+.msg { max-width: 84%; padding: 5px 7px; border-radius: 9px; }
+.msg.fromUser { align-self: flex-end; background: var(--grad); color: #1a1408; border-bottom-right-radius: 2px; font-weight: 500; }
+.msg.fromAi { align-self: flex-start; background: #fff; color: #2b2718; border: 1px solid #efe9d8; border-bottom-left-radius: 2px; }
+.tool {
+  align-self: flex-start; width: 88%; background: #f6efdc;
+  border: 1px dashed rgba(201,162,75,0.55); border-radius: 7px; padding: 4px 6px;
+  font-family: var(--mono); font-size: 6.5px; color: #7a5e1e;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.toolResult { color: #a89b82; }
+.typing { display: flex; align-items: center; gap: 3px; padding: 7px 8px; }
+.typing span { width: 4px; height: 4px; border-radius: 50%; background: #c9a24b; opacity: 0.4; }
+.dot1 { opacity: 1; }
+.input { display: flex; align-items: center; gap: 5px; padding: 6px 8px; border-top: 1px solid #f0ead9; background: #fff; }
+.inputField { flex: 1; height: 16px; border-radius: 8px; background: #f3efe4; font-size: 6.5px; color: #a89b82; display: flex; align-items: center; padding: 0 6px; }
+.send { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--grad); flex: none; }
+.send svg { width: 8px; height: 8px; stroke: #1a1408; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Feature-tag positions — composed with ../../Shared.module.css's .tag/
+   .tagGold/.tagCream/.tagDark in SupportCase.tsx. */
+.tag1 { left: -6px; top: 30px; transform: rotate(-6deg); }
+.tag2 { right: -10px; top: 100px; transform: rotate(4deg); }
+.tag3 { left: 6px; bottom: 18px; transform: rotate(-3deg); }
+.bBolt {
+  position: absolute; display: grid; place-items: center; border-radius: 50%;
+  box-shadow: 0 10px 22px -8px rgba(43,39,24,0.32);
+  width: 34px; height: 34px; right: 14px; top: -14px; background: var(--grad); color: #1a1408;
+}
+.bBolt svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
