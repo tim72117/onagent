@@ -6,6 +6,33 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.5.4
+
+No breaking changes.
+
+- `/showcase/support` gains a language toggle (English/Traditional
+  Chinese, next to the "Support" panel title) for its own static copy
+  — the LLM's own reply language is unaffected, that's still set by
+  `support-app-tools.yaml`'s `thought`. Also adds a `get_today_date`
+  tool and switches the schedule card's date numbers from a hardcoded
+  "Mon 8 – Sun 14" to the real current week, and gives the page its own
+  SEO title/description ("AI Customer Support & Appointment Booking
+  Demo") via a new shared `usePageMeta` hook, instead of inheriting
+  showcase's generic marketing-demo-flavored `<title>`/meta tags.
+- Fix a real mobile Safari bug where `/showcase/support`'s chat panel
+  collapsed to zero height and disappeared entirely below the schedule
+  card, leaving a blank strip: the desktop layout's `align-self: end`
+  survived into the mobile `position: fixed` layout on WebKit even
+  though the element is no longer a grid item there, so `top`/`bottom`
+  alone didn't stretch it to fill that span — WebKit sized it to its
+  (auto) content height instead, and the chat panel's own `height: 100%`
+  then resolved against that auto height as zero. Chrome's box model
+  happened to mask this, which is why it wasn't caught in Chrome
+  DevTools' device emulation.
+- The landing homepage's "Marketing analytics assistant" case card
+  gains a desktop-only "See more examples →" link to `/showcase/`,
+  next to the existing "Try it live" button.
+
 ## v0.5.3
 
 No breaking changes.
