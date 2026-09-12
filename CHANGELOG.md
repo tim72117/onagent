@@ -6,6 +6,46 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.5.5
+
+No breaking changes to any public package/API — `/showcase/support`'s
+`get_today_date`/`check_availability` tool parameters did change shape
+(see below), but these are internal tool definitions scoped to this one
+demo app, not a consumer-facing interface.
+
+- Fix a real hang: `want` upgraded to v0.4.1, which detects a Gemini
+  turn that comes back with `finishReason` set but no text and no
+  function call (an empirically confirmed, non-rare Gemini failure mode
+  in multi-step tool-calling) and reports it as an error instead of
+  silently succeeding with empty content.
+  `internal/inference/want.go`'s `WantService.Complete` now handles the
+  resulting `AgentErrorMessage`/`SessionStoreErrorMessage` events (both
+  previously fell through its event switch unhandled), finishing the
+  call immediately with the real error instead of only ever timing out
+  after `completeTimeout` (90s) with a generic message.
+- `/showcase/support`'s schedule and tools now key off real ISO dates
+  (`YYYY-MM-DD`) instead of day-of-week strings — the calendar shows a
+  rolling window starting today (never a date that's already passed),
+  and `check_availability`/`book_appointment`/`get_my_appointments`
+  operate on unambiguous dates instead of a fuzzy "Tuesday"/"Tue"
+  matcher. `check_availability`'s `day` parameter is now named `date`
+  and takes YYYY-MM-DD; `get_today_date` now requires a `format: "date"
+  | "weekday"` argument and returns only the requested field — this
+  also empirically cut Gemini's empty-response rate on the following
+  turn from ~100% to ~15-25% for this previously zero-argument tool.
+- Assistant replies in `/showcase/support` now render as Markdown
+  (via `marked`, HTML-escaped first — same pattern as the marketing
+  widget), so multi-slot answers can use lists/tables instead of being
+  squashed onto one unbroken line.
+- `/showcase/support` polish: the stylist legend moved next to the
+  schedule title (and now stays visible on mobile, where the whole title
+  row used to be hidden along with it); the chat input plays a brief
+  entrance-hint animation; the landing page's "See more examples" link
+  is no longer desktop-only.
+- Cloud Run's `AI_MODEL` env var (`deploy-cloudrun.yml`) changed from
+  `gemini-2.5-flash-lite` to `gemini-3.1-flash-lite`; `docs/deployment.md`
+  updated to match.
+
 ## v0.5.4
 
 No breaking changes.

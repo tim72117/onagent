@@ -222,7 +222,7 @@ gcloud beta run domain-mappings describe \
 | `APP_ENV` | `--update-env-vars` | 設為 `production`，讓 main.go 對缺漏設定改成直接拒絕啟動，而不是印警告後繼續跑 |
 | `COOKIE_SECURE` | `--update-env-vars` | 設為 `true`，session cookie 只透過 HTTPS 傳送 |
 | `AI_PROVIDER` | `--update-env-vars` | 目前設為 `googleapis` |
-| `AI_MODEL` | `--update-env-vars` | 目前設為 `gemini-2.5-flash-lite` |
+| `AI_MODEL` | `--update-env-vars` | 目前設為 `gemini-3.1-flash-lite` |
 | `ALLOWED_ORIGIN`（單數） | `--update-env-vars` | 逗號分隔的來源網址白名單，給 **onagent 自己的前端**（console/admin 的 Playground WebSocket、`/console/*`、`/auth/*`、`/admin/*` 的 credentialed CORS）用；目前設為 `https://onagent.shuttle.tools`。不是 secret，不走 Secret Manager |
 | `APP_ORIGINS` | `--update-env-vars` | 逗號分隔的來源網址白名單，給**第三方開發者自己的網站**連 `/ws` WebSocket 用；跟 `ALLOWED_ORIGIN` 是兩個不同的名單，不要混淆。目前設為 `https://agent.shuttle.tools`。不是 secret，不走 Secret Manager |
 | `DATABASE_URL` | Secret Manager | Postgres 連線字串（例如 Neon，`sslmode=require`） |
