@@ -24,6 +24,11 @@ export function AppSettingsView({
   onNewOriginDraftChange,
   originBusy,
   onSaveOrigins,
+  maxPromptLengthDraft,
+  onMaxPromptLengthDraftChange,
+  maxPromptLengthBusy,
+  onSaveMaxPromptLength,
+  systemMaxPromptLength,
   onDeleteApp,
 }: {
   appId: string
@@ -37,6 +42,11 @@ export function AppSettingsView({
   onNewOriginDraftChange: (value: string) => void
   originBusy: boolean
   onSaveOrigins: (e: React.FormEvent) => void
+  maxPromptLengthDraft: string
+  onMaxPromptLengthDraftChange: (value: string) => void
+  maxPromptLengthBusy: boolean
+  onSaveMaxPromptLength: (e: React.FormEvent) => Promise<boolean>
+  systemMaxPromptLength: number | null
   onDeleteApp: () => void
 }) {
   function addDraft() {
@@ -126,6 +136,28 @@ export function AppSettingsView({
             No origin set — every connection for this app is blocked until one is saved.
           </span>
         )}
+      </form>
+
+      <form className={styles.originForm} onSubmit={onSaveMaxPromptLength}>
+        <span className="micro-label">Max prompt length</span>
+        <div className={styles.originRow}>
+          <input
+            className={styles.originInput}
+            type="number"
+            min={1}
+            step={1}
+            placeholder={systemMaxPromptLength != null ? String(systemMaxPromptLength) : undefined}
+            value={maxPromptLengthDraft}
+            onChange={(e) => onMaxPromptLengthDraftChange(e.target.value)}
+          />
+          <button type="submit" className="text-btn" disabled={maxPromptLengthBusy}>
+            {maxPromptLengthBusy ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        <span className={styles.originWarning} style={{ color: 'inherit', opacity: 0.7 }}>
+          Max characters an end user's single prompt may contain. Can only tighten the
+          system-wide limit, never loosen it.
+        </span>
       </form>
 
       <div className={styles.dangerZone}>

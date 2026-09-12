@@ -115,4 +115,11 @@ const (
 	// reported per rejected prompt, not by closing the socket. See
 	// internal/quota and docs/subscription-usage-quota-design.md.
 	CodeQuotaExceeded = "quota_exceeded"
+
+	// CodePromptTooLong means this one prompt's text exceeded the app's
+	// effective character limit (toolschema.App.MaxPromptLength, clamped to
+	// the system-wide MAX_PROMPT_LENGTH env var — see
+	// inference.EffectiveMaxPromptLength). The connection stays open and
+	// only this one prompt is rejected, same as CodeQuotaExceeded.
+	CodePromptTooLong = "prompt_too_long"
 )

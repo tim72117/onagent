@@ -178,4 +178,13 @@ type App struct {
 	// ownedAppOrNotFound unconditionally, regardless of this flag — a public
 	// Playground is meant to let other users try an app, not edit it.
 	Public bool `yaml:"public,omitempty" json:"public,omitempty"`
+
+	// MaxPromptLength caps how many characters a single prompt from this
+	// app's own end users may contain — nil means "no app-specific limit,
+	// use the system-wide default" (see inference.EffectiveMaxPromptLength,
+	// which also enforces that a non-nil value here can only tighten the
+	// effective limit, never loosen it past the system-wide MAX_PROMPT_LENGTH
+	// env var). This bounds the *end user's* chat input (ws.Session.handlePrompt),
+	// not any developer-facing text like Thought above.
+	MaxPromptLength *int `yaml:"maxPromptLength,omitempty" json:"maxPromptLength,omitempty"`
 }

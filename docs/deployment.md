@@ -230,6 +230,7 @@ gcloud beta run domain-mappings describe \
 | `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` | Secret Manager | 啟動時建立的第一個營運後台（admin）帳號，只在資料庫裡沒有任何 admin 帳號時生效 |
 | `ADDR` | 不需設定 | main.go 預設 `:8080`，符合 Cloud Run 的 `PORT=8080` 慣例，通常不需要覆寫 |
 | `QUOTA_ENABLED` | 不需設定 | main.go 預設 `true`（啟用每月額度限制）；目前部署未覆寫，維持預設 |
+| `MAX_PROMPT_LENGTH` | 不需設定 | 系統級的單則使用者 prompt 字數上限，未設定或非正整數時預設 `500`（見 `internal/inference.EffectiveMaxPromptLength`）；各 app 可透過 `onagent app maxpromptlength set` 個別收緊（不能放寬超過這個系統級上限）。目前部署未覆寫，維持預設 |
 | `GH_PAT` | GitHub Actions repo secret（**不是** GCP Secret Manager） | 只在 Docker build 階段使用（`--secret id=gh_pat`），抓 `github.com/tim72117/want` 私有模組，不會進最終 runtime image |
 | `LANDING_ANALYSIS_API_KEY` | GitHub Actions repo secret（**不是** GCP Secret Manager，選填） | 只在 landing 前端 build 階段使用（`--secret id=landing_analysis_api_key`），寫進 `.env.production.local` 給 Vite 讀取；會被打包進瀏覽器端 JS bundle（刻意如此，是瀏覽器端可見的 app key），不影響後端 runtime image |
 

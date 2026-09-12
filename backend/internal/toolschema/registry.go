@@ -18,10 +18,11 @@ import (
 // never a bare Save() — for the same "don't risk clobbering a column the
 // other package owns" reason documented on appAuthRow.
 type appRow struct {
-	AppID   string  `gorm:"column:app_id;primaryKey"`
-	OwnerID *int64  `gorm:"column:owner_id"`
-	Thought *string `gorm:"column:thought"`
-	Public  bool    `gorm:"column:public"`
+	AppID           string  `gorm:"column:app_id;primaryKey"`
+	OwnerID         *int64  `gorm:"column:owner_id"`
+	Thought         *string `gorm:"column:thought"`
+	Public          bool    `gorm:"column:public"`
+	MaxPromptLength *int    `gorm:"column:max_prompt_length"`
 }
 
 func (appRow) TableName() string { return "apps" }
@@ -46,7 +47,6 @@ type toolRow struct {
 }
 
 func (toolRow) TableName() string { return "tools" }
-
 
 // Registry is a thread-safe, database-backed holder for the set of
 // registered apps. Introduced so the console API (internal/console) can
@@ -253,6 +253,34 @@ func (r *Registry) SetThought(appID, thought string) error {
 	return r.Reload()
 }
 
+// SetMaxPromptLength sets or clears (maxLen == nil) appID's own cap on a
+// single end-user prompt's character count, and reloads so the change is
+// visible immediately. A non-nil *maxLen <= 0 is rejected — a limit of zero
+// or negative characters isn't a meaningful setting a developer would
+// actually want; clear the limit (pass nil) to fall back to the
+// system-wide default instead. Fails if appID doesn't exist. Note this
+// only stores the app's own requested value — it does NOT clamp against
+// the system-wide MAX_PROMPT_LENGTH env var here, since that ceiling can
+// change independently of any app's stored value; the clamp happens at
+// read time in inference.EffectiveMaxPromptLength instead, so raising the
+// system-wide cap later doesn't require rewriting every app's row.
+func (r *Registry) SetMaxPromptLength(appID string, maxLen *int) error {
+	if !ValidAppID(appID) {
+		return fmt.Errorf("toolschema: invalid appId %q", appID)
+	}
+	if maxLen != nil && *maxLen <= 0 {
+		return fmt.Errorf("toolschema: maxPromptLength must be positive, got %d", *maxLen)
+	}
+	res := r.db.Model(&appRow{}).Where("app_id = ?", appID).Update("max_prompt_length", maxLen)
+	if res.Error != nil {
+		return fmt.Errorf("toolschema: set max prompt length for %s: %w", appID, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("toolschema: no such app %q", appID)
+	}
+	return r.Reload()
+}
+
 // SetPublic sets appID's Public flag and reloads so the change is visible
 // immediately. Fails if appID doesn't exist. No REST route calls this today
 // (no caller has asked for one) — it exists so a future admin/owner-facing
@@ -302,7 +330,7 @@ func loadAllApps(db *gorm.DB) (map[string]*App, error) {
 		if row.Thought != nil {
 			thought = *row.Thought
 		}
-		apps[row.AppID] = &App{AppID: row.AppID, Tools: []Tool{}, Thought: thought, Public: row.Public}
+		apps[row.AppID] = &App{AppID: row.AppID, Tools: []Tool{}, Thought: thought, Public: row.Public, MaxPromptLength: row.MaxPromptLength}
 	}
 
 	var toolRows []toolRow

@@ -1,5 +1,6 @@
 import { KeyEditSheet } from './KeyEditSheet'
 import { OriginEditSheet } from './OriginEditSheet'
+import { MaxPromptLengthEditSheet } from './MaxPromptLengthEditSheet'
 import { useSheet } from './useSheet'
 import styles from './AppSettingsList.module.css'
 
@@ -23,6 +24,11 @@ export function AppSettingsList({
   onNewOriginDraftChange,
   originBusy,
   onSaveOrigins,
+  maxPromptLengthDraft,
+  onMaxPromptLengthDraftChange,
+  maxPromptLengthBusy,
+  onSaveMaxPromptLength,
+  systemMaxPromptLength,
   onDeleteApp,
 }: {
   appId: string
@@ -37,10 +43,16 @@ export function AppSettingsList({
   onNewOriginDraftChange: (value: string) => void
   originBusy: boolean
   onSaveOrigins: (e: React.FormEvent) => Promise<boolean>
+  maxPromptLengthDraft: string
+  onMaxPromptLengthDraftChange: (value: string) => void
+  maxPromptLengthBusy: boolean
+  onSaveMaxPromptLength: (e: React.FormEvent) => Promise<boolean>
+  systemMaxPromptLength: number | null
   onDeleteApp: () => void
 }) {
   const keySheet = useSheet()
   const originSheet = useSheet()
+  const maxPromptLengthSheet = useSheet()
 
   return (
     <div className={styles.root}>
@@ -80,6 +92,22 @@ export function AppSettingsList({
             <path d="M9 18l6-6-6-6" />
           </svg>
         </button>
+
+        <button type="button" className={styles.row} onClick={maxPromptLengthSheet.onOpen}>
+          <div className={styles.rowInfo}>
+            <div className={styles.rowLabel}>Max prompt length</div>
+            <div className={styles.rowValue}>
+              {maxPromptLengthDraft.trim() !== ''
+                ? `${maxPromptLengthDraft.trim()} characters`
+                : systemMaxPromptLength != null
+                  ? `${systemMaxPromptLength} characters`
+                  : ''}
+            </div>
+          </div>
+          <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+        </button>
       </div>
 
       <div className={styles.dangerZone}>
@@ -108,6 +136,16 @@ export function AppSettingsList({
           if (ok) originSheet.onClose()
           return ok
         }}
+      />
+
+      <MaxPromptLengthEditSheet
+        open={maxPromptLengthSheet.open}
+        onClose={maxPromptLengthSheet.onClose}
+        draft={maxPromptLengthDraft}
+        onDraftChange={onMaxPromptLengthDraftChange}
+        busy={maxPromptLengthBusy}
+        onSave={onSaveMaxPromptLength}
+        systemMaxPromptLength={systemMaxPromptLength}
       />
     </div>
   )

@@ -171,6 +171,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /console/apps/{appId}/tools/id/{toolId}", h.withOwnedApp(h.deleteToolByID))
 	mux.HandleFunc("PUT /console/apps/{appId}/origin", h.withOwnedApp(h.setOrigin))
 	mux.HandleFunc("PUT /console/apps/{appId}/thought", h.withOwnedApp(h.setThought))
+	mux.HandleFunc("PUT /console/apps/{appId}/max-prompt-length", h.withOwnedApp(h.setMaxPromptLength))
 	mux.HandleFunc("DELETE /console/apps/{appId}", h.withOwnedApp(h.deleteApp))
 	mux.HandleFunc("POST /console/apps/{appId}/key", h.withOwnedApp(h.issueKey))
 	mux.HandleFunc("DELETE /console/apps/{appId}/key", h.withOwnedApp(h.revokeKey))
@@ -435,11 +436,11 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request, user *session.User)
 // keep omitempty since their zero values ("" / the zero time.Time) only
 // ever occur when Enabled is false, and the frontend never reads them then.
 type quotaResponse struct {
-	Enabled     bool      `json:"enabled"`
-	Tier        string    `json:"tier,omitempty"`
-	PlanName    string    `json:"planName,omitempty"`
-	Limit       int       `json:"limit"`
-	Used        int       `json:"used"`
+	Enabled  bool   `json:"enabled"`
+	Tier     string `json:"tier,omitempty"`
+	PlanName string `json:"planName,omitempty"`
+	Limit    int    `json:"limit"`
+	Used     int    `json:"used"`
 	// UsedPercent is Used/Limit*100, computed here so the console SPA
 	// doesn't each re-derive the same division (and doesn't need its own
 	// divide-by-zero guard for the Limit==0 edge case — an explicit
@@ -499,11 +500,41 @@ func (h *Handler) getQuota(w http.ResponseWriter, r *http.Request, user *session
 // appSummary is what listApps returns per app: enough for a dashboard list
 // view without shipping every tool's full schema.
 type appSummary struct {
-	AppID          string   `json:"appId"`
-	ToolCount      int      `json:"toolCount"`
-	HasKey         bool     `json:"hasKey"`
-	AllowedOrigins []string `json:"allowedOrigins"` // empty/nil means unset (fail-closed — see ws.Handler.ServeHTTP)
-	Thought        string   `json:"thought"`        // "" means the platform default applies (agent_roles.go's defaultThought)
+	AppID           string   `json:"appId"`
+	ToolCount       int      `json:"toolCount"`
+	HasKey          bool     `json:"hasKey"`
+	AllowedOrigins  []string `json:"allowedOrigins"`  // empty/nil means unset (fail-closed — see ws.Handler.ServeHTTP)
+	Thought         string   `json:"thought"`         // "" means the platform default applies (agent_roles.go's defaultThought)
+	MaxPromptLength *int     `json:"maxPromptLength"` // nil means the system-wide default applies (inference.EffectiveMaxPromptLength)
+}
+
+// appSummaryJSON is appSummary's actual wire shape — see MarshalJSON below.
+type appSummaryJSON struct {
+	AppID                 string   `json:"appId"`
+	ToolCount             int      `json:"toolCount"`
+	HasKey                bool     `json:"hasKey"`
+	AllowedOrigins        []string `json:"allowedOrigins"`
+	Thought               string   `json:"thought"`
+	MaxPromptLength       *int     `json:"maxPromptLength"`
+	SystemMaxPromptLength int      `json:"systemMaxPromptLength"`
+}
+
+// MarshalJSON adds SystemMaxPromptLength (inference.SystemMaxPromptLength,
+// the same value for every app in the process) to every appSummary response
+// without every one of this file's ~9 appSummary{} construction sites
+// needing to set it individually — the console UI uses it as an "if you
+// clear your own limit, this is what applies" number to show alongside the
+// per-app MaxPromptLength field, e.g. as an input's placeholder.
+func (a appSummary) MarshalJSON() ([]byte, error) {
+	return json.Marshal(appSummaryJSON{
+		AppID:                 a.AppID,
+		ToolCount:             a.ToolCount,
+		HasKey:                a.HasKey,
+		AllowedOrigins:        a.AllowedOrigins,
+		Thought:               a.Thought,
+		MaxPromptLength:       a.MaxPromptLength,
+		SystemMaxPromptLength: inference.SystemMaxPromptLength(),
+	})
 }
 
 func (h *Handler) listApps(w http.ResponseWriter, r *http.Request, user *session.User) {
@@ -520,11 +551,12 @@ func (h *Handler) listApps(w http.ResponseWriter, r *http.Request, user *session
 			continue // owner_id row exists but Registry cache hasn't caught up; skip rather than fake zero tools
 		}
 		out = append(out, appSummary{
-			AppID:          id,
-			ToolCount:      len(app.Tools),
-			HasKey:         h.Auth.HasKey(id),
-			AllowedOrigins: h.Auth.OriginsFor(id),
-			Thought:        app.Thought,
+			AppID:           id,
+			ToolCount:       len(app.Tools),
+			HasKey:          h.Auth.HasKey(id),
+			AllowedOrigins:  h.Auth.OriginsFor(id),
+			Thought:         app.Thought,
+			MaxPromptLength: app.MaxPromptLength,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -586,11 +618,12 @@ func (h *Handler) setOrigin(w http.ResponseWriter, r *http.Request, user *sessio
 	}
 	app, _ := h.Apps.Get(appID)
 	writeJSON(w, http.StatusOK, appSummary{
-		AppID:          appID,
-		ToolCount:      len(app.Tools),
-		HasKey:         h.Auth.HasKey(appID),
-		AllowedOrigins: h.Auth.OriginsFor(appID),
-		Thought:        app.Thought,
+		AppID:           appID,
+		ToolCount:       len(app.Tools),
+		HasKey:          h.Auth.HasKey(appID),
+		AllowedOrigins:  h.Auth.OriginsFor(appID),
+		Thought:         app.Thought,
+		MaxPromptLength: app.MaxPromptLength,
 	})
 }
 
@@ -615,11 +648,46 @@ func (h *Handler) setThought(w http.ResponseWriter, r *http.Request, user *sessi
 	h.syncWantRole(appID)
 	app, _ := h.Apps.Get(appID)
 	writeJSON(w, http.StatusOK, appSummary{
-		AppID:          appID,
-		ToolCount:      len(app.Tools),
-		HasKey:         h.Auth.HasKey(appID),
-		AllowedOrigins: h.Auth.OriginsFor(appID),
-		Thought:        req.Thought,
+		AppID:           appID,
+		ToolCount:       len(app.Tools),
+		HasKey:          h.Auth.HasKey(appID),
+		AllowedOrigins:  h.Auth.OriginsFor(appID),
+		Thought:         req.Thought,
+		MaxPromptLength: app.MaxPromptLength,
+	})
+}
+
+// setMaxPromptLengthRequest's MaxPromptLength is a pointer, not a bare int,
+// so the JSON body can distinguish "clear the app-specific limit" (send
+// `{"maxPromptLength": null}` or omit the field, decoding to nil) from
+// "set it to a specific value" (send a positive integer) — a bare int
+// field would have no way to express "clear it" other than overloading 0,
+// which toolschema.Registry.SetMaxPromptLength already rejects as an
+// invalid positive limit.
+type setMaxPromptLengthRequest struct {
+	MaxPromptLength *int `json:"maxPromptLength"`
+}
+
+func (h *Handler) setMaxPromptLength(w http.ResponseWriter, r *http.Request, user *session.User) {
+	appID := r.PathValue("appId")
+
+	var req setMaxPromptLengthRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if err := h.Apps.SetMaxPromptLength(appID, req.MaxPromptLength); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	app, _ := h.Apps.Get(appID)
+	writeJSON(w, http.StatusOK, appSummary{
+		AppID:           appID,
+		ToolCount:       len(app.Tools),
+		HasKey:          h.Auth.HasKey(appID),
+		AllowedOrigins:  h.Auth.OriginsFor(appID),
+		Thought:         app.Thought,
+		MaxPromptLength: req.MaxPromptLength,
 	})
 }
 
@@ -632,6 +700,24 @@ func (h *Handler) setThought(w http.ResponseWriter, r *http.Request, user *sessi
 type toolSaveResponse struct {
 	appSummary
 	ToolID int64 `json:"toolId"`
+}
+
+// MarshalJSON is needed because appSummary now defines its own MarshalJSON
+// (see that method's doc comment): without this, embedding would promote
+// appSummary's MarshalJSON onto toolSaveResponse wholesale and silently
+// drop ToolID from the response, since Go doesn't merge an embedded type's
+// custom MarshalJSON with the outer struct's own fields.
+func (t toolSaveResponse) MarshalJSON() ([]byte, error) {
+	summary, err := t.appSummary.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(summary, &m); err != nil {
+		return nil, err
+	}
+	m["toolId"] = t.ToolID
+	return json.Marshal(m)
 }
 
 // saveTool upserts one tool by NAME (PUT /console/apps/{appId}/tools/
@@ -678,11 +764,12 @@ func (h *Handler) saveTool(w http.ResponseWriter, r *http.Request, user *session
 	app, _ := h.Apps.Get(appID) // SaveTool's own Reload already refreshed this
 	writeJSON(w, http.StatusOK, toolSaveResponse{
 		appSummary: appSummary{
-			AppID:          appID,
-			ToolCount:      len(app.Tools),
-			HasKey:         h.Auth.HasKey(appID),
-			AllowedOrigins: h.Auth.OriginsFor(appID),
-			Thought:        app.Thought,
+			AppID:           appID,
+			ToolCount:       len(app.Tools),
+			HasKey:          h.Auth.HasKey(appID),
+			AllowedOrigins:  h.Auth.OriginsFor(appID),
+			Thought:         app.Thought,
+			MaxPromptLength: app.MaxPromptLength,
 		},
 		ToolID: toolID,
 	})
@@ -728,11 +815,12 @@ func (h *Handler) saveToolByID(w http.ResponseWriter, r *http.Request, user *ses
 	app, _ := h.Apps.Get(appID) // SaveTool's own Reload already refreshed this
 	writeJSON(w, http.StatusOK, toolSaveResponse{
 		appSummary: appSummary{
-			AppID:          appID,
-			ToolCount:      len(app.Tools),
-			HasKey:         h.Auth.HasKey(appID),
-			AllowedOrigins: h.Auth.OriginsFor(appID),
-			Thought:        app.Thought,
+			AppID:           appID,
+			ToolCount:       len(app.Tools),
+			HasKey:          h.Auth.HasKey(appID),
+			AllowedOrigins:  h.Auth.OriginsFor(appID),
+			Thought:         app.Thought,
+			MaxPromptLength: app.MaxPromptLength,
 		},
 		ToolID: savedID,
 	})
@@ -752,11 +840,12 @@ func (h *Handler) deleteTool(w http.ResponseWriter, r *http.Request, user *sessi
 	h.syncWantRole(appID)
 	app, _ := h.Apps.Get(appID) // DeleteTool's own Reload already refreshed this
 	writeJSON(w, http.StatusOK, appSummary{
-		AppID:          appID,
-		ToolCount:      len(app.Tools),
-		HasKey:         h.Auth.HasKey(appID),
-		AllowedOrigins: h.Auth.OriginsFor(appID),
-		Thought:        app.Thought,
+		AppID:           appID,
+		ToolCount:       len(app.Tools),
+		HasKey:          h.Auth.HasKey(appID),
+		AllowedOrigins:  h.Auth.OriginsFor(appID),
+		Thought:         app.Thought,
+		MaxPromptLength: app.MaxPromptLength,
 	})
 }
 
@@ -778,11 +867,12 @@ func (h *Handler) deleteToolByID(w http.ResponseWriter, r *http.Request, user *s
 	h.syncWantRole(appID)
 	app, _ := h.Apps.Get(appID) // DeleteToolByID's own Reload already refreshed this
 	writeJSON(w, http.StatusOK, appSummary{
-		AppID:          appID,
-		ToolCount:      len(app.Tools),
-		HasKey:         h.Auth.HasKey(appID),
-		AllowedOrigins: h.Auth.OriginsFor(appID),
-		Thought:        app.Thought,
+		AppID:           appID,
+		ToolCount:       len(app.Tools),
+		HasKey:          h.Auth.HasKey(appID),
+		AllowedOrigins:  h.Auth.OriginsFor(appID),
+		Thought:         app.Thought,
+		MaxPromptLength: app.MaxPromptLength,
 	})
 }
 

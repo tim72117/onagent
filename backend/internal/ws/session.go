@@ -11,6 +11,7 @@ import (
 	"runtime/debug"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 	"github.com/tim72117/onagent/internal/codegen"
@@ -310,6 +311,29 @@ func (s *Session) handlePrompt(ctx context.Context, env protocol.Envelope) {
 		s.log.Info("prompt rejected: over quota", "session", s.id, "app", app.AppID, "used", dec.Used, "limit", dec.Limit)
 		s.sendErrorCode(env.RequestID,
 			"monthly prompt quota exceeded for this app's plan", protocol.CodeQuotaExceeded)
+		return
+	}
+
+	// Per-prompt character-count gate, checked before the same costly
+	// inference call the quota gate above guards — this stops an
+	// individual oversized prompt (not the app's overall usage, which
+	// quota above already covers) from ever reaching the LLM. Fails
+	// closed (not fail-open like the quota check above): unlike quota's
+	// DB read, EffectiveMaxPromptLength is a pure in-memory computation
+	// that can't fail, so there's no ambiguous-failure case to be lenient
+	// about here.
+	//
+	// utf8.RuneCountInString, not len(p.Text): the limit is documented
+	// everywhere (CLI help, console UI, schema comments) as a character
+	// count, but len() on a Go string counts UTF-8 bytes — a multi-byte
+	// script (Chinese/Japanese/Korean, emoji) would otherwise get rejected
+	// well under its actual character count (e.g. 400 CJK characters is
+	// ~1200 bytes, wrongly failing a 500-character limit).
+	maxLen := inference.EffectiveMaxPromptLength(app.MaxPromptLength)
+	if length := utf8.RuneCountInString(p.Text); length > maxLen {
+		s.log.Info("prompt rejected: too long", "session", s.id, "app", app.AppID, "length", length, "max", maxLen)
+		s.sendErrorCode(env.RequestID,
+			fmt.Sprintf("prompt exceeds this app's %d-character limit", maxLen), protocol.CodePromptTooLong)
 		return
 	}
 

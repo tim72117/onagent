@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS apps (
     api_key_hash    TEXT,              -- sha256 hex, NULL until a key is issued
     allowed_origins TEXT[],            -- exact Origin headers a connection may present (any one matching is enough); NULL or empty = no site configured yet, so every WS handshake for this app is rejected (fail-closed) — see ws.Handler.ServeHTTP
     thought         TEXT,              -- per-app want agent system prompt; NULL = use the platform default (want_tools.go's defaultThought)
+    max_prompt_length INTEGER,         -- per-app cap on a single prompt's character count; NULL = use the system-wide MAX_PROMPT_LENGTH env var. A non-NULL value can only TIGHTEN the effective limit, never loosen it past the system-wide cap — see inference.EffectiveMaxPromptLength.
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -116,6 +117,7 @@ CREATE TABLE IF NOT EXISTS apps (
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS allowed_origins TEXT[];
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES users (id) ON DELETE CASCADE;
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS thought TEXT;
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS max_prompt_length INTEGER;
 
 -- owner_id tightens from optional to required: every code path that creates
 -- an app now always supplies an owner (toolschema.Registry.Create takes

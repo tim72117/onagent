@@ -72,3 +72,6 @@ dist/
 # convenience. Has its own git history — never meant to be tracked as
 # part of the onagent repo itself.
 /marketing/
+
+# 部落格是獨立的 repo（tim72117/ripple），不納入本專案版控
+blog/

@@ -516,6 +516,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
               <tr><td>app delete</td><td><code>&lt;appId&gt;</code></td><td>Delete an app and everything under it (tools, key, origin). Cannot be undone.</td></tr>
               <tr><td>app origin set</td><td><code>&lt;appId&gt; &lt;origin&gt;</code></td><td>Set the exact allowed browser origin for this app's WebSocket connections.</td></tr>
               <tr><td>app thought set</td><td><code>&lt;appId&gt; &lt;thought&gt;</code></td><td>Set (or, with an empty string, clear) the app's custom system prompt.</td></tr>
+              <tr><td>app maxpromptlength set</td><td><code>&lt;appId&gt; &lt;value|clear&gt;</code></td><td>Cap this app's own end-user prompts at <code>value</code> characters, or <code>clear</code> to fall back to the system-wide default. Can only tighten the system-wide limit, never loosen it.</td></tr>
               <tr><td>key issue</td><td><code>&lt;appId&gt;</code></td><td>Mint a new API key for the app, shown once. Revokes any previous key immediately.</td></tr>
               <tr><td>key revoke</td><td><code>&lt;appId&gt;</code></td><td>Revoke the app's current API key immediately.</td></tr>
               <tr><td>tool list</td><td><code>&lt;appId&gt;</code></td><td>Print the app's current tool definitions as YAML.</td></tr>
@@ -771,6 +772,27 @@ Saved <span class="t-str">"add_to_cart"</span> to <span class="t-str">"my-app"</
 Set <span class="t-str">"my-app"</span>'s thought.</pre>
         </div>
         <p class="body-text">Pass an empty string to clear it and fall back to the platform default.</p>
+
+        <h4 class="micro-head">Capping how long a prompt can be</h4>
+        <p class="body-text">
+          The platform enforces a system-wide limit on how many characters a single end-user prompt may contain (set
+          by whoever operates the backend, via a <code>MAX_PROMPT_LENGTH</code> environment variable). Each app can
+          additionally set its own, tighter cap — an app's own setting can only shrink the effective limit, never
+          raise it past the system-wide value:
+        </p>
+        <div class="code-block">
+          <div class="cb-top">
+            <div class="cb-file"><span class="fdot"></span>terminal</div>
+            <button class="copy-btn" data-copy>Copy</button>
+          </div>
+          <pre><span class="t-prompt">$</span> onagent app maxpromptlength set my-app 200
+Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</pre>
+        </div>
+        <p class="body-text">
+          Pass <code>clear</code> instead of a number to remove the app-specific cap and fall back to the system-wide
+          default. A prompt that exceeds the effective limit is rejected with the connection kept open — the SDK sees
+          it as an error carrying the code <code>prompt_too_long</code>, the same shape as a quota rejection.
+        </p>
       </section>
 
       <!-- ============================================================ -->

@@ -34,7 +34,11 @@ func openTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v) — skipping integration test", *dsn, err)
 	}
-	t.Cleanup(func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } })
+	t.Cleanup(func() {
+		if sqlDB, err := database.DB(); err == nil {
+			sqlDB.Close()
+		}
+	})
 	return database
 }
 
@@ -541,5 +545,71 @@ func TestDeleteTool_UnknownToolIsNoOp(t *testing.T) {
 	got, ok := reg.Get(appID)
 	if !ok || len(got.Tools) != 1 || got.Tools[0].Name != "kept" {
 		t.Fatalf("Tools after no-op DeleteTool = %v, want just kept, untouched", got.Tools)
+	}
+}
+
+// TestSetMaxPromptLength covers setting, clearing, and rejecting invalid
+// values for an app's own per-prompt character cap (the app-level half of
+// inference.EffectiveMaxPromptLength's two-layer clamp).
+func TestSetMaxPromptLength(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, _ := database.DB()
+	conn := sqlDB
+
+	const ownerID = 999810
+	const appID = "test-toolschema-maxpromptlength-app"
+	makeTestUser(t, conn, ownerID, "toolschema-maxpromptlength@example.com")
+	t.Cleanup(func() {
+		_, _ = conn.Exec(`DELETE FROM apps WHERE app_id = $1`, appID)
+	})
+
+	reg, err := NewRegistry(database)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if err := reg.Create(appID, ownerID, false); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// A freshly created app has no app-specific limit.
+	app, ok := reg.Get(appID)
+	if !ok || app.MaxPromptLength != nil {
+		t.Fatalf("Get after Create: MaxPromptLength = %v, want nil", app.MaxPromptLength)
+	}
+
+	// Setting a positive value round-trips through Get.
+	limit := 200
+	if err := reg.SetMaxPromptLength(appID, &limit); err != nil {
+		t.Fatalf("SetMaxPromptLength(200): %v", err)
+	}
+	app, ok = reg.Get(appID)
+	if !ok || app.MaxPromptLength == nil || *app.MaxPromptLength != 200 {
+		t.Fatalf("Get after SetMaxPromptLength(200): MaxPromptLength = %v, want 200", app.MaxPromptLength)
+	}
+
+	// Clearing (nil) falls back to no app-specific limit.
+	if err := reg.SetMaxPromptLength(appID, nil); err != nil {
+		t.Fatalf("SetMaxPromptLength(nil): %v", err)
+	}
+	app, ok = reg.Get(appID)
+	if !ok || app.MaxPromptLength != nil {
+		t.Fatalf("Get after SetMaxPromptLength(nil): MaxPromptLength = %v, want nil", app.MaxPromptLength)
+	}
+
+	// Zero and negative values are rejected outright — not a meaningful
+	// limit a developer would actually want; clearing (nil) is the way to
+	// fall back to the system-wide default instead.
+	zero := 0
+	if err := reg.SetMaxPromptLength(appID, &zero); err == nil {
+		t.Fatalf("SetMaxPromptLength(0) = nil error, want an error")
+	}
+	negative := -5
+	if err := reg.SetMaxPromptLength(appID, &negative); err == nil {
+		t.Fatalf("SetMaxPromptLength(-5) = nil error, want an error")
+	}
+
+	// A nonexistent app is an error, not a silent no-op.
+	if err := reg.SetMaxPromptLength("no-such-app-at-all", &limit); err == nil {
+		t.Fatalf("SetMaxPromptLength on a nonexistent app = nil error, want an error")
 	}
 }

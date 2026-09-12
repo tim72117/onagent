@@ -23,6 +23,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,6 +71,7 @@ var resources = []resource{
 			{verb: "delete", run: runDeleteApp, usage: "onagent app delete <appId> [-api <url>]"},
 			{verb: "origin", requireSet: true, run: runAppOrigin, usage: "onagent app origin set <appId> <origin> [-api <url>]"},
 			{verb: "thought", requireSet: true, run: runAppThought, usage: "onagent app thought set <appId> <thought> [-api <url>]"},
+			{verb: "maxpromptlength", requireSet: true, run: runAppMaxPromptLength, usage: "onagent app maxpromptlength set <appId> <value|clear> [-api <url>]"},
 		},
 	},
 	{
@@ -627,6 +629,45 @@ func runAppThought(args []string) error {
 	return nil
 }
 
+// --- app maxpromptlength set -----------------------------------------------
+
+// runAppMaxPromptLength sets or clears (value == "clear") appID's own cap on
+// a single end-user prompt's character count. This can only tighten the
+// platform-wide MAX_PROMPT_LENGTH default, never loosen past it — see
+// inference.EffectiveMaxPromptLength.
+func runAppMaxPromptLength(args []string) error {
+	base, rest := apiFlag(args)
+	if len(rest) != 2 {
+		return fmt.Errorf("usage: onagent app maxpromptlength set <appId> <value|clear> [-api <url>]")
+	}
+	appID, value := rest[0], rest[1]
+
+	var maxLen *int
+	if value != "clear" {
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid value %q: must be a positive integer or %q", value, "clear")
+		}
+		maxLen = &n
+	}
+
+	client, err := authenticatedClient(base)
+	if err != nil {
+		return err
+	}
+
+	if _, err := client.setMaxPromptLength(appID, maxLen); err != nil {
+		return fmt.Errorf("set max prompt length: %w", err)
+	}
+
+	if maxLen == nil {
+		fmt.Printf("Cleared %q's max prompt length (using the system-wide default).\n", appID)
+	} else {
+		fmt.Printf("Set %q's max prompt length to %d characters.\n", appID, *maxLen)
+	}
+	return nil
+}
+
 // --- tool create ----------------------------------------------------------
 
 func runSaveTools(args []string) error {
@@ -923,6 +964,25 @@ func (c *apiClient) setOrigin(appID, origin string) (appSummary, error) {
 	}
 
 	res, err := c.do(http.MethodPut, "/console/apps/"+pathEscape(appID)+"/origin", bytes.NewReader(body))
+	if err != nil {
+		return appSummary{}, err
+	}
+	defer res.Body.Close()
+
+	var out appSummary
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return appSummary{}, fmt.Errorf("decode response: %w", err)
+	}
+	return out, nil
+}
+
+func (c *apiClient) setMaxPromptLength(appID string, maxLen *int) (appSummary, error) {
+	body, err := json.Marshal(map[string]*int{"maxPromptLength": maxLen})
+	if err != nil {
+		return appSummary{}, err
+	}
+
+	res, err := c.do(http.MethodPut, "/console/apps/"+pathEscape(appID)+"/max-prompt-length", bytes.NewReader(body))
 	if err != nil {
 		return appSummary{}, err
 	}

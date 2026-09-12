@@ -1,0 +1,20 @@
+.body {
+  padding-top: 4px;
+}
+
+.hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  line-height: 1.5;
+}
+
+/* Same touch-target sizing rationale as OriginEditSheet.module.css's
+   .input — larger padding than the global `input` rule, since this is a
+   mobile sheet's whole-screen field, not a dense desktop form input. */
+.input {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  padding: 12px 14px;
+}

@@ -7,10 +7,57 @@ package inference
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"strconv"
 
 	"github.com/tim72117/onagent/internal/codegen"
 	"github.com/tim72117/want/types"
 )
+
+// defaultMaxPromptLength is the system-wide prompt character cap used when
+// the MAX_PROMPT_LENGTH env var is unset or invalid — 500, per the
+// platform's own default policy.
+const defaultMaxPromptLength = 500
+
+// SystemMaxPromptLength returns the system-wide ceiling on a single
+// end-user prompt's character count, read from MAX_PROMPT_LENGTH once per
+// call (cheap: os.Getenv + strconv.Atoi, no caching needed at the
+// per-prompt call rate ws.Session.handlePrompt calls this at). An unset or
+// non-positive-integer value falls back to defaultMaxPromptLength rather
+// than failing closed — a misconfigured env var shouldn't make every
+// prompt on the platform start rejecting. Exported (beyond
+// EffectiveMaxPromptLength's own use of it below) so internal/console can
+// surface the actual number in appSummary — e.g. as a console UI's
+// placeholder for an app with no app-specific override — without
+// duplicating the env var parsing.
+func SystemMaxPromptLength() int {
+	raw := os.Getenv("MAX_PROMPT_LENGTH")
+	if raw == "" {
+		return defaultMaxPromptLength
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return defaultMaxPromptLength
+	}
+	return n
+}
+
+// EffectiveMaxPromptLength returns the actual character limit that applies
+// to one app's end-user prompts: appLimit (toolschema.App.MaxPromptLength)
+// if set, but never looser than the system-wide MAX_PROMPT_LENGTH env var
+// (see SystemMaxPromptLength) — an app can only TIGHTEN the limit, never
+// loosen it past the platform-wide ceiling. nil appLimit (no app-specific
+// setting) simply uses the system-wide value.
+func EffectiveMaxPromptLength(appLimit *int) int {
+	sysMax := SystemMaxPromptLength()
+	if appLimit == nil {
+		return sysMax
+	}
+	if *appLimit < sysMax {
+		return *appLimit
+	}
+	return sysMax
+}
 
 // ToolCall is one tool invocation the inference service wants the front-end
 // to execute.

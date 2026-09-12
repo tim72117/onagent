@@ -6,6 +6,34 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.5.7
+
+No breaking changes.
+
+- Add a per-app cap on how many characters a single end-user prompt may
+  contain, on top of a new system-wide `MAX_PROMPT_LENGTH` env var
+  (default 500). An app's own limit can only tighten the system-wide
+  ceiling, never loosen past it (`inference.EffectiveMaxPromptLength`).
+  An oversized prompt is rejected with the new `prompt_too_long` error
+  code (`protocol.CodePromptTooLong`) — same "connection stays open,
+  only this one prompt fails" shape as quota rejection — enforced in
+  `ws.Session.handlePrompt` right before the costly inference call, so
+  it also applies to the console's Playground (which reuses the same
+  `Session`/`Handler` code as a real Agent Bridge SDK connection).
+  Configurable via `onagent app maxpromptlength set <appId>
+  <value|clear>` (new CLI command), the new `PUT
+  /console/apps/{appId}/max-prompt-length` REST endpoint, and a new
+  field in both the desktop and mobile console App settings UI.
+- Fix the prompt-length gate comparing UTF-8 byte length instead of
+  character count, which would wrongly reject prompts in
+  Chinese/Japanese/Korean or emoji well under their documented
+  character limit (now uses `utf8.RuneCountInString`).
+- Fix the mobile console's max-prompt-length edit sheet closing
+  immediately on submit even when the save failed (invalid value or a
+  rejected API call), masking the error — it now waits for a
+  confirmed save, matching the existing origin-editing sheet's
+  behavior.
+
 ## v0.5.6
 
 No breaking changes.

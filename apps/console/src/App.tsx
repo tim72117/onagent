@@ -181,6 +181,12 @@ export default function App() {
   // Thought edits follow the same immediate-save pattern as origin.
   const [thoughtDraft, setThoughtDraft] = useState('')
   const [thoughtBusy, setThoughtBusy] = useState(false)
+  // maxPromptLength edits follow the same immediate-save pattern too.
+  // Draft is kept as text (not number) so an empty field can mean "clear
+  // the app-specific limit" without fighting a numeric input's own
+  // coercion of "" to 0.
+  const [maxPromptLengthDraft, setMaxPromptLengthDraft] = useState('')
+  const [maxPromptLengthBusy, setMaxPromptLengthBusy] = useState(false)
 
   const logout = useCallback((message: string | null) => {
     setUser(null)
@@ -313,6 +319,10 @@ export default function App() {
     setThoughtDraft(activeSummary?.thought ?? '')
   }, [activeSummary?.appId, activeSummary?.thought])
 
+  useEffect(() => {
+    setMaxPromptLengthDraft(activeSummary?.maxPromptLength != null ? String(activeSummary.maxPromptLength) : '')
+  }, [activeSummary?.appId, activeSummary?.maxPromptLength])
+
   // Same reasoning as selectAppSettings's own fallback below: rendering the
   // "No app selected" empty state when the user actually already has one or
   // more apps is worse than just picking the first one — most noticeable on
@@ -438,6 +448,35 @@ export default function App() {
     if (!draft) return
     runAction(setThoughtBusy, async () => {
       await api.setThought(draft.appId, thoughtDraft.trim())
+      await refreshSummaries()
+    })
+  }
+
+  // An empty field clears the app-specific limit (falls back to the
+  // system-wide default); a non-empty field must parse as a positive
+  // integer — the backend rejects zero/negative anyway, so this catches
+  // the common typo case with an immediate, in-place error rather than a
+  // round trip.
+  //
+  // Returns whether the save succeeded (same reasoning as saveOrigins'
+  // Promise<boolean> above) — MaxPromptLengthEditSheet.tsx's mobile sheet
+  // awaits this before closing, so a validation failure or a rejected API
+  // call doesn't get masked by the sheet sliding away as if it had saved.
+  function saveMaxPromptLength(e: React.FormEvent): Promise<boolean> {
+    e.preventDefault()
+    if (!draft) return Promise.resolve(false)
+    const trimmed = maxPromptLengthDraft.trim()
+    let value: number | null = null
+    if (trimmed !== '') {
+      const n = Number(trimmed)
+      if (!Number.isInteger(n) || n <= 0) {
+        showToast('Max prompt length must be a positive whole number.', 'error')
+        return Promise.resolve(false)
+      }
+      value = n
+    }
+    return runAction(setMaxPromptLengthBusy, async () => {
+      await api.setMaxPromptLength(draft.appId, value)
       await refreshSummaries()
     })
   }
@@ -891,6 +930,11 @@ export default function App() {
               onNewOriginDraftChange={setNewOriginDraft}
               originBusy={originBusy}
               onSaveOrigins={saveOrigins}
+              maxPromptLengthDraft={maxPromptLengthDraft}
+              onMaxPromptLengthDraftChange={setMaxPromptLengthDraft}
+              maxPromptLengthBusy={maxPromptLengthBusy}
+              onSaveMaxPromptLength={saveMaxPromptLength}
+              systemMaxPromptLength={activeSummary?.systemMaxPromptLength ?? null}
               onDeleteApp={deleteApp}
             />
           ) : (
@@ -906,6 +950,11 @@ export default function App() {
               onNewOriginDraftChange={setNewOriginDraft}
               originBusy={originBusy}
               onSaveOrigins={saveOrigins}
+              maxPromptLengthDraft={maxPromptLengthDraft}
+              onMaxPromptLengthDraftChange={setMaxPromptLengthDraft}
+              maxPromptLengthBusy={maxPromptLengthBusy}
+              onSaveMaxPromptLength={saveMaxPromptLength}
+              systemMaxPromptLength={activeSummary?.systemMaxPromptLength ?? null}
               onDeleteApp={deleteApp}
             />
           )

@@ -22,6 +22,15 @@ export interface AppSummary {
   /** Custom want agent system prompt for this app. "" means the platform
    * default applies. */
   thought: string
+  /** Per-app cap on a single end-user prompt's character count. null means
+   * no app-specific limit — the system-wide default applies (and always
+   * caps this value too, even when set: an app can only tighten the limit,
+   * never loosen it past the system-wide cap). */
+  maxPromptLength: number | null
+  /** The system-wide prompt character cap (backend's MAX_PROMPT_LENGTH env
+   * var, or its own built-in default) — the ceiling maxPromptLength above
+   * can tighten but never loosen past. Same value for every app. */
+  systemMaxPromptLength: number
 }
 
 // What both saveTool and saveToolByID return: the usual AppSummary fields,
@@ -177,6 +186,11 @@ export const api = {
 
   setThought: (appId: string, thought: string): Promise<AppSummary> =>
     request('PUT', `/console/apps/${id(appId)}/thought`, { thought }).then((r) => r.json()),
+
+  // maxPromptLength: null clears the app-specific limit (falls back to the
+  // system-wide default); a positive number sets it.
+  setMaxPromptLength: (appId: string, maxPromptLength: number | null): Promise<AppSummary> =>
+    request('PUT', `/console/apps/${id(appId)}/max-prompt-length`, { maxPromptLength }).then((r) => r.json()),
 
   deleteApp: (appId: string): Promise<void> =>
     request('DELETE', `/console/apps/${id(appId)}`).then(() => undefined),
