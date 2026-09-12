@@ -65,6 +65,37 @@
   background: var(--accent);
 }
 
+/* Sits at the far right of the Tools card header (see MobileWorkspaceCards.tsx) —
+   margin-left: auto here too so it stays pinned right even when .dirtyDot
+   isn't rendered (dirtyDot's own auto margin only fires when dirtyDot is
+   present at all). Replaces the old "+ New tool" text button that used to
+   live in .addRow below the tool list, matching the desktop sidebar's own
+   icon-only ToolList.tsx button instead of a full-width text CTA. */
+.headerIconBtn {
+  flex: none;
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  /* --accent, not --ink-dim — this replaced a full "primary" button (see
+     this rule's own comment above), and a plain gray icon lost that same
+     visual weight next to the neutral "Tools" title, reading as a
+     disabled/inert glyph rather than the app's one primary action here. */
+  background: var(--accent-wash);
+  color: var(--accent);
+  padding: 0;
+  cursor: pointer;
+}
+
+.headerIconBtn:active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
 .toolRow {
   display: flex;
   align-items: center;

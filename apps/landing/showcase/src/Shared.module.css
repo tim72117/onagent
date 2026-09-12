@@ -57,14 +57,29 @@
 /* Demo panel: the dark-theme container a case's real widget (or, for a
    UI-preview case, its static shell) replaces the illustration card with
    once its route mounts. SupportDemo.tsx uses its own light
-   ".supportShell" instead — see SupportDemo.module.css. */
+   ".supportShell" instead — see SupportDemo.module.css.
+
+   display: flex + the host div's own flex: 1 (below) exist so any child
+   that itself relies on height: 100% (e.g. marketing-demo/widget.js's
+   Shadow DOM host, which sets `:host { height: 100% }`) actually has a
+   real, non-auto height to resolve that percentage against — a plain
+   block .demoPanel with only min-height/no explicit height leaves
+   height: 100% unresolved all the way down (percentage heights against
+   an auto-height ancestor are ignored per spec), which is harmless for a
+   desktop layout built from ordinary block/flex flow, but breaks any
+   descendant mobile layout that switches to position: absolute/fixed
+   sizing against that same ancestor (as widget.js's .is-mobile styles
+   do) — those then compute against a collapsed/zero height instead of
+   the panel's real on-screen box. */
 .demoPanel {
   max-width: var(--max); margin: 0 auto;
   border: 1px solid var(--border); border-radius: 20px;
   background: var(--panel); box-shadow: var(--shadow);
   overflow: hidden;
   min-height: 560px;
+  display: flex;
 }
+.demoPanel > * { flex: 1; min-width: 0; }
 .demoLoading {
   display: flex; align-items: center; justify-content: center;
   min-height: 560px; color: var(--text-3); font-size: 14px;
@@ -73,4 +88,15 @@
 @media (max-width: 640px) {
   .main { padding: 40px 0 80px; }
   .demoPanel, .demoLoading { min-height: 420px; }
+  /* Below this width, marketing-demo/widget.js's own mobile layout
+     (matchMedia'd at 720px, so it's already active whenever this rule
+     is) switches .md-demo-chat/.md-demo-main-slide to
+     position: absolute/fixed sizing against .md-demo's own box — which
+     in turn needs THIS panel to have a real, definite height, not just
+     min-height, or the percentage-height chain into the Shadow DOM
+     collapses to auto/0 and the whole demo renders squashed or blank.
+     100dvh (not vh) so mobile Safari/Chrome's collapsing address bar
+     doesn't leave a gap or clip the sheet as it shows/hides — same
+     reasoning as SupportDemo.module.css's own .supportShell mobile fix. */
+  .demoPanel { height: 100dvh; max-height: 640px; }
 }

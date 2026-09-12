@@ -47,6 +47,7 @@ export function MobileWorkspaceCards({
   onCreateTool,
   onConfirmDiscard,
   onAddToolWizard,
+  onOpenPlayground,
 }: {
   draft: AppSchema
   dirty: boolean
@@ -78,6 +79,17 @@ export function MobileWorkspaceCards({
   onCreateTool: (tool: Tool) => void
   onConfirmDiscard: (message: string, onConfirm: () => void) => void
   onAddToolWizard: () => void
+  // App.tsx's mobilePlayground.onOpen — opens the exact same
+  // PlaygroundSheet MobileBottomBar.tsx's own Playground button does
+  // (that sheet's open/close state now lives in App.tsx, shared by both
+  // trigger points — see App.tsx's own comment). NOT App.tsx's
+  // selectPlayground/`view` state: that only drives the desktop
+  // view-switch and has no effect while isMobile is rendering this
+  // component instead, which was the bug in an earlier version of this
+  // button. Offered here, next to "Generate with AI," so a developer who
+  // just finished adding tools has an immediate next step without
+  // hunting for the bottom bar.
+  onOpenPlayground: () => void
 }) {
   const [openToolIndex, setOpenToolIndex] = useState<number | null>(null)
   // The tool currently being created via "+ New tool", held here instead
@@ -129,6 +141,18 @@ export function MobileWorkspaceCards({
           {(dirty || busy) && (
             <span className={styles.dirtyDot} title={busy ? 'Saving…' : 'Unsaved changes'} />
           )}
+          <button
+            type="button"
+            className={styles.headerIconBtn}
+            onClick={() => setNewTool(emptyTool())}
+            aria-label="New tool"
+            title="New tool"
+            data-track="tool_creation_method_selected:blank"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
         </div>
         {draft.tools.map((tool, i) => {
           const issueCount = issuesByTool.get(i)?.length ?? 0
@@ -162,14 +186,6 @@ export function MobileWorkspaceCards({
         <div className={styles.addRow}>
           <button
             type="button"
-            className="primary"
-            onClick={() => setNewTool(emptyTool())}
-            data-track="tool_creation_method_selected:blank"
-          >
-            + New tool
-          </button>
-          <button
-            type="button"
             className="text-btn"
             onClick={onAddToolWizard}
             data-track="tool_creation_method_selected:wizard"
@@ -182,6 +198,14 @@ export function MobileWorkspaceCards({
             </svg>
             Generate with AI →
           </button>
+          {/* Only once there's at least one tool to actually try — an
+              empty Playground has nothing for the LLM to call, so this
+              would just be a dead end before that point. */}
+          {draft.tools.length > 0 && (
+            <button type="button" className="text-btn" onClick={onOpenPlayground}>
+              Try it in Playground →
+            </button>
+          )}
         </div>
       </div>
 

@@ -23,6 +23,7 @@ import { PreviewPanel } from './PreviewPanel'
 import { validateApp } from './validate'
 import { useToast } from './Toast'
 import { QuotaProvider } from './QuotaContext'
+import { useSheet } from './useSheet'
 import styles from './App.module.css'
 
 // Lazy: Tiptap + its markdown extension add ~145kB gzip to whatever bundle
@@ -150,6 +151,14 @@ export default function App() {
   const [issuedKey, setIssuedKey] = useState<IssuedKey | null>(null)
   const [showAddApp, setShowAddApp] = useState(false)
   const [showToolWizard, setShowToolWizard] = useState(false)
+  // Lifted up from MobileNav.tsx (which used to own this itself) so
+  // MobileWorkspaceCards.tsx's own "Try it in Playground" button can open
+  // the exact same sheet MobileBottomBar.tsx's button does, instead of
+  // each having its own independent open/close state that could disagree
+  // about whether the sheet is showing. MobileNav still renders
+  // <PlaygroundSheet> and still owns MobileBottomBar's trigger — this is
+  // the one piece of state both call sites now share.
+  const mobilePlayground = useSheet()
   // Replaces window.confirm — set to show ConfirmModal, cleared (with or
   // without running the action) on either button. A single slot is enough
   // since only one confirmation is ever in flight at a time.
@@ -830,6 +839,7 @@ export default function App() {
             onAddApp={addApp}
             onLogout={doLogout}
             onSelectAppSettings={selectAppSettings}
+            playground={mobilePlayground}
           />
           <Sidebar
             userEmail={user.email}
@@ -923,6 +933,7 @@ export default function App() {
               onCreateTool={(tool) => appendTool(tool, true)}
               onConfirmDiscard={confirmDiscard}
               onAddToolWizard={() => setShowToolWizard(true)}
+              onOpenPlayground={mobilePlayground.onOpen}
             />
           ) : (
           <>

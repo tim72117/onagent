@@ -345,7 +345,12 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         <a class="sub" href="#push-tools">Push tools</a>
       </div>
       <div class="side-group">
-        <div class="side-title">4. Frontend SDK</div>
+        <div class="side-title">4. Playground</div>
+        <a href="#playground">Try it before writing frontend code</a>
+        <a class="sub" href="#playground-mocks">Mock templates</a>
+      </div>
+      <div class="side-group">
+        <div class="side-title">5. Frontend SDK</div>
         <a href="#embed-sdk">Embed the SDK</a>
         <a class="sub" href="#bridge-options">AgentBridge options</a>
         <a class="sub" href="#tool-handlers">Implement tool handlers</a>
@@ -769,8 +774,40 @@ Set <span class="t-str">"my-app"</span>'s thought.</pre>
       </section>
 
       <!-- ============================================================ -->
+      <section class="doc-section" id="playground">
+        <div class="sec-kicker">Step 4 — Playground</div>
+        <h2>Try it before writing any frontend code</h2>
+        <p class="intro">
+          Once an app has tools defined, the console's Playground lets you send it prompts and watch the LLM decide
+          whether — and how — to call them, without standing up a real page first. Select the app in the console,
+          then open <strong style="color:var(--text)">Playground</strong> from the sidebar (a fixed bottom button on
+          mobile). It talks to the same backend session/tool-call protocol
+          <code>@onagent/bridge</code> uses, so a tool call that succeeds here behaves the same way once a real page
+          answers it — the only difference is who's on the other end producing the <code>tool_result</code>.
+        </p>
+
+        <h3 class="sub-head" id="playground-mocks">Mock templates</h3>
+        <div class="table-wrap">
+          <table class="doc-table">
+            <thead><tr><th>Tool has…</th><th>What the Playground does</th></tr></thead>
+            <tbody>
+              <tr><td>A <code>click_button</code> or <code>fill_form</code> template</td><td>Renders a real, clickable mock UI (buttons or text fields, built from the tool's <code>enum</code> options) — the LLM calling the tool and you clicking it by hand both run the same code path and produce the same result.</td></tr>
+              <tr><td>A <code>returns</code> schema, no mock</td><td>Fabricates placeholder data shaped to match <code>returns</code>, reports it back as a successful call, and labels it "fabricated data" in the transcript so you don't mistake it for something real.</td></tr>
+              <tr><td>No <code>returns</code>, no mock</td><td>Waits 2 seconds, then reports the call as failed with an explicit "nothing here can perform it for real" message — a nudge that this tool needs an actual page to answer it.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="body-text">
+          The two built-in mock templates come from the console's tool-creation wizard, not from hand-written YAML —
+          building a tool as a <code>click_button</code> or <code>fill_form</code> template locks its parameter name
+          (<code>label</code>, or <code>field</code>/<code>value</code>) but leaves the <code>enum</code> options
+          freely editable, and the Playground's mock buttons/fields update immediately to match.
+        </p>
+      </section>
+
+      <!-- ============================================================ -->
       <section class="doc-section" id="embed-sdk">
-        <div class="sec-kicker">Step 4 — Frontend SDK</div>
+        <div class="sec-kicker">Step 5 — Frontend SDK</div>
         <h2>Embed the SDK and implement tool handlers</h2>
         <p class="intro">
           <code>@onagent/bridge</code> is the browser-side client: it opens a WebSocket to your onagent backend,

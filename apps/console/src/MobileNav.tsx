@@ -30,6 +30,7 @@ export function MobileNav({
   onAddApp,
   onLogout,
   onSelectAppSettings,
+  playground,
 }: {
   userEmail: string
   summaries: AppSummary[]
@@ -39,10 +40,13 @@ export function MobileNav({
   onAddApp: () => void
   onLogout: () => void
   onSelectAppSettings: () => void
+  // Lifted to App.tsx (see its own comment) so MobileWorkspaceCards.tsx's
+  // "Try it in Playground" button can open this same sheet — no longer
+  // owned here.
+  playground: ReturnType<typeof useSheet>
 }) {
   const appPicker = useSheet()
   const account = useSheet()
-  const playground = useSheet()
 
   return (
     <div className={styles.root}>
