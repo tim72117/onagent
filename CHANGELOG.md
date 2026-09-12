@@ -6,6 +6,30 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.5.6
+
+No breaking changes.
+
+- Add a "Playground" section to the developer docs (`apps/landing/docs`,
+  Step 4, between Tools and the frontend SDK) covering the console's
+  mock tool templates (`click_button`/`fill_form`), the fabricated
+  placeholder data a `returns`-only tool gets when it has no mock, and
+  the "no mock effect" timeout for action tools with neither.
+- Mobile console UX: "+ New tool" moved out of the tool list into an
+  icon-only button in the Tools card header (matching the desktop
+  sidebar's own icon button instead of a full-width text CTA), and a
+  new "Try it in Playground" shortcut sits next to "Generate with AI"
+  once at least one tool exists. Fixes a bug introduced partway through
+  this change where that shortcut called the desktop-only view-switch
+  and silently did nothing on mobile — it now opens the same
+  `PlaygroundSheet` state `MobileBottomBar`'s own Playground button
+  uses (lifted from `MobileNav.tsx` to `App.tsx` so both triggers share
+  one sheet instance).
+- Fix `/showcase/marketing` rendering broken on mobile: `.demoPanel`'s
+  entire ancestor chain had no explicit height, so the marketing
+  widget's mobile-breakpoint absolute-positioning layout had nothing
+  real to anchor against, collapsing the chat/example UI.
+
 ## v0.5.5
 
 No breaking changes to any public package/API — `/showcase/support`'s
