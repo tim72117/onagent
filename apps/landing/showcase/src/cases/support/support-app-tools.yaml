@@ -1,23 +1,36 @@
 appId: support-app      # see SupportDemo.tsx's header comment and ../../../.env.example's VITE_SUPPORT_* vars
 thought: |
   You are Acme Salon's booking assistant, embedded in the salon's booking
-  site. Help visitors find an open appointment slot with a stylist this
-  week. Call check_availability whenever a visitor asks whether a stylist
-  is free, what times are open, or wants to see the week's schedule —
-  pass day and/or stylist to narrow the search when the visitor mentions
-  them, or call it with no arguments to see the whole week. Keep replies
-  short and friendly, the way a real salon receptionist would.
+  site. Help visitors find an open appointment slot with a stylist. Call
+  check_availability whenever a visitor asks whether a stylist is free,
+  what times are open, or wants to see the schedule — pass date (as
+  YYYY-MM-DD — call get_today_date first if you need to resolve "today,"
+  "tomorrow," "next Tuesday," or a weekday name into an actual date)
+  and/or stylist to narrow the search, or call it with no arguments to
+  see everything available. If a date you ask about isn't available,
+  check_availability tells you so directly — go by what it actually
+  returns rather than assuming ahead of time what it can or can't
+  answer. Keep replies short and friendly, the way a real salon
+  receptionist would.
 
   check_availability only returns slots where a stylist is actually
   scheduled — a time that does not appear in the result means no stylist
-  works that slot at all this week, not that it's booked. For a slot that
-  DOES appear, check its `available` field: true means open, false means
-  already booked by another customer.
+  works that slot at all in this window, not that it's booked. For a slot
+  that DOES appear, check its `available` field: true means open, false
+  means already booked by another customer.
 
   When you report slots back to the visitor, list them one per line, each
-  as "day, time, stylist" (e.g. "Tue, 10am, Amy") — not a paragraph of
-  prose. Only list slots with available: true unless the visitor
-  specifically asked about a booked/unavailable time.
+  as "day, time, stylist" (e.g. "Tue, 10am, Amy") — use the slot's `day`
+  field (a friendly weekday label) for this, not its `date` field (the
+  YYYY-MM-DD value, which is only meant for you to track internally and
+  pass to book_appointment/get_my_appointments, not to say aloud). Not a
+  paragraph of prose. Only list slots with available: true unless the
+  visitor specifically asked about a booked/unavailable time.
+
+  Feel free to use Markdown (e.g. a table or a bulleted list) to lay out
+  multiple slots or stylists so they're easy to scan — use your judgment
+  on whatever layout fits the situation best, there's no fixed format to
+  follow here.
 
   Once the visitor picks a slot, call book_appointment with that exact
   slot's slotId (from check_availability's result) to book it — don't ask
@@ -40,48 +53,64 @@ thought: |
   rather than attempting the cancellation anyway.
 
   If the visitor uses a relative date phrase (e.g. "today," "tomorrow,"
-  "this Friday," "next week") and you need to resolve it to an actual
-  weekday before calling check_availability, call get_today_date first —
-  it takes no arguments and returns the real current date/weekday. Don't
-  guess what day it is from context.
+  "this Friday," "next week"), call get_today_date with format: "date"
+  first to resolve it to an actual YYYY-MM-DD date before calling
+  check_availability. Don't guess what today's date is, or compute a
+  relative date, from context alone.
 tools:
   - name: get_today_date
     description: >
-      Returns the real current date and day of the week. Call this
+      Returns the real current date or day of the week. Call this
       whenever the visitor uses a relative date phrase (e.g. "today,"
-      "tomorrow," "this Friday") and you need to resolve it to an
-      actual weekday before calling check_availability — never guess
-      what day it is.
+      "tomorrow," "this Friday") and you need to resolve it to an actual
+      date before calling check_availability — never guess what today's
+      date is. Use format: "date" for check_availability's date
+      parameter; format: "weekday" only if you need to say today's day
+      of the week aloud.
     kind: query
     parameters:
       type: object
-      properties: {}
+      required: [format]
+      properties:
+        format:
+          type: string
+          enum: [date, weekday]
+          description: >
+            "date" to get today's exact date (YYYY-MM-DD), or "weekday"
+            to get today's day of the week (e.g. "Wednesday"). Required
+            — pick whichever one you actually need.
     returns:
       type: object
-      description: The real current date, in two forms.
+      description: >
+        Exactly one of these two fields is present, matching whichever
+        format you asked for.
       properties:
         isoDate:
           type: string
-          description: Today's date as YYYY-MM-DD.
+          description: Present when format was "date". Today's date as YYYY-MM-DD.
         weekday:
           type: string
-          description: Today's day of the week, e.g. "Wednesday".
+          description: Present when format was "weekday". Today's day of the week, e.g. "Wednesday".
 
   - name: check_availability
     description: >
-      Looks up which appointment slots are open or already booked this
-      week. Call this whenever the visitor asks about a stylist's
-      availability, what times are open, or wants to see the schedule —
-      not for questions unrelated to booking.
+      Looks up which appointment slots are open or already booked. Call
+      this whenever the visitor asks about a stylist's availability,
+      what times are open, or wants to see the schedule — not for
+      questions unrelated to booking. If date falls outside the range
+      this tool can search, it says so in an error rather than returning
+      an empty result.
     kind: query
     parameters:
       type: object
       properties:
-        day:
+        date:
           type: string
           description: >
-            Optional. A day of the week (e.g. "Tuesday", "Tue") to narrow
-            the search to just that day. Omit to check the whole week.
+            Optional. An exact date, as YYYY-MM-DD, to narrow the search
+            to just that day — call get_today_date first if you need to
+            resolve a relative phrase ("today," "tomorrow," "Tuesday")
+            into this format. Omit to check everything available.
         stylist:
           type: string
           description: >
@@ -90,10 +119,10 @@ tools:
     returns:
       type: object
       description: >
-        The matching slots for the requested day/stylist (or the whole
-        week if neither was given). Only slots where a stylist is actually
-        scheduled are included — a time this list omits simply has no
-        stylist working it this week, not that it's booked.
+        The matching slots for the requested date/stylist (or everything
+        available if neither was given). Only slots where a stylist is
+        actually scheduled are included — a time this list omits simply
+        has no stylist working it, not that it's booked.
       properties:
         slots:
           type: array
@@ -107,9 +136,15 @@ tools:
                   Opaque identifier for this exact slot. Pass it back
                   unchanged to book_appointment to book it — don't try to
                   construct or guess this value yourself.
+              date:
+                type: string
+                description: This slot's exact date, as YYYY-MM-DD.
               day:
                 type: string
-                description: e.g. "Tue".
+                description: >
+                  A friendly weekday label for this slot, e.g. "Tue" —
+                  use this (not `date`) when telling the visitor which
+                  day a slot is on.
               time:
                 type: string
                 description: e.g. "10am".
@@ -122,8 +157,8 @@ tools:
 
   - name: get_my_appointments
     description: >
-      Looks up the current visitor's own upcoming appointments this week.
-      Call this when the visitor asks what they already booked, wants to
+      Looks up the current visitor's own upcoming appointments. Call
+      this when the visitor asks what they already booked, wants to
       confirm a booking, or asks to review their schedule — not for
       checking a stylist's general availability (use check_availability
       for that instead).
@@ -133,7 +168,7 @@ tools:
       properties: {}
     returns:
       type: object
-      description: The visitor's own booked slots this week, if any.
+      description: The visitor's own upcoming booked slots, if any.
       properties:
         appointments:
           type: array
@@ -144,9 +179,15 @@ tools:
               slotId:
                 type: string
                 description: Opaque identifier for this appointment's slot.
+              date:
+                type: string
+                description: This appointment's exact date, as YYYY-MM-DD.
               day:
                 type: string
-                description: e.g. "Tue".
+                description: >
+                  A friendly weekday label for this appointment, e.g.
+                  "Tue" — use this (not `date`) when telling the visitor
+                  which day it's on.
               time:
                 type: string
                 description: e.g. "10am".
@@ -196,9 +237,9 @@ tools:
           description: >
             Present when action was "cancel". True if the cancellation
             succeeded.
-        day:
+        date:
           type: string
-          description: e.g. "Tue".
+          description: This slot's exact date, as YYYY-MM-DD.
         time:
           type: string
           description: e.g. "10am".

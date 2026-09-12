@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { AgentBridge, defineTool } from '@onagent/bridge'
+import { marked } from 'marked'
 import { usePageMeta } from '../../usePageMeta'
 import styles from './SupportDemo.module.css'
 
@@ -35,6 +36,21 @@ import styles from './SupportDemo.module.css'
 const WS_URL = import.meta.env.VITE_SUPPORT_WS_URL ?? 'wss://onagent.shuttle.tools/ws'
 const APP_ID = import.meta.env.VITE_SUPPORT_APP_ID ?? 'support-app'
 const API_KEY = import.meta.env.VITE_SUPPORT_API_KEY
+
+// The assistant's own reply text is Markdown (per support-app-tools.yaml's
+// thought, which now explicitly invites lists/tables for multi-slot
+// results) — same escape-then-parse pattern as
+// src/marketing-demo/widget.js's own escapeHtml/marked.parse: marked has no
+// sanitizer of its own, so escape first and let marked's rendering
+// re-introduce only the HTML *it* generates from that already-escaped text.
+// Safe against the assistant echoing user-supplied HTML/script back
+// verbatim; doesn't need to defend against the LLM provider itself being
+// compromised.
+function escapeHtml(text: string): string {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
 
 // Frontend-only per-browser usage cap, same mechanism and same limit as
 // src/marketing-demo/widget.js's own MAX_PROMPTS_PER_BROWSER — independent
@@ -97,14 +113,15 @@ interface DayCellData {
   // as the visitor's own.
   bookedBy?: string
 }
-type WeekData = { day: string; date: number; byTime: Partial<Record<(typeof TIME_ROWS)[number], DayCellData>> }[]
+type WeekData = { day: string; date: number; isoDate: string; byTime: Partial<Record<(typeof TIME_ROWS)[number], DayCellData>> }[]
 
 // The mock schedule's byTime content (which stylist/slot is booked) is
-// fixed, hand-authored demo data — only the calendar's date NUMBERS
-// underneath each day are computed from the real current week, so the
-// grid always shows this actual week's dates (matching
-// get_today_date's own real wall-clock answer) instead of a permanently
-// stale "Mon 8 – Sun 14."
+// fixed, hand-authored demo data, indexed 0=Mon..6=Sun — a real weekday
+// identity, not "days from today." buildInitialWeek below looks each
+// displayed day up by its actual weekday index, so the same person's
+// same booking always lands on the same real weekday no matter which 7
+// real dates happen to be on screen (today's start-of-window date shifts
+// daily; which slots are booked on a Tuesday does not).
 const WEEK_BY_TIME: Partial<Record<(typeof TIME_ROWS)[number], DayCellData>>[] = [
   {},
   { '10am': { stylist: 'Amy', booked: true }, '2pm': { stylist: 'Jordan', booked: false } },
@@ -116,31 +133,61 @@ const WEEK_BY_TIME: Partial<Record<(typeof TIME_ROWS)[number], DayCellData>>[] =
 ]
 const WEEK_DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
 
+// Shared with get_today_date's own result below — both need the LOCAL
+// calendar date (not now.toISOString(), which reports UTC and silently
+// disagrees with local-time day-of-week math within the ~UTC-midnight
+// window — see get_today_date's own comment on the bug that caused).
+function toIsoDate(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Columns stay in a fixed Mon..Sun order (matching WEEK_DAY_NAMES/
+// WEEK_BY_TIME's own indexing — see WEEK_BY_TIME's comment), but each
+// column's actual date is whichever real occurrence of that weekday is
+// CLOSEST to today (today itself counts as 0 days away) — never one
+// that's already passed. Concretely: for a given weekday, if today is
+// that weekday or earlier in the Mon-first week, the date is THIS
+// week's occurrence; if today is later in the week than that weekday,
+// the date rolls forward to NEXT week's occurrence instead. E.g. on
+// Saturday the 12th: Mon/Tue/Wed/Thu/Fri (earlier in the week than
+// Saturday) show next week's 14–18, while Sat/Sun (today or later) show
+// this week's own 12/13 — so a visitor scanning left to right sees "how
+// many days from today" grow monotonically even though the displayed
+// dates aren't in one single unbroken calendar-week block.
 function buildInitialWeek(): WeekData {
-  const now = new Date()
-  // getDay(): 0=Sun..6=Sat. Converts to a Monday-first offset (0=Mon..
-  // 6=Sun) so "this Monday" is always <= today, then walks forward to
-  // fill in the rest of the current Mon–Sun week.
-  const mondayOffset = (now.getDay() + 6) % 7
-  const monday = new Date(now)
-  monday.setDate(now.getDate() - mondayOffset)
-  return WEEK_DAY_NAMES.map((day, i) => {
-    const d = new Date(monday)
-    d.setDate(monday.getDate() + i)
-    return { day, date: d.getDate(), byTime: WEEK_BY_TIME[i] }
+  const today = new Date()
+  // getDay(): 0=Sun..6=Sat. Converts to WEEK_DAY_NAMES/WEEK_BY_TIME's
+  // own Monday-first indexing (0=Mon..6=Sun).
+  const todayWeekdayIndex = (today.getDay() + 6) % 7
+  return WEEK_DAY_NAMES.map((day, weekdayIndex) => {
+    // Days from today to this column's weekday, always >= 0 (wraps
+    // forward to next week rather than going negative for a weekday
+    // earlier than today).
+    const daysAhead = (weekdayIndex - todayWeekdayIndex + 7) % 7
+    const d = new Date(today)
+    d.setDate(today.getDate() + daysAhead)
+    return { day, date: d.getDate(), isoDate: toIsoDate(d), byTime: WEEK_BY_TIME[weekdayIndex] }
   })
 }
 const INITIAL_WEEK: WeekData = buildInitialWeek()
 
-// slotId is just "<day>-<time>" (e.g. "Tue-2pm") — day+time is already the
-// natural unique key for a slot (single-chair-per-slot, see WEEK's own
-// comment), so this doesn't need a separate id-generation scheme. Letting
-// check_availability hand back this exact string, and book_appointment
-// accept nothing but this string, means the LLM never has to reconstruct
-// day/time/stylist correctly from its own memory of the conversation — it
-// just echoes back an opaque value it was already given.
-function slotId(day: string, time: string): string {
-  return `${day}-${time}`
+// slotId is just "<isoDate>-<time>" (e.g. "2026-09-15-2pm") —
+// isoDate+time is already the natural unique key for a slot
+// (single-chair-per-slot, see WEEK's own comment), so this doesn't need
+// a separate id-generation scheme. Letling check_availability hand back
+// this exact string, and book_appointment accept nothing but this
+// string, means the LLM never has to reconstruct date/time/stylist
+// correctly from its own memory of the conversation — it just echoes
+// back an opaque value it was already given.
+//
+// Keyed by isoDate (a real calendar date), not the day-of-week label
+// ("Tue") the grid displays — the display label is ambiguous across
+// weeks (there's a "Tue" every week), while isoDate is unambiguous and
+// matches get_today_date's own real-date answer, so a visitor's
+// relative-date phrase ("tomorrow") resolves to the same identifier the
+// grid itself uses internally.
+function slotId(isoDate: string, time: string): string {
+  return `${isoDate}-${time}`
 }
 
 // Stands in for "the visitor is already logged in" — a real site would
@@ -247,7 +294,7 @@ export function SupportDemo() {
   // same closure-staleness reason weekRef exists (see above) — .current
   // is always this render's latest callback, even though the handler
   // itself was captured once at mount.
-  const onBookedRef = useRef<((booking: { day: string; time: string; stylist: string }) => void) | null>(null)
+  const onBookedRef = useRef<((booking: { isoDate: string; time: string; stylist: string }) => void) | null>(null)
   const bridgeRef = useRef<AgentBridge | null>(null)
   const threadRef = useRef<HTMLDivElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
@@ -273,9 +320,9 @@ export function SupportDemo() {
   // animation. Set once on mount: the ref pattern exists precisely so the
   // tool handler's mount-time closure reads whatever's current.
   useEffect(() => {
-    onBookedRef.current = ({ day, time, stylist }) => {
+    onBookedRef.current = ({ isoDate, time, stylist }) => {
       if (!(stylist in STYLIST_COLORS)) return
-      const wrap = document.querySelector(`[data-slot-id="${slotId(day, time)}"]`)
+      const wrap = document.querySelector(`[data-slot-id="${slotId(isoDate, time)}"]`)
       const shell = shellRef.current
       if (!wrap || !shell) return
       const wrapRect = wrap.getBoundingClientRect()
@@ -356,53 +403,92 @@ export function SupportDemo() {
       tools: [
         defineTool(
           'get_today_date',
-          () => ({}),
-          () => {
+          (raw) => {
+            const args = raw as { format?: unknown }
+            const format = args.format
+            if (format !== 'date' && format !== 'weekday') {
+              throw new Error(`format is required and must be "date" or "weekday" (got: ${String(format)})`)
+            }
+            return { format }
+          },
+          ({ format }) => {
             // Real wall-clock time, not a value anchored to
             // INITIAL_WEEK's own Mon 8 – Sun 14 mock dates — this tool
-            // only answers "what day is it really," so the LLM can
+            // only answers "what date is it really," so the LLM can
             // reason about relative-date phrases ("tomorrow," "next
             // Friday") in absolute terms; it deliberately does NOT try
             // to map "today" onto one of the mock week's specific
             // dates, since the two numbering schemes have no real
             // relationship to reconcile.
+            //
+            // toIsoDate uses the LOCAL calendar date (not
+            // now.toISOString(), which reports UTC and would disagree
+            // with the visitor's actual local date within the
+            // ~UTC-midnight window — see toIsoDate's own comment).
+            //
+            // `format` is required (not optional) even though the tool
+            // could just always return both fields — a real product
+            // reason to require it doesn't exist, this exists purely to
+            // keep this call's args from ever being `{}`. An empty-args
+            // call here was empirically confirmed (via direct Gemini API
+            // testing against this exact request) to make the FOLLOWING
+            // model turn come back with finishReason: STOP and zero
+            // output tokens — no text, no function call — at a ~100%
+            // rate; adding any non-empty argument, meaningful or not,
+            // dropped that failure rate to roughly 15-25%. want v0.4.1's
+            // empty-response detection (see internal/inference/want.go's
+            // AgentErrorMessage handling) catches the remaining failures
+            // and reports them as an explicit error instead of hanging
+            // forever, but avoiding the trigger condition here is cheap
+            // and directly cuts how often that fallback needs to fire.
             const now = new Date()
-            const result = {
-              isoDate: now.toISOString().slice(0, 10),
-              weekday: now.toLocaleDateString('en-US', { weekday: 'long' }),
-            }
-            setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'get_today_date', args: {}, result }])
+            const result = format === 'date' ? { isoDate: toIsoDate(now) } : { weekday: now.toLocaleDateString('en-US', { weekday: 'long' }) }
+            setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'get_today_date', args: { format }, result }])
             return result
           },
         ),
         defineTool(
           'check_availability',
           (raw) => {
-            const args = raw as { day?: unknown; stylist?: unknown }
-            const day = typeof args.day === 'string' ? args.day : undefined
+            const args = raw as { date?: unknown; stylist?: unknown }
+            const date = typeof args.date === 'string' ? args.date : undefined
             const stylist = typeof args.stylist === 'string' ? args.stylist : undefined
-            // Case/prefix-tolerant so "Tuesday"/"tues"/"amy" all resolve —
-            // an LLM won't reliably echo back WEEK's/STYLISTS' exact
-            // three-letter day names or capitalization, and this is a
-            // query tool (see toTool/kind:'query' elsewhere in this
-            // codebase's onagent app schemas) where a wrong day/stylist
-            // silently returning an empty result is worse than a lenient
-            // match here.
-            const dayMatch = day
-              ? weekRef.current.find((d) => {
-                  const a = d.day.toLowerCase()
-                  const b = day.toLowerCase()
-                  return a.startsWith(b) || b.startsWith(a)
-                })
-              : undefined
-            if (day && !dayMatch) throw new Error(`Unknown day: ${day}`)
+            // Exact match only — unlike the old day-of-week string this
+            // replaced ("Tuesday"/"tues" all resolving to the same "Tue"),
+            // an ISO date has no ambiguity worth being lenient about; a
+            // malformed/out-of-range date is the LLM's own mistake (it
+            // should have called get_today_date first) and should surface
+            // as a real error, not silently match nothing.
+            const dateMatch = date ? weekRef.current.find((d) => d.isoDate === date) : undefined
+            // Spells out the actual searchable range (taken from
+            // weekRef.current itself, not a hardcoded "this week"/"7
+            // days" claim) so the LLM learns the real boundary from
+            // what the tool says, rather than the thought/description
+            // having to pre-declare a range in prose that could drift
+            // out of sync with what buildInitialWeek() actually builds.
+            // This one message covers two real cases the same way: date
+            // is a genuinely unrecognized value, or it's a past date —
+            // weekRef.current only ever holds today-or-later dates (see
+            // buildInitialWeek's own comment), so a past date never
+            // matches and hits this same branch, not a separate "that's
+            // already passed" message. Good enough for a demo; a real
+            // product might want to tell those two apart.
+            if (date && !dateMatch) {
+              // weekRef.current is in fixed Mon..Sun column order, NOT
+              // date order (see buildInitialWeek's own comment on why
+              // dates roll forward per-column), so the earliest/latest
+              // searchable date has to be found by sorting isoDate
+              // values, not by reading the array's first/last entry.
+              const sorted = [...weekRef.current].map((d) => d.isoDate).sort()
+              throw new Error(`Unknown date: ${date} (can only search ${sorted[0]} through ${sorted[sorted.length - 1]})`)
+            }
             const stylistMatch = stylist
               ? STYLISTS.find((s) => s.toLowerCase() === stylist.toLowerCase())
               : undefined
             if (stylist && !stylistMatch) throw new Error(`Unknown stylist: ${stylist}`)
-            return { day: dayMatch?.day, stylist: stylistMatch }
+            return { date: dateMatch?.isoDate, stylist: stylistMatch }
           },
-          ({ day, stylist }) => {
+          ({ date, stylist }) => {
             // Queries weekRef.current — the same state the week grid
             // itself renders (see this file's header comment) — rather
             // than a module-level constant, so a booking made earlier in
@@ -412,7 +498,7 @@ export function SupportDemo() {
             // inside the AgentBridge effect's closure (mount-once, see the
             // effect's own eslint-disable) and would otherwise only ever
             // see whichever `week` value existed at that first render.
-            const days = day ? weekRef.current.filter((d) => d.day === day) : weekRef.current
+            const days = date ? weekRef.current.filter((d) => d.isoDate === date) : weekRef.current
             // Slots with no stylist scheduled at all are omitted entirely
             // — that time simply isn't part of the salon's week, not a
             // "false" availability worth stating. A slot that DOES have a
@@ -426,11 +512,11 @@ export function SupportDemo() {
                 const cell = d.byTime[time]
                 if (!cell) return null
                 if (stylist && cell.stylist !== stylist) return null
-                return { slotId: slotId(d.day, time), day: d.day, time, stylist: cell.stylist, available: !cell.booked }
+                return { slotId: slotId(d.isoDate, time), date: d.isoDate, day: d.day, time, stylist: cell.stylist, available: !cell.booked }
               }).filter((s): s is NonNullable<typeof s> => s !== null),
             )
             const result = { slots }
-            setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'check_availability', args: { day, stylist }, result }])
+            setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'check_availability', args: { date, stylist }, result }])
             return result
           },
         ),
@@ -447,7 +533,7 @@ export function SupportDemo() {
               TIME_ROWS.map((time) => {
                 const cell = d.byTime[time]
                 if (!cell || cell.bookedBy !== CURRENT_CUSTOMER.name) return null
-                return { slotId: slotId(d.day, time), day: d.day, time, stylist: cell.stylist }
+                return { slotId: slotId(d.isoDate, time), date: d.isoDate, day: d.day, time, stylist: cell.stylist }
               }).filter((a): a is NonNullable<typeof a> => a !== null),
             )
             const result = { appointments }
@@ -465,16 +551,22 @@ export function SupportDemo() {
             return { slotId: args.slotId, action }
           },
           ({ slotId: id, action }) => {
-            // Parses the same "<day>-<time>" shape slotId() produces —
-            // deliberately re-derived here rather than trusting a
-            // client-supplied day/time pair, so an LLM can only ever act
+            // Parses the same "<isoDate>-<time>" shape slotId() produces
+            // — deliberately re-derived here rather than trusting a
+            // client-supplied date/time pair, so an LLM can only ever act
             // on an opaque id it was actually handed by check_availability,
-            // never fabricate its own day/time combination.
-            const [day, time] = id.split('-') as [string, string]
-            const dayEntry = weekRef.current.find((d) => d.day === day)
+            // never fabricate its own date/time combination. A plain
+            // split('-') would break here (isoDate itself contains
+            // hyphens, e.g. "2026-09-15"), so this splits on the LAST
+            // hyphen instead — time values (TIME_ROWS: "10am".."3pm")
+            // never contain one themselves.
+            const cut = id.lastIndexOf('-')
+            const isoDate = id.slice(0, cut)
+            const time = id.slice(cut + 1)
+            const dayEntry = weekRef.current.find((d) => d.isoDate === isoDate)
             if (!dayEntry) throw new Error(`Unknown slotId: ${id}`)
             const cell = dayEntry.byTime[time as (typeof TIME_ROWS)[number]]
-            if (!cell) throw new Error(`Unknown slotId: ${id} (no stylist scheduled for ${day} ${time})`)
+            if (!cell) throw new Error(`Unknown slotId: ${id} (no stylist scheduled for ${isoDate} ${time})`)
 
             if (action === 'cancel') {
               // Cancelling isn't just "the inverse of booking" — it must
@@ -489,12 +581,12 @@ export function SupportDemo() {
               const stylist = cell.stylist
               setWeek((w) =>
                 w.map((d) =>
-                  d.day !== day
+                  d.isoDate !== isoDate
                     ? d
                     : { ...d, byTime: { ...d.byTime, [time]: { ...cell, booked: false, bookedBy: undefined } } },
                 ),
               )
-              const result = { cancelled: true, day, time, stylist }
+              const result = { cancelled: true, date: isoDate, time, stylist }
               setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'book_appointment', args: { slotId: id, action }, result }])
               return result
             }
@@ -511,24 +603,24 @@ export function SupportDemo() {
             // too, not a bug, so it returns booked:false instead of
             // throwing.
             if (cell.booked) {
-              const result = { booked: false, day, time, stylist: cell.stylist }
+              const result = { booked: false, date: isoDate, time, stylist: cell.stylist }
               setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'book_appointment', args: { slotId: id, action }, result }])
               return result
             }
             const stylist = cell.stylist
             setWeek((w) =>
               w.map((d) =>
-                d.day !== day
+                d.isoDate !== isoDate
                   ? d
                   : { ...d, byTime: { ...d.byTime, [time]: { ...cell, booked: true, bookedBy: CURRENT_CUSTOMER.name } } },
               ),
             )
-            onBookedRef.current?.({ day, time, stylist })
+            onBookedRef.current?.({ isoDate, time, stylist })
             // CURRENT_CUSTOMER stands in for a real visitor session (see
             // its own doc comment) — echoed back here so the LLM can
             // confirm the booking by name without ever having asked the
             // visitor for it.
-            const result = { booked: true, day, time, stylist, customer: CURRENT_CUSTOMER.name }
+            const result = { booked: true, date: isoDate, time, stylist, customer: CURRENT_CUSTOMER.name }
             setEntries((es) => [...es, { kind: 'tool', id: nextEntryId++, name: 'book_appointment', args: { slotId: id, action }, result }])
             return result
           },
@@ -573,8 +665,21 @@ export function SupportDemo() {
           actually touched. */}
       <div className={styles.siteMock}>
         <div className={styles.siteMockNav}>
-          <div className={styles.siteMockLogo} />
-          <span className={styles.siteMockTitleText}>{t.scheduleTitle}</span>
+          <div className={styles.siteMockTitleGroup}>
+            <div className={styles.siteMockLogo} />
+            <span className={styles.siteMockTitleText}>{t.scheduleTitle}</span>
+          </div>
+          <div className={styles.legend}>
+            <span className={styles.legendLabel}>{t.stylistsLabel}</span>
+            {STYLISTS.map((name) => (
+              <span key={name} className={styles.legendItem}>
+                <span className={styles.legendAvatar} style={{ borderColor: STYLIST_COLORS[name] }}>
+                  {STYLIST_AVATARS[name]}
+                </span>
+                {name}
+              </span>
+            ))}
+          </div>
         </div>
         <table className={styles.weekGrid}>
           <thead>
@@ -599,7 +704,7 @@ export function SupportDemo() {
                       {cell && (
                         <span
                           className={styles.dayAvatarWrap}
-                          data-slot-id={slotId(d.day, time)}
+                          data-slot-id={slotId(d.isoDate, time)}
                           aria-label={`${cell.stylist}${cell.booked ? ' — booked' : ' available'} ${d.day} ${time}`}
                           title={cell.stylist}
                         >
@@ -629,17 +734,6 @@ export function SupportDemo() {
             ))}
           </tbody>
         </table>
-        <div className={styles.legend}>
-          <span className={styles.legendLabel}>{t.stylistsLabel}</span>
-          {STYLISTS.map((name) => (
-            <span key={name} className={styles.legendItem}>
-              <span className={styles.legendAvatar} style={{ borderColor: STYLIST_COLORS[name] }}>
-                {STYLIST_AVATARS[name]}
-              </span>
-              {name}
-            </span>
-          ))}
-        </div>
       </div>
 
       {/* The support widget itself — the actual subject of this demo,
@@ -701,7 +795,19 @@ export function SupportDemo() {
               .filter((entry): entry is ChatEntry => entry.kind !== 'tool')
               .map((entry) => (
                 <div className={`${styles.csRow} ${entry.kind === 'user' ? styles.fromUser : styles.fromAi}`} key={entry.id}>
-                  <div className={styles.csBubble}>{entry.text}</div>
+                  {/* Only the assistant's own text is Markdown (per
+                      support-app-tools.yaml's thought) — the visitor's own
+                      typed message is rendered as plain text, same as
+                      before, so nothing they type is ever interpreted as
+                      Markdown/HTML. */}
+                  {entry.kind === 'assistant' ? (
+                    <div
+                      className={styles.csBubble}
+                      dangerouslySetInnerHTML={{ __html: marked.parse(escapeHtml(entry.text), { async: false }) }}
+                    />
+                  ) : (
+                    <div className={styles.csBubble}>{entry.text}</div>
+                  )}
                 </div>
               ))}
 
@@ -727,7 +833,7 @@ export function SupportDemo() {
               </>
             ) : (
               <form
-                className={styles.csInputRow}
+                className={`${styles.csInputRow} ${styles.csInputRowHint}`}
                 onSubmit={(e) => {
                   e.preventDefault()
                   handleSend()

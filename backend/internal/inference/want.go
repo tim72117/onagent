@@ -245,12 +245,38 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 	var once sync.Once
 	finish := func() { once.Do(func() { close(done) }) }
 
+	var inferenceErrMu sync.Mutex
+	var inferenceErr error
+
 	unsub := orch.Subscribe("agent.inference", func(payload interface{}) {
 		result, handled := ui.HandleInferenceMessage(payload, state)
 		if !handled || result == nil {
 			return
 		}
 		switch vm := result.(type) {
+		case ui.ToolUseViewModel:
+			// want reports provider/session failures that aren't tied to a
+			// specific tool call (e.g. Gemini returning an empty
+			// response with no text and no function call — see want
+			// v0.4.1's GenerateStream fix) as a synthetic
+			// CallID:"SYSTEM" ToolUseViewModel, via
+			// AgentErrorMessage/SessionStoreErrorMessage
+			// (want/ui/handler.go). Before this case existed, this
+			// branch had no match here, so the message was silently
+			// dropped: finish() was never called, and Complete() only
+			// ever returned via completeTimeout's generic 90-second
+			// timeout error, with the real reason lost. Finishing
+			// immediately here surfaces the actual failure to the
+			// caller (ws.Session.handlePrompt sends it as a WS `error`
+			// message) right away instead of after a minute and a half.
+			if vm.CallID == "SYSTEM" {
+				inferenceErrMu.Lock()
+				if inferenceErr == nil {
+					inferenceErr = fmt.Errorf("%s: %s", vm.ToolUse, vm.Result)
+				}
+				inferenceErrMu.Unlock()
+				finish()
+			}
 		case ui.TextViewModel:
 			if vm.Content != "" {
 				textMu.Lock()
@@ -322,6 +348,13 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 		return nil, ctx.Err()
 	case <-time.After(completeTimeout):
 		return nil, fmt.Errorf("want inference timed out after %s", completeTimeout)
+	}
+
+	inferenceErrMu.Lock()
+	finishErr := inferenceErr
+	inferenceErrMu.Unlock()
+	if finishErr != nil {
+		return nil, finishErr
 	}
 
 	textMu.Lock()

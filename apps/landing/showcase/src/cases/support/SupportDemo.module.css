@@ -48,7 +48,13 @@
    spreads any spare height across the calendar's rows, so the phone-
    dictated height is filled with calendar, not blank backdrop. */
 .siteMock { grid-area: 1 / 1; min-width: 0; padding: 32px 400px 32px 36px; display: flex; flex-direction: column; }
-.siteMockNav { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+/* space-between so the title group stays left and the stylist legend
+   (moved here from below the calendar) sits on the right of the same
+   row, instead of the legend taking its own separate row under the
+   grid. flex-wrap so narrow widths stack the legend under the title
+   rather than clipping/overflowing it off the card's edge. */
+.siteMockNav { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+.siteMockTitleGroup { display: flex; align-items: center; gap: 12px; }
 .siteMockLogo { width: 28px; height: 28px; border-radius: 8px; background: var(--sl-text); flex: none; }
 .siteMockTitleText { font-size: 18px; font-weight: 700; color: var(--sl-text); }
 
@@ -146,7 +152,10 @@
   .badgeFly { animation-duration: 0.01s; }
 }
 
-.legend { display: flex; align-items: center; gap: 16px; margin-top: 16px; }
+/* No margin-top — now lives inside .siteMockNav next to the title (see
+   that rule's own comment), not stacked below the calendar grid where
+   the old top margin used to separate it from the table above. */
+.legend { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .legendLabel { font-size: 12.5px; font-weight: 600; color: var(--sl-text-3); }
 .legendItem { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--sl-text-2); }
 .legendAvatar {
@@ -213,6 +222,21 @@
 .csRow { display: flex; gap: 8px; align-items: flex-end; }
 .csRow.fromUser { flex-direction: row-reverse; }
 .csBubble { max-width: 78%; padding: 10px 14px; border-radius: 14px; font-size: 14px; line-height: 1.5; }
+/* Only the assistant's own bubbles ever contain marked-rendered Markdown
+   (see SupportDemo.tsx's dangerouslySetInnerHTML) — resets the browser's
+   default list/table/paragraph spacing so multi-slot results (tables,
+   bulleted lists) read as part of one compact bubble instead of a
+   full-width document with extra top/bottom margins on every element. */
+.csBubble :global(p) { margin: 0 0 6px; }
+.csBubble :global(p:last-child) { margin-bottom: 0; }
+.csBubble :global(ul),
+.csBubble :global(ol) { margin: 4px 0; padding-left: 20px; }
+.csBubble :global(li) { margin: 2px 0; }
+.csBubble :global(table) { border-collapse: collapse; margin: 4px 0; width: 100%; font-size: 13px; }
+.csBubble :global(th),
+.csBubble :global(td) { border: 1px solid currentColor; padding: 4px 8px; text-align: left; opacity: 0.9; }
+.csBubble :global(code) { background: rgba(0,0,0,0.08); padding: 1px 4px; border-radius: 3px; font-size: 0.9em; }
+.csBubble :global(strong) { font-weight: 700; }
 .csRow.fromAi .csBubble { background: var(--sl-bg); border: 1px solid var(--sl-border); color: var(--sl-text); border-bottom-left-radius: 4px; }
 .csRow.fromUser .csBubble { background: var(--grad); color: #1a1408; font-weight: 500; border-bottom-right-radius: 4px; }
 .csBubbleMeta { font-size: 11px; color: var(--sl-text-3); margin-top: 4px; font-family: var(--mono); }
@@ -234,6 +258,26 @@
 .csPanelInput { padding: 12px 14px 8px; border-top: 1px solid var(--sl-border); flex: none; }
 .csInputRow { display: flex; align-items: center; gap: 8px; border: 1px solid var(--sl-border); border-radius: 14px; padding: 6px 6px 6px 14px; background: var(--sl-bg); }
 .csInputRow:focus-within { border-color: rgba(201,162,75,0.6); box-shadow: 0 0 0 3px var(--accent-soft); }
+/* Plays 3 times on page load, then stops and leaves the input in its
+   normal resting state (see .csInputRow's own base rule/:focus-within
+   above) — a nudge that this box is where you type, not a persistent
+   distraction. Wider/more opaque glow than :focus-within's own (0 0 0
+   6px at 60% opacity vs focus's 0 0 0 3px on --accent-soft) plus a
+   slight scale-up, specifically so this reads as a distinct "look here"
+   beat rather than blending into the same subtle ring focus already
+   uses — a visitor should notice it out of the corner of their eye
+   without having interacted with anything yet. animation, not
+   :focus-within, since nothing has been focused at this point; forwards
+   isn't needed because the iterations already land back exactly on the
+   0%/100% resting values. */
+.csInputRowHint { animation: inputHintGlow 0.9s ease-in-out 3; }
+@keyframes inputHintGlow {
+  0%, 100% { border-color: var(--sl-border); box-shadow: none; transform: scale(1); }
+  50% { border-color: rgba(201,162,75,0.9); box-shadow: 0 0 0 6px rgba(201,162,75,0.35); transform: scale(1.04); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .csInputRowHint { animation: none; }
+}
 .csTextarea {
   flex: 1; border: 0; outline: 0; background: transparent; color: var(--sl-text);
   font: inherit; font-size: 14px; padding: 4px 0;
@@ -332,12 +376,17 @@
     box-shadow: 0 12px 28px rgba(0,0,0,0.18);
     overflow-y: auto;
   }
-  /* "This week" + the logo dot only make sense as backdrop chrome next
-     to the calendar's own nav bar on the wide desktop layout — on mobile
-     the card is small and title-less already reads as "the schedule",
-     so this row is just wasted vertical space inside the peeking card
-     (see .siteMock's own comment above). */
-  .siteMockNav { display: none; }
+  /* "Acme Salon's Bookings" + the logo dot only make sense as backdrop
+     chrome next to the calendar's own nav bar on the wide desktop layout
+     — on mobile the card is small and title-less already reads as "the
+     schedule," so that group is wasted vertical space inside the
+     peeking card (see .siteMock's own comment above). The stylist
+     legend inside the same .siteMockNav row is kept, though — it's the
+     only place that tells a mobile visitor which colored avatar belongs
+     to which stylist, so hiding the whole row (the pre-fix behavior)
+     silently dropped that legend on mobile along with the title. */
+  .siteMockTitleGroup { display: none; }
+  .siteMockNav { margin-bottom: 12px; }
   /* position: fixed (viewport-relative, like .siteMock above), not a
      stretched grid item anymore — a grid item's height still counts
      toward .supportShell's natural height even at position: relative,
@@ -388,4 +437,10 @@
   }
   .csPhoneNotch { display: none; }
   .csPanel { border-radius: 16px 16px 0 0; }
+  /* iOS Safari auto-zooms the whole page on focus for any text input
+     whose computed font-size is under 16px (.csTextarea's base rule
+     sets 14px) — there's no CSS property to opt out of that behavior
+     directly, only this: making the input's own text 16px+ removes the
+     one condition that triggers it. */
+  .csTextarea { font-size: 16px; }
 }
