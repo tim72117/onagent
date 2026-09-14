@@ -45,15 +45,63 @@
   font-weight: 600;
 }
 
+/* A <button> now (see MobileWorkspaceCards.tsx's comment on the Agent
+   thought card), not a plain <div> — reset the button-specific properties
+   a <button> carries by default so this still looks and reads like plain
+   card body text, not a form control. */
 .cardSummary {
-  padding: 0 16px 20px;
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
   color: var(--ink-dim);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  padding: 0 16px 20px;
   font-size: 13px;
   line-height: 1.5;
-  display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* -webkit-line-clamp needs display:-webkit-box specifically to take
+   effect — kept as a separate rule (rather than folded into .cardSummary
+   above) since it's a display value override on top of the button reset's
+   own display:block, not a replacement for it. */
+.cardSummary {
+  display: -webkit-box;
+}
+
+/* Sits at the far right of a card header, after any other header buttons
+   (see MobileWorkspaceCards.tsx's Agent thought/Tools cards) — the "⋮"
+   options button that opens CardMenuSheet.tsx. Pinning right happens for
+   free: it's placed after .dirtyDot in markup order, and .dirtyDot's own
+   margin-left:auto already pushes everything from there on to the right
+   as a group, same mechanism .headerIconBtn (the Tools card's "New tool"
+   button) relies on. A separate rule from .headerIconBtn (not reused
+   as-is) since that one uses the accent color for its "primary action"
+   styling, whereas this is a neutral, secondary "more options" affordance
+   — same 28×28 footprint by convention, not by sharing a rule. */
+.cardMenuBtn {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-dim);
+  padding: 0;
+  cursor: pointer;
+}
+
+.cardMenuBtn:active {
+  background: var(--border);
+  color: var(--ink);
 }
 
 .dirtyDot {

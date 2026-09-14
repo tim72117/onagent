@@ -21,12 +21,16 @@ import (
 	"github.com/tim72117/onagent/internal/codegen"
 	"github.com/tim72117/onagent/internal/console"
 	"github.com/tim72117/onagent/internal/db"
+	"github.com/tim72117/onagent/internal/events"
+	"github.com/tim72117/onagent/internal/feedback"
 	"github.com/tim72117/onagent/internal/googleauth"
 	"github.com/tim72117/onagent/internal/inference"
+	"github.com/tim72117/onagent/internal/notify"
 	"github.com/tim72117/onagent/internal/quota"
 	"github.com/tim72117/onagent/internal/session"
 	"github.com/tim72117/onagent/internal/sessionstore"
 	"github.com/tim72117/onagent/internal/toolschema"
+	"github.com/tim72117/onagent/internal/usecase"
 	"github.com/tim72117/onagent/internal/usertoken"
 	"github.com/tim72117/onagent/internal/ws"
 	"github.com/tim72117/want/config"
@@ -92,6 +96,29 @@ Configured entirely via environment variables (optionally loaded from a
                           outside production.
 `
 
+// builderInvite is the one Builder-offer notification, shared by every rule
+// that produces it. Three rules decide INDEPENDENTLY when someone should be
+// invited (first app created, app plus feedback, or a catch-up for accounts
+// that predate these rules) — that logic is genuinely per-rule and stays
+// where it is. What they say is not: the wording was copied three times, so
+// editing the offer meant finding all three, and missing one left a rule
+// quietly sending superseded copy with nothing to catch it.
+//
+// SubjectID is the only part that varies: it's the app the notification
+// hangs off, which each rule resolves its own way.
+func builderInvite(subjectID string) notify.CreateNotification {
+	return notify.CreateNotification{
+		SubjectID:   subjectID,
+		Title:       "Thanks for signing up",
+		Body:        "Want a month of Builder — 1,000 prompts, free? Tell us what you're building, put it through a real test, and send us your feedback.",
+		ActionLabel: "Join Builder →",
+		// The one string the console recognises and routes to UseCaseSheet
+		// (see openNotificationAction in apps/console/src/App.tsx); anything
+		// else is a button that silently does nothing.
+		ActionTarget: "useCaseForm",
+	}
+}
+
 func main() {
 	for _, arg := range os.Args[1:] {
 		if arg == "-h" || arg == "--help" {
@@ -133,6 +160,129 @@ func main() {
 		os.Exit(1)
 	}
 	log.Info("loaded tool definitions from database", "apps", len(apps.All()))
+
+	// eventBus is the in-process publish/subscribe bus notify.Engine
+	// subscribes to (see internal/events' package doc comment for the
+	// full event → rule → notification pipeline this is the first layer
+	// of). Two publishers feed it today: toolschema.Registry ("app.created",
+	// wired via SetEventBus below) and console.Handler ("session.started"
+	// and "usecase.submitted", wired via h.Events below, once h exists).
+	eventBus := events.NewBus(log)
+	apps.SetEventBus(eventBus)
+
+	// notificationStore is shared between notifyEngine (writes new rows as
+	// rules fire — including catch_up_welcome's own HasRuleFired read
+	// below, which needs the exact same store) and consoleHandler.Notify
+	// (reads/updates them for the console's own GET/PATCH /console/
+	// notifications — wired below, once consoleHandler exists) — one
+	// store, multiple directions of use, not several separate
+	// *notify.GormNotificationStore instances pointed at the same table.
+	notificationStore := notify.NewGormNotificationStore(database)
+
+	// welcomeRule fires once, the moment a user creates their first app —
+	// a stateless single-event Rule (not a PairRule: there's no second
+	// side to wait for), gated by the isFirst flag toolschema.Registry.
+	// Create already computes and attaches to app.created's Metadata (see
+	// that method's own comment) rather than re-querying OwnedBy here,
+	// for the same "a second app could exist by the time this runs"
+	// reason SaveTool's own isFirst check documents. What it says lives in
+	// builderInvite, shared with the two other rules that send the same
+	// offer.
+	welcomeRule := notify.Rule{
+		Name:      "welcome",
+		EventType: "app.created",
+		Match: func(e events.Event) bool {
+			isFirst, _ := e.Metadata["isFirst"].(bool)
+			return isFirst
+		},
+		Build: func(e events.Event) notify.Action {
+			return builderInvite(e.SubjectID)
+		},
+	}
+
+	// catchUpWelcomeRule exists for users who created their apps before
+	// welcomeRule (or any notify rule at all) existed — app.created
+	// already fired for them, in the past, with nobody subscribed yet, so
+	// there is no event left to replay. Triggered instead by
+	// "session.started" (published once per console page load by
+	// consoleHandler.sessionStarted — see that handler's own doc comment),
+	// an event with no SubjectID of its own (it's a per-user, not
+	// per-app, occurrence). Match and Build each independently call
+	// apps.OwnedBy(e.ActorID) rather than Match stashing the result
+	// somewhere for Build to read — this runs at most once per page load
+	// per user, so the second, cheap query is simpler and less fragile
+	// than threading a computed value through the shared events.Event
+	// value Engine.Handle passes to both (see that method's own call
+	// site) — no other rule in this file needs that, so this doesn't
+	// reach for it either.
+	catchUpWelcomeRule := notify.Rule{
+		Name:      "catch_up_welcome",
+		EventType: "session.started",
+		Match: func(e events.Event) bool {
+			appIDs, err := apps.OwnedBy(e.ActorID)
+			if err != nil || len(appIDs) == 0 {
+				return false
+			}
+			// Checks for EITHER this rule's own past firing OR
+			// welcomeRule's — checking "welcome" alone would let this
+			// rule re-fire itself on every subsequent session.started
+			// for a user it already caught up, since its own
+			// notification is filed under "catch_up_welcome", not
+			// "welcome" (see HasRuleFired's own doc comment).
+			fired, err := notificationStore.HasRuleFired(appIDs, "welcome", "catch_up_welcome")
+			return err == nil && !fired
+		},
+		Build: func(e events.Event) notify.Action {
+			// Match already confirmed at least one app exists for this
+			// actor — if OwnedBy somehow returns none here (a race with
+			// the app being deleted between Match and Build), subjectID
+			// is simply "", producing a notification with no real app
+			// attached rather than panicking; harmless enough not to
+			// warrant Build returning an error the Engine has nowhere to
+			// surface anyway (see Engine.Handle's own comment on
+			// apply failures being logged, not propagated).
+			var subjectID string
+			if appIDs, err := apps.OwnedBy(e.ActorID); err == nil && len(appIDs) > 0 {
+				subjectID = appIDs[0]
+			}
+			return builderInvite(subjectID)
+		},
+	}
+
+	// usecaseSubmittedRule reacts to the OPPOSITE side of the welcome
+	// notification's own suggested step: once a user actually sends the
+	// UseCase form (not just opens it — see apps/console/src/UseCaseSheet.tsx's
+	// own onSubmitted, which only fires after a real, successful save),
+	// whichever welcome-style notification suggested "Join Builder →" for
+	// them has done its job and should disappear. CompleteNotifications
+	// (not CreateNotification) is exactly this: it has nothing new to
+	// tell the user, it's closing out something an EARLIER rule already
+	// created — see notify.CompleteNotifications's own doc comment for
+	// why matching happens on ActionTarget ("useCaseForm") rather than a
+	// specific notification id, which this event has no way to carry
+	// (console.go's putUseCase publishes usecase.submitted with only the
+	// actor, no notification id in sight).
+	usecaseSubmittedRule := notify.Rule{
+		Name:      "usecase_submitted_completes_welcome",
+		EventType: "usecase.submitted",
+		Build: func(e events.Event) notify.Action {
+			appIDs, _ := apps.OwnedBy(e.ActorID)
+			return notify.CompleteNotifications{
+				SubjectIDs: appIDs,
+				Target:     "useCaseForm",
+			}
+		},
+	}
+
+	notifyEngine := notify.NewEngine(
+		[]notify.Rule{welcomeRule, catchUpWelcomeRule, usecaseSubmittedRule},
+		// No pair rules today.
+		nil,
+		notificationStore,
+		notify.NewGormProgressStore(database),
+		log,
+	)
+	notifyEngine.Register(eventBus)
 
 	// Governs the WebSocket handshake for developer apps' own sites
 	// (ws.Handler) — a separate audience and separate setting from this
@@ -296,6 +446,15 @@ func main() {
 	wsResolver := &ws.APIKeyResolver{Auth: wsAuth, Apps: apps, Quota: quotaSvc, Log: log}
 	wsHandler := ws.NewHandler(apps, inferSvc, log, originChecker, wsResolver, quotaSvc)
 	consoleHandler := console.NewHandler(apps, authStore, sessionStore, tokenStore, cliAuthStore, inferSvc, quotaSvc, siteOrigins, log)
+	consoleHandler.Events = eventBus
+	consoleHandler.Notify = notificationStore
+	// Settable fields rather than NewHandler parameters, same reasoning as
+	// Events above. Both stay nil when there's no database (the mock/dev
+	// path); the routes that need them check rather than dereferencing.
+	if database != nil {
+		consoleHandler.UseCase = usecase.New(database)
+		consoleHandler.Feedback = feedback.New(database)
+	}
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", wsHandler)
@@ -463,7 +622,7 @@ func corsMiddleware(allowed ws.OriginChecker) func(http.Handler) http.Handler {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 				w.Header().Set("Vary", "Origin")
 			}
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)

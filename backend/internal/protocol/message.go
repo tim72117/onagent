@@ -113,7 +113,7 @@ const (
 	// allowance for the current billing period. The connection stays open —
 	// the user can upgrade and keep using the same session — so this is
 	// reported per rejected prompt, not by closing the socket. See
-	// internal/quota and docs/subscription-usage-quota-design.md.
+	// internal/quota.
 	CodeQuotaExceeded = "quota_exceeded"
 
 	// CodePromptTooLong means this one prompt's text exceeded the app's

@@ -266,7 +266,7 @@ ALTER TABLE subscriptions ALTER COLUMN monthly_quota DROP NOT NULL;
 -- Append-only usage ledger: one row per billable event (today, one
 -- WebSocket `prompt` that reached inference.Service.Complete). Current
 -- usage for a period is always COMPUTED from this table
--- (COUNT(*) WHERE owner_id = ... AND created_at >= period_start), never
+-- (SUM(total_tokens) WHERE owner_id = ... AND created_at >= period_start), never
 -- kept as a running counter — see the design doc (section 3) for why this
 -- sidesteps the reset-boundary race a mutable counter would need to guard
 -- against.
@@ -431,3 +431,100 @@ CREATE INDEX IF NOT EXISTS agent_experiences_app_id_session_id_id_idx
 -- database that ran schema.sql before app_id existed. Safe to drop
 -- unconditionally: nothing else queries by session_id alone.
 DROP INDEX IF EXISTS agent_experiences_session_id_id_idx;
+
+-- notifications is the second-from-last stage of the event -> rule ->
+-- notification -> delivery pipeline (see internal/events' package doc
+-- comment for the full pipeline, and internal/notify for the rule
+-- engine that writes rows here). Each row's title/body is decided and
+-- frozen at write time by the rule that produced it (rather than stored as
+-- a template + params to render later) — this product has no i18n need
+-- today, and "the notification reads exactly like it did when it fired"
+-- is a feature, not a limitation, for a one-off "you're all set up!"
+-- style message. subject_id is intentionally untyped/unconstrained (no FK)
+-- since which kind of thing it points at (an app_id today) is a rule's own
+-- business, not something this table should hardcode an opinion about.
+CREATE TABLE IF NOT EXISTS notifications (
+    id            BIGSERIAL PRIMARY KEY,
+    subject_id    TEXT NOT NULL,
+    rule_name     TEXT NOT NULL,               -- which rule produced this row, for debugging/disabling a rule later
+    title         TEXT NOT NULL,
+    body          TEXT NOT NULL,
+    action_label  TEXT,                        -- null = no suggested next step
+    action_target TEXT,                        -- null = no suggested next step
+    status        TEXT NOT NULL DEFAULT 'pending', -- 'pending' | 'completed' | 'dismissed' — see notify.Notification's own doc comment for why these three are independent, not one collapsed boolean
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    read_at       TIMESTAMPTZ,                 -- null = unread
+    completed_at  TIMESTAMPTZ                  -- null = the suggested next step hasn't been done yet
+);
+
+CREATE INDEX IF NOT EXISTS notifications_subject_id_created_at_idx
+    ON notifications (subject_id, created_at DESC);
+
+-- rule_progress tracks in-progress two-sided rules (notify.PairRule) —
+-- e.g. "app has created its first tool AND submitted feedback." A
+-- single-sided rule (notify.Rule) needs none of this: it can decide
+-- to fire from one event alone, with nothing to remember between events.
+-- A pair rule can't — it must remember "has side A already happened for
+-- this subject" across two, possibly far-apart-in-time, separate events,
+-- and that memory must survive a process restart (an in-memory map would
+-- silently forget half-completed progress on every deploy). notified_at
+-- is what makes firing exactly once safe under a race between A and B
+-- arriving nearly simultaneously — see notify.Engine's own comment on
+-- why the "are both sides done, and have we not already notified" check
+-- and the notified_at write happen together, guarded by this row's own
+-- unique key rather than an application-level lock.
+CREATE TABLE IF NOT EXISTS rule_progress (
+    subject_id  TEXT NOT NULL,
+    rule_name   TEXT NOT NULL,
+    a_done_at   TIMESTAMPTZ,
+    b_done_at   TIMESTAMPTZ,
+    notified_at TIMESTAMPTZ,
+    PRIMARY KEY (subject_id, rule_name)
+);
+
+-- Part A of the Builder flow: what a user says they're building, collected
+-- from the welcome notification's form (see
+-- docs/research-feedback-form-2026-09.md and apps/console's UseCaseSheet).
+--
+-- One row per user, not an append-only log: this is a statement of intent
+-- that a user may refine, and the latest answer is the only one anyone
+-- reads. user_id is therefore the primary key, and re-submitting overwrites
+-- (see usecase.Store.Save's upsert) rather than accumulating drafts nobody
+-- will ever reconcile.
+--
+-- domain is stored as the free text the console sent rather than an enum:
+-- the option list is a product decision that will change (see UseCaseSheet's
+-- DOMAINS), and a DB enum would turn every such edit into a migration. The
+-- "Other" answer lands here as whatever the user typed, which is precisely
+-- the value of having that option at all.
+CREATE TABLE IF NOT EXISTS use_case_responses (
+    user_id       BIGINT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+    domain        TEXT NOT NULL,         -- chosen option, or the user's own words when they picked "Other"
+    goal          TEXT NOT NULL,         -- what they want the agent to do for their visitors
+    handled_today TEXT,                  -- optional: how the job is done now, i.e. what we're competing with
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Feedback the console's feedback sheet collects (see
+-- apps/console/src/FeedbackSheet.tsx). Append-only, one row per submission:
+-- unlike use_case_responses (a statement of intent a user refines, hence one
+-- row per user), each message here is a separate thing somebody said at a
+-- particular moment, and a second message never supersedes the first.
+--
+-- app_id and user_id both survive the thing they point at being deleted —
+-- ON DELETE SET NULL rather than CASCADE — because the message is still worth
+-- reading after an app is gone or an account closes; that is often exactly
+-- when it is most worth reading.
+CREATE TABLE IF NOT EXISTS feedback (
+    id         BIGSERIAL PRIMARY KEY,
+    app_id     TEXT REFERENCES apps (app_id) ON DELETE SET NULL,  -- which app it was sent from; NULL once that app is deleted
+    user_id    BIGINT REFERENCES users (id) ON DELETE SET NULL,   -- who wrote it; NULL once the account is deleted
+    card_title TEXT,                                              -- which workspace card it was opened from, e.g. "Agent thought"; context only
+    message    TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Reading an inbox means "newest first", which is the only access pattern
+-- this table has.
+CREATE INDEX IF NOT EXISTS feedback_created_at_idx ON feedback (created_at DESC);

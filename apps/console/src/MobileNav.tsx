@@ -30,6 +30,9 @@ export function MobileNav({
   onAddApp,
   onLogout,
   onSelectAppSettings,
+  onGoHome,
+  onSelectNotifications,
+  unreadNotificationCount,
   playground,
 }: {
   userEmail: string
@@ -40,6 +43,9 @@ export function MobileNav({
   onAddApp: () => void
   onLogout: () => void
   onSelectAppSettings: () => void
+  onGoHome: () => void
+  onSelectNotifications: () => void
+  unreadNotificationCount: number
   // Lifted to App.tsx (see its own comment) so MobileWorkspaceCards.tsx's
   // "Try it in Playground" button can open this same sheet — no longer
   // owned here.
@@ -78,7 +84,12 @@ export function MobileNav({
         +
       </button>
 
-      <MobileBottomBar onOpenPlayground={playground.onOpen} />
+      <MobileBottomBar
+        onGoHome={onGoHome}
+        onOpenPlayground={playground.onOpen}
+        onOpenNotifications={onSelectNotifications}
+        unreadNotificationCount={unreadNotificationCount}
+      />
     </div>
   )
 }

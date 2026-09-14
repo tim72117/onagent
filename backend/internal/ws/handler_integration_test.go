@@ -257,8 +257,8 @@ func TestAPIKeyResolver_OriginMismatch(t *testing.T) {
 	}
 
 	for name, origin := range map[string]string{
-		"different origin": "https://evil.example.com",
-		"no origin header": "",
+		"different origin":  "https://evil.example.com",
+		"no origin header":  "",
 		"subdomain differs": "https://sub.allowed.example.com",
 	} {
 		t.Run(name, func(t *testing.T) {

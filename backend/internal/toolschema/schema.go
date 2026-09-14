@@ -67,7 +67,7 @@ type Tool struct {
 	// tool always blocks and feeds its result back into the LLM's context,
 	// the same as Kind == ToolKindQuery, regardless of what Kind is set to.
 	//
-	// PoC scope only (see docs/backend-tool-dispatch-design-2026-08-08.md):
+	// PoC scope only (see docs/refactor-backend-tool-dispatch-design-2026-08-08.md):
 	// no request signing/auth, no retry, no idempotency keys, no async/
 	// callback mode. This is deliberately unauthenticated — do not point it
 	// at an endpoint that isn't already trusted out of band.

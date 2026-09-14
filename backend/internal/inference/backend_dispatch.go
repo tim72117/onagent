@@ -77,7 +77,7 @@ type dispatchRequest struct {
 
 // dispatchResponse is the body a BackendDispatch endpoint is expected to
 // return. PoC-scope contract only (see
-// docs/backend-tool-dispatch-design-2026-08-08.md) — no FailureKind yet,
+// docs/refactor-backend-tool-dispatch-design-2026-08-08.md) — no FailureKind yet,
 // so a "tool_error" (bad args, nothing retry would fix) and a
 // "tool_unavailable" (transient, retry might help) both surface identically
 // to the caller today.

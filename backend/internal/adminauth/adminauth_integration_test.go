@@ -22,7 +22,11 @@ func TestBootstrapAndLogin(t *testing.T) {
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v)", *dsn, err)
 	}
-	defer func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } }()
+	defer func() {
+		if sqlDB, err := database.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
 	sqlDB, _ := database.DB()
 	conn := sqlDB
 

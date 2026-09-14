@@ -193,9 +193,9 @@ func (noopTool) Call(types.ToolArguments, types.ToolContext) ([]types.ResultCont
 	return []types.ResultContentBlock{types.TextBlock("done")}, nil
 }
 func (noopTool) ValidateInput(types.ToolArguments, types.ToolContext) error { return nil }
-func (noopTool) RenderToolUse(types.ToolArguments) string                  { return "using noop" }
-func (noopTool) RenderToolUseError(error) string                           { return "noop failed" }
-func (noopTool) RenderToolResult(map[string]interface{}) string            { return "noop done" }
+func (noopTool) RenderToolUse(types.ToolArguments) string                   { return "using noop" }
+func (noopTool) RenderToolUseError(error) string                            { return "noop failed" }
+func (noopTool) RenderToolResult(map[string]interface{}) string             { return "noop done" }
 
 // noopToolProvider declares exactly one callable tool, "noop" — enough for
 // the scenario's round 1 tool_use to resolve to a real, non-blocking

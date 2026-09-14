@@ -8,6 +8,8 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"github.com/tim72117/onagent/internal/events"
 )
 
 // appRow is toolschema's own narrow view of the shared `apps` table —
@@ -63,16 +65,39 @@ type Registry struct {
 	db   *gorm.DB
 	mu   sync.RWMutex
 	apps map[string]*App
+	// events is nil until SetEventBus is called — every Publish call site
+	// in this file guards on r.events != nil first, so a Registry built
+	// without ever calling SetEventBus (every existing test/tool that
+	// constructs one via NewRegistry, unchanged) behaves exactly as before
+	// this field was added: no events published, same as if this field
+	// didn't exist. This mirrors quota.Service's own "nil disables the
+	// feature" convention elsewhere in this codebase (see ws.Session.quota),
+	// chosen over adding a required *events.Bus parameter to NewRegistry
+	// specifically to avoid changing its signature at all five existing
+	// call sites (cmd/server, cmd/migrate, and three integration test
+	// files) just to plumb an optional feature through.
+	events *events.Bus
 }
 
 // NewRegistry loads every app from db once and returns a Registry serving
-// that snapshot.
+// that snapshot. The returned Registry publishes no events until
+// SetEventBus is called.
 func NewRegistry(db *gorm.DB) (*Registry, error) {
 	r := &Registry{db: db}
 	if err := r.Reload(); err != nil {
 		return nil, err
 	}
 	return r, nil
+}
+
+// SetEventBus wires bus into r so future writes (currently: SaveTool
+// inserting a brand-new tool) publish an events.Event. Optional — call
+// this once at process startup (see cmd/server/main.go) if the process
+// wants event-driven side effects (eventually: the notification rule
+// engine's subscriber); skip it entirely for a Registry with no such need
+// (every existing test does exactly this, unchanged).
+func (r *Registry) SetEventBus(bus *events.Bus) {
+	r.events = bus
 }
 
 // Get returns the app for id, and whether it was found.
@@ -139,12 +164,44 @@ func (r *Registry) SaveTool(appID string, tool Tool) (id int64, err error) {
 	if err := (&App{AppID: appID, Tools: []Tool{tool}}).Validate(); err != nil {
 		return 0, fmt.Errorf("toolschema: refusing to save invalid tool: %w", err)
 	}
+	// tool.ID == 0 on the way in means this call is a create, not an
+	// update (see this method's own doc comment on tool.ID's two
+	// meanings) — captured before saveTool runs, since saveTool doesn't
+	// mutate the tool value's ID field, but reading isCreate after the
+	// call would read the same way regardless and stop being a reliable
+	// signal the moment that assumption changes.
+	isCreate := tool.ID == 0
 	id, err = saveTool(r.db, appID, tool)
 	if err != nil {
 		return 0, err
 	}
 	if err := r.Reload(); err != nil {
 		return 0, err
+	}
+	// Fire-and-forget on its own goroutine (see events.Bus.Publish's own
+	// doc comment on why Publish itself runs handlers synchronously on the
+	// calling goroutine) — a slow or buggy notification-rule subscriber
+	// must never add latency to, or fail, an app owner's tool save.
+	// Guarded on r.events != nil: see the Registry.events field's own
+	// comment for why this is nil in every existing caller that hasn't
+	// opted in via SetEventBus.
+	if r.events != nil && isCreate {
+		// isFirst is computed here (once, at the moment of the event that
+		// caused it) rather than left for a subscriber to work out later —
+		// by the time any subscriber runs, a second tool could already
+		// have been created (this is fire-and-forget on another
+		// goroutine), so "was this the app's first tool" would no longer
+		// be answerable from Get(appID) alone. r.Reload() above already
+		// ran, so app.Tools reflects this write.
+		isFirst := false
+		if app, ok := r.Get(appID); ok {
+			isFirst = len(app.Tools) == 1
+		}
+		go r.events.Publish(events.Event{
+			Type:      "tool.created",
+			SubjectID: appID,
+			Metadata:  map[string]any{"toolName": tool.Name, "toolId": id, "isFirst": isFirst},
+		})
 	}
 	return id, nil
 }
@@ -217,7 +274,34 @@ func (r *Registry) Create(appID string, ownerID int64, public bool) error {
 	if err := r.db.Create(&appRow{AppID: appID, OwnerID: &ownerID, Public: public}).Error; err != nil {
 		return fmt.Errorf("toolschema: create app %s: %w", appID, err)
 	}
-	return r.Reload()
+	if err := r.Reload(); err != nil {
+		return err
+	}
+	// Fire-and-forget on its own goroutine (see events.Bus.Publish's own
+	// doc comment on why) — feeds notify's "welcome" rule (see cmd/server/
+	// main.go), which is gated on the isFirst flag attached below.
+	// Guarded on r.events != nil: see the Registry.events field's own
+	// comment for why this is nil in every existing caller that hasn't
+	// opted in via SetEventBus.
+	if r.events != nil {
+		// isFirst is computed here (once, at the moment of the event that
+		// caused it), same reasoning as SaveTool's own isFirst — by the
+		// time any subscriber runs, this owner could already have created
+		// a second app (Publish is fire-and-forget on another goroutine),
+		// so "was this the owner's first app" would no longer be
+		// answerable from OwnedBy alone.
+		isFirst := false
+		if ids, err := r.OwnedBy(ownerID); err == nil {
+			isFirst = len(ids) == 1
+		}
+		go r.events.Publish(events.Event{
+			Type:      "app.created",
+			SubjectID: appID,
+			ActorID:   ownerID,
+			Metadata:  map[string]any{"isFirst": isFirst},
+		})
+	}
+	return nil
 }
 
 // OwnerOf returns the user id that owns appID, or ok=false if the app

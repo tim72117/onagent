@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import type { App as AppSchema, Tool } from './schema'
 import { DEFAULT_THOUGHT, emptyTool } from './schema'
 import { api, ApiError } from './api'
-import type { AppSummary, CurrentUser, IssuedKey } from './api'
+import type { AppSummary, CurrentUser, IssuedKey, Notification } from './api'
 import { Login } from './Login'
 import { fireRegistrationConversion } from './analytics'
 import { KeyModal } from './KeyModal'
@@ -12,6 +12,8 @@ import { Sidebar } from './Sidebar'
 import { DesktopAppBar } from './DesktopAppBar'
 import { MobileNav } from './MobileNav'
 import { SettingsView } from './SettingsView'
+import { NotificationsView } from './NotificationsView'
+import { UseCaseSheet } from './UseCaseSheet'
 import { AppSettingsView } from './AppSettingsView'
 import { AppSettingsList } from './AppSettingsList'
 import { AppShell } from './AppShell'
@@ -68,6 +70,7 @@ type View =
   | { kind: 'settings' }
   | { kind: 'appSettings' }
   | { kind: 'preview' }
+  | { kind: 'notifications' }
   | null
 
 // Whether each view kind has a mobile entry point of its own — used below
@@ -88,6 +91,7 @@ const VIEW_HAS_MOBILE_ENTRY_POINT: Record<NonNullable<View>['kind'], boolean> = 
   settings: false, // no mobile entry point — see the effect below
   appSettings: true, // MobileTopBar.tsx's gear icon
   preview: false, // desktop-Sidebar-only entry point (YAML button) — no mobile equivalent yet
+  notifications: true, // MobileBottomBar.tsx's bell icon — mobile-only for now, no desktop entry point yet
 }
 
 // Only place in this file that needs a JS-level mobile/desktop signal
@@ -188,6 +192,26 @@ export default function App() {
   const [maxPromptLengthDraft, setMaxPromptLengthDraft] = useState('')
   const [maxPromptLengthBusy, setMaxPromptLengthBusy] = useState(false)
 
+  // Backed by GET /console/notifications (backend's internal/notify rule
+  // engine — see that package's own doc comment for the event → rule →
+  // notification pipeline this is the display layer of). Held here (not
+  // inside NotificationsView) since MobileBottomBar.tsx's badge needs the
+  // same unread count independently of whether NotificationsView is
+  // currently mounted.
+  const [notifications, setNotifications] = useState<Notification[]>([])
+
+  // Part A of the feedback flow, opened from the "welcome" notification's
+  // action button (backend's cmd/server/main.go welcomeRule, actionTarget
+  // "useCaseForm"). Held at this level rather than inside NotificationsView
+  // so the sheet survives navigating away from that view while it is open.
+  const [useCaseOpen, setUseCaseOpen] = useState(false)
+  // Which notification's action button opened the sheet, if any — read by
+  // completeUseCaseNotification once UseCaseSheet reports a successful
+  // submission, so only a REAL send (not just opening the form) marks the
+  // notification completed. null when the form isn't tied to a
+  // notification (or hasn't been opened via one).
+  const [useCaseNotificationId, setUseCaseNotificationId] = useState<number | null>(null)
+
   const logout = useCallback((message: string | null) => {
     setUser(null)
     setAuthState('anonymous')
@@ -251,6 +275,11 @@ export default function App() {
     setSummaries(list)
   }, [])
 
+  const refreshNotifications = useCallback(async () => {
+    const list = await api.listNotifications()
+    setNotifications(list)
+  }, [])
+
   // Check for an existing session once on load.
   useEffect(() => {
     api
@@ -290,7 +319,19 @@ export default function App() {
         reportError(err)
       }
     })
-  }, [authState, refreshSummaries, logout, reportError])
+    // sessionStarted first, then refreshNotifications — sessionStarted may
+    // cause the backend to insert a one-time catch-up notification (see
+    // api.ts's own doc comment), so fetching the list before it completes
+    // could miss a notification that was about to exist. A failed
+    // notifications fetch is reported but doesn't force a logout on its
+    // own 401 — refreshSummaries' own catch above already handles session
+    // expiry; a second, redundant logout() call here would be harmless
+    // but pointless.
+    api
+      .sessionStarted()
+      .catch(reportError)
+      .finally(() => refreshNotifications().catch(reportError))
+  }, [authState, refreshSummaries, refreshNotifications, logout, reportError])
 
 
   const issues = useMemo(() => (draft ? validateApp(draft) : []), [draft])
@@ -786,6 +827,73 @@ export default function App() {
     refreshDraftForSwitch(() => setView({ kind: 'settings' }))
   }
 
+  // Not app-scoped (same reasoning as selectSettings above) — notifications
+  // aren't tied to whichever app happens to be selected in draft. Refetches
+  // on every open (not just once at login) so a notification that fired
+  // while this session was already running — e.g. right after submitting
+  // feedback from FeedbackSheet.tsx, which has no reference to this
+  // component's refreshNotifications to call directly — shows up without
+  // requiring a full page reload.
+  function selectNotifications() {
+    refreshDraftForSwitch(() => setView({ kind: 'notifications' }))
+    refreshNotifications().catch(reportError)
+  }
+
+  // Dismissing hides a notification from the list without claiming its
+  // suggested action was ever done — see api.ts's Notification doc comment
+  // on why dismissed/completed are independent states. Updates local state
+  // optimistically (the row disappears immediately) and persists via
+  // api.updateNotification; a failure re-syncs from the server rather than
+  // leaving the UI showing a dismissal that didn't actually save.
+  function dismissNotification(id: number) {
+    setNotifications((cur) => cur.map((n) => (n.id === id ? { ...n, status: 'dismissed' } : n)))
+    api.updateNotification(id, 'dismissed').catch((err) => {
+      reportError(err)
+      refreshNotifications().catch(reportError)
+    })
+  }
+
+  // Routes to whatever the notification's action target names — currently
+  // only "useCaseForm" is wired to anything (backend's welcomeRule is the
+  // only rule that sets it). Opening the suggested step is not the same as
+  // completing it — a user who opens UseCaseSheet and then closes it
+  // without sending has not actually done anything the rule cares about,
+  // so this only marks the notification read, not completed. The actual
+  // 'completed' transition happens in useCaseNotificationId's own effect
+  // below, once UseCaseSheet reports a real, successful submission.
+  function openNotificationAction(n: Notification) {
+    setNotifications((cur) => cur.map((c) => (c.id === n.id ? { ...c, readAt: c.readAt ?? new Date().toISOString() } : c)))
+    if (n.actionTarget === 'useCaseForm') {
+      setUseCaseNotificationId(n.id)
+      setUseCaseOpen(true)
+    }
+  }
+
+  // Optimistically hides whichever notification opened the form —
+  // called only from UseCaseSheet's own onSubmitted, i.e. only after its
+  // save request actually succeeded (see UseCaseSheet.tsx's own
+  // handleSubmit). The real completion happens server-side: putUseCase
+  // publishes "usecase.submitted", which notify's
+  // usecase_submitted_completes_welcome Rule turns into a
+  // CompleteNotifications action against every notification with
+  // actionTarget "useCaseForm" (see cmd/server/main.go) — this function
+  // does not call api.updateNotification itself, since the backend
+  // already does the real work; refreshNotifications reconciles local
+  // state with whatever the server actually recorded shortly after,
+  // covering the case where this optimistic update and the backend's own
+  // async completion disagree on exactly which notification(s) closed.
+  // null-checked: someone can open the form directly (there isn't
+  // currently another entry point, but nothing enforces there never being
+  // one) without a notification driving it.
+  function completeUseCaseNotification() {
+    if (useCaseNotificationId !== null) {
+      const id = useCaseNotificationId
+      setNotifications((cur) => cur.map((c) => (c.id === id ? { ...c, status: 'completed' } : c)))
+      setUseCaseNotificationId(null)
+    }
+    refreshNotifications().catch(reportError)
+  }
+
   // Unlike account Settings, App settings (key/origin) needs SOME app to
   // operate on — if none is selected yet, default to the first one in the
   // list rather than rendering an empty view; a no-op if there are no
@@ -852,6 +960,8 @@ export default function App() {
   const settingsSelected = view?.kind === 'settings'
   const appSettingsSelected = view?.kind === 'appSettings'
   const previewSelected = view?.kind === 'preview'
+  const notificationsSelected = view?.kind === 'notifications'
+  const unreadNotificationCount = notifications.filter((n) => n.readAt === null).length
   const appLevelIssues = issues.filter((i) => i.toolIndex === null)
   // Whether any tool has a save in flight or a failed save — drives the
   // workspace header's "Saving…" badge below, replacing the old
@@ -878,6 +988,9 @@ export default function App() {
             onAddApp={addApp}
             onLogout={doLogout}
             onSelectAppSettings={selectAppSettings}
+            onGoHome={() => setView(null)}
+            onSelectNotifications={selectNotifications}
+            unreadNotificationCount={unreadNotificationCount}
             playground={mobilePlayground}
           />
           <Sidebar
@@ -915,6 +1028,12 @@ export default function App() {
         )}
         {settingsSelected ? (
           <SettingsView onLogout={doLogout} />
+        ) : notificationsSelected ? (
+          <NotificationsView
+            notifications={notifications}
+            onDismiss={dismissNotification}
+            onOpenAction={openNotificationAction}
+          />
         ) : appSettingsSelected && draft ? (
           isMobile ? (
             <AppSettingsList
@@ -1131,6 +1250,14 @@ export default function App() {
           onCancel={() => setPendingConfirm(null)}
         />
       )}
+
+      {/* Always mounted so BottomSheet keeps its close transition (see
+          BottomSheet.tsx), same as every other sheet in this tree. */}
+      <UseCaseSheet
+        open={useCaseOpen}
+        onClose={() => setUseCaseOpen(false)}
+        onSubmitted={completeUseCaseNotification}
+      />
     </AppShell>
     </QuotaProvider>
   )

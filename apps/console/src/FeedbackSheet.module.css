@@ -1,0 +1,20 @@
+.body {
+  padding: 4px 16px 16px;
+}
+
+.hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+/* Same touch-target sizing rationale as OriginEditSheet.module.css's
+   .input — larger padding than the global `textarea` rule, since this is
+   a mobile sheet's whole-screen field, not a dense desktop form input. */
+.textarea {
+  width: 100%;
+  resize: vertical;
+  font: inherit;
+  font-size: 13px;
+  padding: 12px 14px;
+}

@@ -1,0 +1,73 @@
+/* No close (X) button here — unlike every other sheet in this app
+   (SheetHeader.tsx), this one closes only via a tap outside it
+   (BottomSheet's own backdrop click, enabled by default) or the OS
+   back gesture. A pure list-of-actions menu (no editable field to lose,
+   nothing mid-flight to interrupt) reads more like a native action sheet
+   or popover menu than a form/editor, so an explicit close affordance is
+   less necessary than a stray-backdrop-tap protection would be on those. */
+.header {
+  margin: -16px -16px 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.body {
+  padding-top: 4px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Flat, borderless rows — mirrors MobileWorkspaceCards.module.css's own
+   .toolRow (a plain list inside an already-bordered card/sheet), not
+   ToolEditSheet.module.css's .row (each its own bordered card) — this
+   menu's rows sit directly inside a sheet that's already visually
+   contained by BottomSheet's own panel, so a second border per row read
+   as redundant nesting. Adjacent rows get a hairline separator instead of
+   individual borders (see the :not(:first-child) rule below) — ready for
+   a second/third row later without restyling. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 4px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.row:not(:first-child) {
+  border-top: 1px solid var(--border);
+}
+
+.rowIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--ink-dim);
+}
+
+.rowLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.chevron {
+  flex: none;
+  stroke: var(--ink-faint);
+}

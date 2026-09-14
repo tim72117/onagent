@@ -30,7 +30,11 @@ func TestSchemaApplyIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v) — skipping integration test", *dsn, err)
 	}
-	defer func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } }()
+	defer func() {
+		if sqlDB, err := database.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
 	sqlDB, _ := database.DB()
 	conn := sqlDB
 
@@ -107,7 +111,11 @@ func TestDeletingAnAppKeepsItsUsageLedger(t *testing.T) {
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v) — skipping integration test", *dsn, err)
 	}
-	defer func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } }()
+	defer func() {
+		if sqlDB, err := database.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
 	sqlDB, _ := database.DB()
 	conn := sqlDB
 

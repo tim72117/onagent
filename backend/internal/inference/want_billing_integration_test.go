@@ -95,9 +95,9 @@ func (b blockingTool) Call(types.ToolArguments, types.ToolContext) ([]types.Resu
 	return []types.ResultContentBlock{types.TextBlock("done")}, nil
 }
 func (blockingTool) ValidateInput(types.ToolArguments, types.ToolContext) error { return nil }
-func (blockingTool) RenderToolUse(types.ToolArguments) string                  { return "blocking" }
-func (blockingTool) RenderToolUseError(error) string                           { return "blocking failed" }
-func (blockingTool) RenderToolResult(map[string]interface{}) string            { return "blocking done" }
+func (blockingTool) RenderToolUse(types.ToolArguments) string                   { return "blocking" }
+func (blockingTool) RenderToolUseError(error) string                            { return "blocking failed" }
+func (blockingTool) RenderToolResult(map[string]interface{}) string             { return "blocking done" }
 
 type blockingToolProvider struct{ release <-chan struct{} }
 

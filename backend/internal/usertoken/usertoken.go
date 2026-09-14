@@ -56,7 +56,6 @@ type userTokenRow struct {
 
 func (userTokenRow) TableName() string { return "user_tokens" }
 
-
 type Store struct {
 	db *gorm.DB
 }

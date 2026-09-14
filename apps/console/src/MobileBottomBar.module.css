@@ -7,6 +7,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
+  gap: 40px;
   /* box-sizing:border-box (global reset) means padding eats into a fixed
      height — plain `height: 52px` here left only ~18px of actual button
      room on phones with a home indicator (~34px safe-area-inset-bottom).
@@ -25,20 +26,42 @@
   border-top: 1px solid var(--border);
 }
 
-.playgroundBtn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+/* Shared by all three bar buttons (Home/Playground/Notifications) — equal
+   size and treatment, since none of them is a more "primary" action than
+   the others any more (Playground used to be the sole labeled CTA here;
+   now it's one of three equal icon-only buttons, all centered together
+   with .bar's own `gap` rather than spread edge-to-edge — this still
+   isn't a general-purpose tab bar, just three equally-weighted entry
+   points grouped in the middle). */
+.iconBtn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
   border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink);
-  padding: 6px 16px;
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
 }
 
-.playgroundBtn:hover {
+.iconBtn:hover {
   background: var(--border);
+}
+
+.badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
 }

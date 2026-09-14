@@ -51,7 +51,7 @@ func New(db *gorm.DB) *Store {
 // same appID, never another app's.
 //
 // This exists because sessionID alone is not a safe scope for Load — see
-// docs/sessionstore-architecture-review-2026-08-14.md #1/#3: sessionID has
+// docs/refactor-sessionstore-architecture-review-2026-08-14.md #1/#3: sessionID has
 // no access control of its own beyond staying unguessable, and a caller
 // with no valid SessionID (want.go's sessionKeyFor "" fallback — shared by
 // every such caller) would otherwise read and write one shared, persisted

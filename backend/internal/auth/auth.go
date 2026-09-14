@@ -51,7 +51,6 @@ type appAuthRow struct {
 
 func (appAuthRow) TableName() string { return "apps" }
 
-
 // Store looks up the appId bound to an API key. Every method talks directly
 // to Postgres — there's no in-memory cache to keep consistent, since key
 // checks are infrequent (once per WebSocket handshake, not once per

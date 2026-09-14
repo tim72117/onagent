@@ -15,7 +15,7 @@ import (
 )
 
 // toolBuilderAppID identifies the platform-internal "Generate with AI" tool
-// builder app (see docs/ai-tool-builder-design-2026-09-09.md and
+// builder app (see
 // apps/console/src/aiToolGenerator/tool-builder-tools.yaml) — the one appID this
 // resolver special-cases to get a fresh session per connection instead of
 // Playground's usual stable one (see the sessionID comment below for why).

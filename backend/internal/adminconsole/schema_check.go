@@ -153,16 +153,16 @@ func (adminSessionsFull) TableName() string { return "admin_sessions" }
 // schema.sql gains one, or the new table silently drops out of this check.
 func schemaCheckTargets() map[string][]any {
 	return map[string][]any{
-		"users":              {&usersFull{}},
-		"sessions":           {&sessionsFull{}},
-		"user_tokens":        {&userTokensFull{}},
-		"cli_auth_sessions":  {&cliAuthSessionsFull{}},
-		"apps":               {&appsFull{}},
-		"tools":              {&toolsFull{}},
-		"subscriptions":      {&subscriptionsFull{}},
-		"usage_events":       {&usageEventsFull{}},
-		"admin_users":        {&adminUsersFull{}},
-		"admin_sessions":     {&adminSessionsFull{}},
+		"users":             {&usersFull{}},
+		"sessions":          {&sessionsFull{}},
+		"user_tokens":       {&userTokensFull{}},
+		"cli_auth_sessions": {&cliAuthSessionsFull{}},
+		"apps":              {&appsFull{}},
+		"tools":             {&toolsFull{}},
+		"subscriptions":     {&subscriptionsFull{}},
+		"usage_events":      {&usageEventsFull{}},
+		"admin_users":       {&adminUsersFull{}},
+		"admin_sessions":    {&adminSessionsFull{}},
 	}
 }
 

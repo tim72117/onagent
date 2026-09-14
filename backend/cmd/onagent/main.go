@@ -305,7 +305,7 @@ func runLoginPassword(args []string) error {
 // this terminal: it starts a temporary local server, opens (or prints) a
 // console URL for the user to approve in their browser, and waits for that
 // page to redirect back to the local server with a freshly minted token.
-// See docs/cli-device-flow-design.md for why this isn't the OAuth device
+// See docs/refactor-cli-device-flow-design-2026-07-08.md for why this isn't the OAuth device
 // flow (this machine needs to be able to run a local server and open a
 // browser; the device flow doesn't need either, at the cost of more moving
 // parts) and apps/console/src/CliAuthPage.tsx for the browser side.

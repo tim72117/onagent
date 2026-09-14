@@ -67,7 +67,6 @@ type adminSessionRow struct {
 
 func (adminSessionRow) TableName() string { return "admin_sessions" }
 
-
 // Store is the admin identity/session store, backed by the same connection
 // pool as everything else (internal/db.DB) but operating only on the
 // admin_* tables.

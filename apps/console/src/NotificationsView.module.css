@@ -1,0 +1,87 @@
+/* No max-width here (unlike SettingsView.module.css, which this was
+   originally modeled on) — that view is desktop-reachable, where a fixed
+   narrow column reads intentional next to lots of empty side space. This
+   view is mobile-only for now (see this file's own doc comment), so the
+   viewport IS the content width; capping it left the notification cards
+   artificially narrow instead of filling the phone screen like every
+   other mobile view (MobileWorkspaceCards, AppSettingsList) already does. */
+.root {
+  padding: 16px;
+}
+
+.heading {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 20px;
+}
+
+.empty {
+  color: var(--ink-faint);
+  font-size: 13px;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  background: var(--bg-raised);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.cardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+
+.unreadDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.cardBody {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--ink-dim);
+  line-height: 1.5;
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dismissBtn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  flex: none;
+}
+
+.dismissBtn:hover {
+  background: var(--border);
+  color: var(--ink);
+}

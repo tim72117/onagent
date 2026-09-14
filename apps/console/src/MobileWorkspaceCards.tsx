@@ -5,6 +5,7 @@ import type { ValidationIssue } from './validate'
 import { ThoughtEditSheet } from './ThoughtEditSheet'
 import { ToolEditSheet } from './ToolEditSheet'
 import { AiToolGeneratorSheet } from './aiToolGenerator/AiToolGeneratorSheet'
+import { CardMenuSheet } from './CardMenuSheet'
 import { useSheet } from './useSheet'
 import styles from './MobileWorkspaceCards.module.css'
 
@@ -98,6 +99,13 @@ export function MobileWorkspaceCards({
   const [newTool, setNewTool] = useState<Tool | null>(null)
   const thoughtSheet = useSheet()
   const aiGeneratorSheet = useSheet()
+  // One CardMenuSheet instance per card (not a single shared one) — each
+  // card's "⋮" button opens its own menu scoped to that card's own title,
+  // and two cards' menus being independently openable (however unlikely in
+  // practice, since only one sheet is usually open at a time) needs two
+  // separate open/close booleans rather than one shared "which card" enum.
+  const thoughtMenuSheet = useSheet()
+  const toolsMenuSheet = useSheet()
 
   return (
     <div className={styles.root}>
@@ -112,18 +120,36 @@ export function MobileWorkspaceCards({
       {/* A summary card, not the full ThoughtEditor inline — that earlier
           version made this card tall enough (Tiptap's editor + preview)
           that Tools ended up pushed far enough down the page to look like
-          "there's nothing here" rather than "scroll for more". Tapping it
-          opens ThoughtEditSheet.tsx, a full-screen sheet with real room
-          to write. */}
-      <button type="button" className={styles.card} onClick={thoughtSheet.onOpen}>
+          "there's nothing here" rather than "scroll for more". Tapping the
+          summary area opens ThoughtEditSheet.tsx, a full-screen sheet with
+          real room to write.
+          A plain div now, not a <button> — the header's own "⋮" menu
+          button needs to sit inside this card without nesting a <button>
+          inside a <button> (invalid HTML, and it'd fire both handlers on
+          tap). The tappable-to-open-thought-editor behavior moves onto
+          .cardSummary below instead of the whole card. */}
+      <div className={styles.card}>
         <div className={styles.cardHeader}>
           <span className={styles.cardTitle}>Agent thought</span>
           {thoughtDirty && <span className={styles.dirtyDot} title="Unsaved changes" />}
+          <button
+            type="button"
+            className={styles.cardMenuBtn}
+            onClick={thoughtMenuSheet.onOpen}
+            aria-label="Agent thought options"
+            title="Options"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <circle cx="5" cy="12" r="1.8" />
+              <circle cx="12" cy="12" r="1.8" />
+              <circle cx="19" cy="12" r="1.8" />
+            </svg>
+          </button>
         </div>
-        <div className={styles.cardSummary}>
+        <button type="button" className={styles.cardSummary} onClick={thoughtSheet.onOpen}>
           {thoughtDraft.trim() || 'Using the platform default — tap to customize.'}
-        </div>
-      </button>
+        </button>
+      </div>
 
       <ThoughtEditSheet
         open={thoughtSheet.open}
@@ -133,6 +159,13 @@ export function MobileWorkspaceCards({
         thoughtDirty={thoughtDirty}
         onThoughtChange={onThoughtChange}
         onSaveThought={onSaveThought}
+      />
+
+      <CardMenuSheet
+        open={thoughtMenuSheet.open}
+        onClose={thoughtMenuSheet.onClose}
+        appId={draft.appId}
+        cardTitle="Agent thought"
       />
 
       <div className={styles.card}>
@@ -151,6 +184,19 @@ export function MobileWorkspaceCards({
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
               <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className={styles.cardMenuBtn}
+            onClick={toolsMenuSheet.onOpen}
+            aria-label="Tools options"
+            title="Options"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <circle cx="5" cy="12" r="1.8" />
+              <circle cx="12" cy="12" r="1.8" />
+              <circle cx="19" cy="12" r="1.8" />
             </svg>
           </button>
         </div>
@@ -208,6 +254,13 @@ export function MobileWorkspaceCards({
           )}
         </div>
       </div>
+
+      <CardMenuSheet
+        open={toolsMenuSheet.open}
+        onClose={toolsMenuSheet.onClose}
+        appId={draft.appId}
+        cardTitle="Tools"
+      />
 
       <ToolEditSheet
         open={openToolIndex !== null}

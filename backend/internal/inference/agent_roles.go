@@ -59,7 +59,7 @@ func RegisterPlatformTools(apps map[string]*toolschema.App) {
 // inference call — not from any snapshot taken at registration time — so a
 // schema edit is visible on the very next prompt. This is the fix for want
 // v0.0.2's types.GlobalRegistry.Declarations being append-only (see
-// docs/known-issues-want-dependency.md /
+//
 // docs/TODO-want-registry-append-only.md): want v0.1.0 removed that global
 // registry entirely, so there is no stale copy left to keep in sync.
 func RegisterAppRole(app *toolschema.App) {

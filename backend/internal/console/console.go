@@ -22,17 +22,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tim72117/onagent/internal/auth"
 	"github.com/tim72117/onagent/internal/cliauth"
+	"github.com/tim72117/onagent/internal/events"
+	"github.com/tim72117/onagent/internal/feedback"
 	"github.com/tim72117/onagent/internal/inference"
+	"github.com/tim72117/onagent/internal/notify"
 	"github.com/tim72117/onagent/internal/quota"
 	"github.com/tim72117/onagent/internal/session"
 	"github.com/tim72117/onagent/internal/toolschema"
+	"github.com/tim72117/onagent/internal/usecase"
 	"github.com/tim72117/onagent/internal/usertoken"
 	"github.com/tim72117/onagent/internal/ws"
 )
@@ -65,10 +71,18 @@ type tokenLifecycle interface {
 
 // Handler serves the /console/* and /auth/* APIs.
 type Handler struct {
-	Apps    *toolschema.Registry
-	Auth    *auth.Store
-	Session accountLifecycle
-	Tokens  tokenLifecycle
+	Apps *toolschema.Registry
+	Auth *auth.Store
+	// UseCase stores the "what are you building" answers (Part A of the
+	// Builder flow). Unlike Quota, a nil here is not a supported
+	// "disabled" mode — see usecase.Store's own doc comment.
+	UseCase *usecase.Store
+	// Feedback stores the console's free-text feedback messages. nil only
+	// on a server with no database, where submitFeedback answers 503 rather
+	// than accepting a message it cannot keep.
+	Feedback *feedback.Store
+	Session  accountLifecycle
+	Tokens   tokenLifecycle
 	// sessionVerify/tokenVerify/appOwner are the same underlying
 	// *session.Store/*usertoken.Store/*toolschema.Registry as Session/
 	// Tokens/Apps above, seen through the narrower cookieVerifier/
@@ -88,6 +102,23 @@ type Handler struct {
 	CliAuth       *cliauth.Store
 	Inference     inference.Service // used to construct the Playground ws.Handler (see playgroundWS)
 	Quota         *quota.Service    // nil disables enforcement; playground prompts count against the owner's quota like real traffic
+	// Events is nil until the caller sets it directly (see cmd/server/
+	// main.go) — every handler that publishes through it (currently just
+	// submitFeedback) guards on Events != nil first, so a Handler built
+	// without ever setting this field behaves exactly as if the feature
+	// didn't exist. A plain settable field, not a NewHandler parameter,
+	// specifically to avoid changing that constructor's signature at
+	// every existing call site just to plumb an optional feature through
+	// — same reasoning as toolschema.Registry.SetEventBus.
+	Events *events.Bus
+	// Notify is nil until the caller sets it directly (see cmd/server/
+	// main.go), same optional-field convention as Events above.
+	// listNotifications/updateNotification both guard on Notify != nil
+	// and 404 if it's unset, since there's no meaningful "read side
+	// disabled" behavior to fall back to (unlike Quota's nil-means-
+	// unenforced) — a console that can never show a user their
+	// notifications is a bug, not a supported mode.
+	Notify *notify.GormNotificationStore
 	// ConsoleOrigins is the set of origins the console front-end itself is
 	// served from (e.g. http://localhost:5173 in dev). Used only by
 	// playgroundResolver (playground.go) to accept the Playground
@@ -142,6 +173,12 @@ func (h *Handler) Register(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /console/quota", h.withAuth(h.getQuota))
 
+	mux.HandleFunc("GET /console/notifications", h.withAuth(h.listNotifications))
+	mux.HandleFunc("PATCH /console/notifications/{id}", h.withAuth(h.updateNotification))
+	mux.HandleFunc("POST /console/session-started", h.withAuth(h.sessionStarted))
+	mux.HandleFunc("GET /console/use-case", h.withAuth(h.getUseCase))
+	mux.HandleFunc("PUT /console/use-case", h.withAuth(h.putUseCase))
+
 	mux.HandleFunc("GET /console/apps", h.withAuth(h.listApps))
 	mux.HandleFunc("POST /console/apps", h.withAuth(h.createApp))
 	mux.HandleFunc("GET /console/apps/{appId}", h.withOwnedApp(h.getApp))
@@ -175,6 +212,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /console/apps/{appId}", h.withOwnedApp(h.deleteApp))
 	mux.HandleFunc("POST /console/apps/{appId}/key", h.withOwnedApp(h.issueKey))
 	mux.HandleFunc("DELETE /console/apps/{appId}/key", h.withOwnedApp(h.revokeKey))
+	mux.HandleFunc("POST /console/apps/{appId}/feedback", h.withOwnedApp(h.submitFeedback))
 	// Not h.withOwnedApp: session-cookie verification and app-ownership
 	// checks are done inside playgroundResolver.ResolveApp instead (see
 	// playground.go), because ws.Handler.ServeHTTP needs to run its own
@@ -586,6 +624,11 @@ func (h *Handler) createApp(w http.ResponseWriter, r *http.Request, user *sessio
 		return
 	}
 
+	// NOTE: the per-plan cap on how many apps an account may own is not
+	// enforced here yet — quota.CheckResource and the Resource model it
+	// needs live on the plan-subscription branch, and were left out of this
+	// one deliberately. The pricing page already advertises the limit, so
+	// this has to be reinstated along with that branch.
 	if err := h.Apps.Create(req.AppID, user.ID, req.Public); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -755,6 +798,8 @@ func (h *Handler) saveTool(w http.ResponseWriter, r *http.Request, user *session
 	}
 	tool.ID = 0
 
+	// NOTE: the per-app tool cap is likewise not enforced yet — see the
+	// matching note in createApp above.
 	toolID, err := h.Apps.SaveTool(appID, tool)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -909,6 +954,190 @@ func (h *Handler) revokeKey(w http.ResponseWriter, r *http.Request, user *sessio
 	if err := h.Auth.Revoke(appID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// submitFeedbackRequest's Message is the free-text body from
+// apps/console/src/FeedbackSheet.tsx's textarea. CardTitle threads through
+// which workspace card the feedback was opened from (e.g. "Agent
+// thought", "Tools") purely as context carried in the published event's
+// Metadata — this handler has no other use for it and doesn't validate it
+// against anything.
+type submitFeedbackRequest struct {
+	Message   string `json:"message"`
+	CardTitle string `json:"cardTitle"`
+}
+
+// submitFeedback stores one message in the feedback table (see
+// internal/feedback). It publishes no event: the rule that once consumed
+// "feedback.submitted" has been removed, and republishing for nobody would
+// only look like the pipeline still did something here.
+//
+// Validation lives in the store, so the empty-message rule is stated once
+// rather than here and there.
+func (h *Handler) submitFeedback(w http.ResponseWriter, r *http.Request, user *session.User) {
+	appID := r.PathValue("appId")
+
+	var req submitFeedbackRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if h.Feedback == nil {
+		// Fails loudly rather than accepting and dropping it: someone took
+		// the time to write this, and a success response they can see would
+		// be a lie.
+		http.Error(w, "feedback is unavailable on this server", http.StatusServiceUnavailable)
+		return
+	}
+	if err := h.Feedback.Submit(r.Context(), appID, user.ID, req.CardTitle, req.Message); err != nil {
+		// Only a caller mistake is the caller's fault; a database failure
+		// answered as 400 would tell them to fix input that is fine, and
+		// hide the outage from the 5xx rate.
+		if errors.Is(err, feedback.ErrInvalid) {
+			http.Error(w, strings.TrimPrefix(err.Error(), feedback.ErrInvalid.Error()+": "), http.StatusBadRequest)
+			return
+		}
+		log.Printf("console: submit feedback for user %d: %v", user.ID, err)
+		http.Error(w, "could not save your feedback", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- notifications -----------------------------------------------------
+
+// notificationResponse is the wire shape of one notify.Record. AppID
+// (renamed from Record's own SubjectID) is deliberately kept on every
+// response, even though listNotifications already merges every owned
+// app's notifications into one combined list — the console front end
+// needs it so a notification can eventually carry a link into the
+// specific app it's about (rather than just linking to "my apps" in
+// general), and RECORD.SubjectID is the only place that association
+// lives once results from several apps are merged together.
+type notificationResponse struct {
+	ID           int64      `json:"id"`
+	AppID        string     `json:"appId"`
+	Title        string     `json:"title"`
+	Body         string     `json:"body"`
+	ActionLabel  string     `json:"actionLabel,omitempty"`
+	ActionTarget string     `json:"actionTarget,omitempty"`
+	Status       string     `json:"status"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	ReadAt       *time.Time `json:"readAt"`
+	CompletedAt  *time.Time `json:"completedAt"`
+}
+
+func newNotificationResponse(r notify.Record) notificationResponse {
+	return notificationResponse{
+		ID:           r.ID,
+		AppID:        r.SubjectID,
+		Title:        r.Title,
+		Body:         r.Body,
+		ActionLabel:  r.ActionLabel,
+		ActionTarget: r.ActionTarget,
+		Status:       r.Status,
+		CreatedAt:    r.CreatedAt,
+		ReadAt:       r.ReadAt,
+		CompletedAt:  r.CompletedAt,
+	}
+}
+
+// listNotifications returns every notification across every app the
+// caller owns, newest first — not scoped to one app (the console shows
+// one combined list; see this handler's own design discussion for why
+// AppID still rides along on each row despite the merge). Requires
+// h.Notify to be set (see that field's own doc comment for why there's no
+// meaningful "disabled" fallback here).
+func (h *Handler) listNotifications(w http.ResponseWriter, r *http.Request, user *session.User) {
+	if h.Notify == nil {
+		http.Error(w, "notifications are not available", http.StatusNotFound)
+		return
+	}
+
+	appIDs, err := h.Apps.OwnedBy(user.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	records, err := h.Notify.ListForSubjects(appIDs)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	out := make([]notificationResponse, len(records))
+	for i, rec := range records {
+		out[i] = newNotificationResponse(rec)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// updateNotificationRequest's Status is the only mutable field a caller
+// can set — "completed" for acting on the suggested next step, or
+// "dismissed" for closing it without acting (see db/schema.sql's own
+// comment on why these are independent from "pending", not a boolean).
+// Read (MarkRead) has its own, separate route rather than being a Status
+// value, since opening the notifications view marks everything visible as
+// read regardless of whether any single row's status changes.
+type updateNotificationRequest struct {
+	Status string `json:"status"`
+}
+
+// updateNotification transitions one notification's status (see
+// updateNotificationRequest's own doc comment). Ownership is enforced by
+// scoping the underlying UPDATE to appIDs the caller owns (see
+// notify.GormNotificationStore.UpdateStatus's own doc comment) rather than
+// trusting the path id alone — a notification id carries no ownership
+// information by itself.
+func (h *Handler) updateNotification(w http.ResponseWriter, r *http.Request, user *session.User) {
+	if h.Notify == nil {
+		http.Error(w, "notifications are not available", http.StatusNotFound)
+		return
+	}
+
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid notification id", http.StatusBadRequest)
+		return
+	}
+
+	var req updateNotificationRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	appIDs, err := h.Apps.OwnedBy(user.ID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.Notify.UpdateStatus(id, appIDs, req.Status); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// sessionStarted publishes "session.started" — called once by the console
+// front end each time it loads with an authenticated user (see App.tsx's
+// own call site). Exists purely as an event source for notify's
+// catch_up_welcome Rule (see cmd/server/main.go): a user who already had
+// apps before the "welcome" notification existed (or who otherwise never
+// got one) has no other event left to hang a one-time catch-up notice on
+// — app.created already fired, in the past, before any rule was listening
+// for it. Like submitFeedback, this does not persist anything itself;
+// publishing the event is its only job.
+func (h *Handler) sessionStarted(w http.ResponseWriter, r *http.Request, user *session.User) {
+	if h.Events != nil {
+		go h.Events.Publish(events.Event{
+			Type:    "session.started",
+			ActorID: user.ID,
+		})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1086,4 +1315,92 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst interface{}) bool {
 		return false
 	}
 	return true
+}
+
+// --- use case (Part A of the Builder flow) -------------------------------
+
+// useCaseResponse is the GET shape. Answered distinguishes "we have never
+// asked successfully" from "they answered", which is what the console needs
+// to decide whether the welcome notification still has a job to do — an
+// empty Response alone could not say which.
+type useCaseResponse struct {
+	Answered bool              `json:"answered"`
+	Response *usecase.Response `json:"response,omitempty"`
+}
+
+// getUseCase reports whether this user has told us what they're building,
+// and what they said.
+func (h *Handler) getUseCase(w http.ResponseWriter, r *http.Request, user *session.User) {
+	if h.UseCase == nil {
+		// No database (the mock/dev path). Reporting "not answered" rather
+		// than an error keeps the console's welcome notification working
+		// against a dev server; the answer simply has nowhere to go.
+		writeJSON(w, http.StatusOK, useCaseResponse{Answered: false})
+		return
+	}
+	resp, ok, err := h.UseCase.Get(r.Context(), user.ID)
+	if err != nil {
+		// Generic message, detail to the log: the raw error carries the table
+		// name, the SQLSTATE and this caller's internal user id, none of which
+		// any account should be handed (see ownedAppOrNotFound's own comment
+		// on not leaking information).
+		log.Printf("console: get use case for user %d: %v", user.ID, err)
+		http.Error(w, "could not load your answers", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		writeJSON(w, http.StatusOK, useCaseResponse{Answered: false})
+		return
+	}
+	writeJSON(w, http.StatusOK, useCaseResponse{Answered: true, Response: &resp})
+}
+
+// putUseCase records (or replaces) this user's answers.
+//
+// PUT rather than POST because the resource is "this user's answer" — one
+// per user, replaced on re-submission — so the call is idempotent and needs
+// no client-supplied id.
+func (h *Handler) putUseCase(w http.ResponseWriter, r *http.Request, user *session.User) {
+	var req usecase.Response
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if h.UseCase == nil {
+		// Unlike GET, this one fails loudly: silently accepting an answer
+		// that is thrown away is worse than telling the caller it cannot be
+		// stored right now.
+		http.Error(w, "use-case responses are unavailable on this server", http.StatusServiceUnavailable)
+		return
+	}
+	if err := h.UseCase.Save(r.Context(), user.ID, req); err != nil {
+		// Only a validation failure is the caller's fault. Everything else —
+		// the database being unreachable, the request context cancelled
+		// mid-write — is ours, and answering 400 for it would tell the user
+		// to fix input that is fine while hiding the outage from the 5xx rate.
+		if errors.Is(err, usecase.ErrInvalid) {
+			http.Error(w, strings.TrimPrefix(err.Error(), usecase.ErrInvalid.Error()+": "), http.StatusBadRequest)
+			return
+		}
+		log.Printf("console: save use case for user %d: %v", user.ID, err)
+		http.Error(w, "could not save your answers", http.StatusInternalServerError)
+		return
+	}
+
+	// Fire-and-forget on its own goroutine — same reasoning as
+	// toolschema.Registry.Create's own "app.created" publish: a slow or
+	// buggy notification-rule subscriber must never add latency to, or
+	// fail, this request. Feeds notify's usecase_submitted_completes_welcome
+	// Rule (see cmd/server/main.go), which closes out whichever
+	// welcome-style notification suggested this form in the first place —
+	// no notification id travels with this event; that rule looks the
+	// notification up by ActionTarget instead (see
+	// notify.CompleteNotifications's own doc comment for why).
+	if h.Events != nil {
+		go h.Events.Publish(events.Event{
+			Type:    "usecase.submitted",
+			ActorID: user.ID,
+		})
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

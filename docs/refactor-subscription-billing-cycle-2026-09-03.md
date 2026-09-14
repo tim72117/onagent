@@ -1,6 +1,11 @@
 # 訂閱與計費週期重構規劃（草案，待展開）
 
 > 狀態：草案，方向已拍板，細節尚未展開。
+>
+> 下方「待展開」清單裡的 schema 設計部分，已於
+> [refactor-subscription-schema-2026-09-13.md](refactor-subscription-schema-2026-09-13.md)
+> 展開：完整資料模型、額度（meter）設計、週／月／年週期規則，以及分期計畫。
+> Stripe 整合流程（webhook、狀態同步、扣款重試）仍待展開。
 
 ## 背景
 

@@ -42,7 +42,11 @@ func openTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v) — skipping integration test", *dsn, err)
 	}
-	t.Cleanup(func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } })
+	t.Cleanup(func() {
+		if sqlDB, err := database.DB(); err == nil {
+			sqlDB.Close()
+		}
+	})
 	return database
 }
 

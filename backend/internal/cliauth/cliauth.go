@@ -43,7 +43,6 @@ type cliAuthSessionRow struct {
 
 func (cliAuthSessionRow) TableName() string { return "cli_auth_sessions" }
 
-
 type Store struct {
 	db *gorm.DB
 }

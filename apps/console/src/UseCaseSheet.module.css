@@ -1,0 +1,129 @@
+.body {
+  padding: 4px 16px 16px;
+}
+
+.intro {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: var(--ink-dim);
+  line-height: 1.5;
+}
+
+/* fieldset carries browser default border/margin/padding that would fight
+   the sheet's own spacing, so it is reset rather than styled around. */
+.field {
+  border: 0;
+  margin: 0 0 22px;
+  padding: 0;
+}
+
+.field:last-child {
+  margin-bottom: 0;
+}
+
+/* display:block is load-bearing here, not decorative — .label is a <span>
+   in the markup (UseCaseSheet.tsx), and margin on an inline element is
+   ignored by the CSS box model entirely, so margin-bottom below did
+   nothing until this was added (the label and its field looked glued
+   together no matter how large that value was). */
+.label {
+  display: block;
+  padding: 0;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.optional {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+/* The closed state of the domain question: shows the current answer (or a
+   prompt) and opens the picker sheet. Sized like the text inputs below it so
+   the three questions read as one set of fields, not two kinds of control. */
+.picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised);
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker:hover {
+  border-color: var(--ink-faint);
+}
+
+.picker svg {
+  flex: none;
+  color: var(--ink-faint);
+}
+
+/* Placeholder-weight text until something is actually chosen, matching how
+   an unfilled input reads. */
+.pickerEmpty {
+  color: var(--ink-faint);
+}
+
+.pickerList {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px 8px 8px;
+}
+
+/* Full-width rows here, unlike the closed state: this sheet exists only to
+   choose, so vertical length costs nothing and a whole row is the easiest
+   possible thumb target. */
+.pickerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 12px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pickerRow:hover {
+  background: var(--bg);
+}
+
+.pickerRowOn {
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Same touch-target reasoning as FeedbackSheet.module.css's .textarea:
+   roomier than the global input rule, since this is a mobile sheet's
+   full-width field rather than a dense desktop form. */
+.input,
+.textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  padding: 12px 14px;
+}
+
+.textarea {
+  resize: vertical;
+}

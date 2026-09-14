@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/tim72117/onagent/internal/session"
@@ -318,5 +319,49 @@ func TestWithOwnedApp_AllowsOwnedApp(t *testing.T) {
 	}
 	if rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+// --- submitFeedback --------------------------------------------------------
+
+func newFeedbackRequest(appID, body string) *http.Request {
+	r := httptest.NewRequest(http.MethodPost, "/console/apps/"+appID+"/feedback", strings.NewReader(body))
+	r.SetPathValue("appId", appID)
+	return r
+}
+
+// TestSubmitFeedback_PublishesEventWhenEventsIsSet confirms a valid
+// submitFeedback stores the message rather than publishing an event: the
+// rule that once consumed "feedback.submitted" is gone, so a publish would
+// feed nothing. These cover the handler's own responsibilities — the store
+// itself is exercised in internal/feedback's integration tests.
+//
+// A Handler with no Feedback store must refuse rather than accept: replying
+// 204 to a message it cannot keep would tell the writer their feedback
+// landed when it did not.
+func TestSubmitFeedback_WithoutAStoreRefuses(t *testing.T) {
+	h := &Handler{}
+	user := &session.User{ID: 1}
+
+	rec := httptest.NewRecorder()
+	h.submitFeedback(rec, newFeedbackRequest("my-app", `{"message":"hello"}`), user)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want %d — accepting a message with nowhere to store it is worse than saying so",
+			rec.Code, http.StatusServiceUnavailable)
+	}
+}
+
+// A malformed body is rejected before the store is consulted, so this holds
+// with no store wired at all.
+func TestSubmitFeedback_RejectsMalformedBody(t *testing.T) {
+	h := &Handler{}
+	user := &session.User{ID: 1}
+
+	rec := httptest.NewRecorder()
+	h.submitFeedback(rec, newFeedbackRequest("my-app", `not json`), user)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 }

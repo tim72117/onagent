@@ -31,7 +31,11 @@ func openTestRegistry(t *testing.T) *Registry {
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v)", *backendDispatchDSN, err)
 	}
-	t.Cleanup(func() { if sqlDB, err := conn.DB(); err == nil { sqlDB.Close() } })
+	t.Cleanup(func() {
+		if sqlDB, err := conn.DB(); err == nil {
+			sqlDB.Close()
+		}
+	})
 
 	reg, err := NewRegistry(conn)
 	if err != nil {

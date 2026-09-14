@@ -164,7 +164,7 @@ func TestFlush_IsANoOp(t *testing.T) {
 }
 
 // TestForApp_LoadDoesNotCrossAppBoundary is the actual security property
-// docs/sessionstore-architecture-review-2026-08-14.md's #1/#3 exist to fix:
+// docs/refactor-sessionstore-architecture-review-2026-08-14.md's #1/#3 exist to fix:
 // two different apps' scoped stores, given the exact same sessionID, must
 // never see each other's history — even a caller with no valid SessionID
 // (want.go's sessionKeyFor "" fallback, shared by every such caller) is

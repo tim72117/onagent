@@ -3,11 +3,10 @@
 //
 // The whole design is deliberately counter-free: usage is an append-only
 // ledger (usage_events), "how much has this user used this period" is a
-// COUNT(*) computed at read time, and the period boundary is DERIVED from
-// each user's subscriptions.started_at anchor rather than reset by a
-// scheduled job. That removes the reset-boundary race a mutable running
-// counter would otherwise have to guard against — see
-// docs/subscription-usage-quota-design.md sections 2 and 3.
+// SUM over that ledger computed at read time, and the period boundary is
+// DERIVED from each user's subscriptions.started_at anchor rather than reset
+// by a scheduled job. That removes the reset-boundary race a mutable running
+// counter would otherwise have to guard against.
 //
 // Attribution key is the app_id (already carried on every inference call as
 // inference.Request.AppID); a user's usage is the sum across every app they
@@ -53,7 +52,6 @@ type userRow struct {
 }
 
 func (userRow) TableName() string { return "users" }
-
 
 // standingScanRow is the shared Scan() target for StandingFor/ownerStanding
 // — both run a COALESCE'd users/apps + subscriptions join and only differ

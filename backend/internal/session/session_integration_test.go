@@ -36,7 +36,11 @@ func TestRegisterLoginSessionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v)", *dsn, err)
 	}
-	defer func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } }()
+	defer func() {
+		if sqlDB, err := database.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
 	sqlDB, _ := database.DB()
 	conn := sqlDB
 
@@ -170,7 +174,11 @@ func TestLoginOrCreateWithGoogle_NewAccount(t *testing.T) {
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v)", *dsn, err)
 	}
-	defer func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } }()
+	defer func() {
+		if sqlDB, err := database.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
 	sqlDB, _ := database.DB()
 	conn := sqlDB
 
@@ -243,7 +251,11 @@ func TestLoginOrCreateWithGoogle_ReturningUser(t *testing.T) {
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v)", *dsn, err)
 	}
-	defer func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } }()
+	defer func() {
+		if sqlDB, err := database.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
 	sqlDB, _ := database.DB()
 	conn := sqlDB
 
@@ -305,7 +317,11 @@ func TestLoginOrCreateWithGoogle_LinksToExistingPasswordAccount(t *testing.T) {
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v)", *dsn, err)
 	}
-	defer func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } }()
+	defer func() {
+		if sqlDB, err := database.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
 	sqlDB, _ := database.DB()
 	conn := sqlDB
 
@@ -382,7 +398,11 @@ func TestLoginOrCreateWithGoogle_InvalidEmail(t *testing.T) {
 	if err != nil {
 		t.Skipf("no reachable Postgres at %s (%v)", *dsn, err)
 	}
-	defer func() { if sqlDB, err := database.DB(); err == nil { sqlDB.Close() } }()
+	defer func() {
+		if sqlDB, err := database.DB(); err == nil {
+			sqlDB.Close()
+		}
+	}()
 
 	store := New(database, false)
 

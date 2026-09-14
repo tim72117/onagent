@@ -29,13 +29,13 @@
   <title>費用方案 — onagent</title>
   <meta
     name="description"
-    content="onagent 的 Free 方案：App 數量無上限，每月提供少量測試用量，不需要信用卡。"
+    content="onagent 定價：Free 方案 1 個 app、5 個工具、每月少量測試用量；Builder 免費一個月、1,000 個 prompt，實際測試並回饋即可換取；Starter 每月 $39、5,000 個 prompt。"
   />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="費用方案 — onagent" />
   <meta
     property="og:description"
-    content="onagent 的 Free 方案：App 數量無上限，每月提供少量測試用量，不需要信用卡。"
+    content="onagent 定價：Free 方案 1 個 app、5 個工具、每月少量測試用量；Builder 免費一個月、1,000 個 prompt，實際測試並回饋即可換取；Starter 每月 $39、5,000 個 prompt。"
   />
   <meta property="og:url" content="https://onagent.shuttle.tools/zh-tw/pricing/" />
   <meta property="og:locale" content="zh_TW" />
@@ -43,7 +43,7 @@
   <meta name="twitter:title" content="費用方案 — onagent" />
   <meta
     name="twitter:description"
-    content="onagent 的 Free 方案：App 數量無上限，每月提供少量測試用量，不需要信用卡。"
+    content="onagent 定價：Free 方案 1 個 app、5 個工具、每月少量測試用量；Builder 免費一個月、1,000 個 prompt，實際測試並回饋即可換取；Starter 每月 $39、5,000 個 prompt。"
   />
   <style>
     :root {
@@ -135,22 +135,39 @@
     .head p { color: var(--text-2); font-size: 17px; line-height: 1.75; }
 
     .plans {
-      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px;
-      max-width: 780px; margin: 0 auto;
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px;
+      max-width: 1080px; margin: 0 auto;
     }
+    /* Column layout so the CTA can be pinned to the bottom regardless of how
+       much copy sits above it — grid already equalises the cards' heights,
+       but without this the buttons float at three different offsets. */
     .plan {
       position: relative;
+      display: flex; flex-direction: column;
       background: linear-gradient(180deg, var(--panel) 0%, var(--bg-2) 100%);
       border: 1px solid rgba(201,162,75,0.32); border-radius: 20px;
       padding: 40px 32px; box-shadow: var(--shadow-glow);
     }
+    /* 中間方案是我們希望人選的那張，用亮一點的邊框加上浮起兩個訊號標示；
+       不另外換底色，以免跟其他兩張打架。 */
+    .plan.featured { border-color: rgba(201,162,75,0.55); transform: translateY(-8px); }
+    .plan.featured .soon-badge { background: var(--accent-soft); border-color: rgba(201,162,75,0.45); color: var(--accent-2); }
+    @media (max-width: 980px) { .plan.featured { transform: none; } }
+
     .plan-name { font-size: 13px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent-2); margin-bottom: 10px; }
     .plan-price { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
     .plan-price .num { font-size: 3rem; font-weight: 800; letter-spacing: -0.02em; }
     .plan-price .per { color: var(--text-3); font-size: 14px; }
+    /* The struck-through figure is what this allowance would cost on a paid
+       plan — it prices the feedback, so "free" reads as a real trade rather
+       than as the plan being worth nothing. Kept small and dim so it never
+       competes with the $0 it qualifies. */
+    .plan-price .was { color: var(--text-3); font-size: 13px; text-decoration: line-through; text-decoration-thickness: 1px; opacity: 0.75; }
     .plan-note { color: var(--text-2); font-size: 14.5px; margin-bottom: 28px; }
     .plan hr { border: none; border-top: 1px solid var(--border-soft); margin: 0 0 24px; }
     .plan ul { display: flex; flex-direction: column; gap: 13px; margin-bottom: 30px; }
+    /* Soaks up the leftover height so the button lands on the bottom edge. */
+    .plan .btn { margin-top: auto; }
     .plan li { display: flex; align-items: flex-start; gap: 10px; font-size: 14.5px; color: var(--text-2); line-height: 1.5; }
     .plan li svg { flex: none; width: 17px; height: 17px; margin-top: 2px; stroke: var(--ok); stroke-width: 2.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
     .plan .btn { width: 100%; }
@@ -182,6 +199,10 @@
     .foot-bottom { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
     .foot-bottom a { color: var(--text-3); }
     .foot-bottom a:hover { color: var(--text-2); }
+
+    @media (max-width: 980px) {
+      .plans { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 740px; }
+    }
 
     @media (max-width: 640px) {
       .topbar-links a:not(.lang-switch) { display: none; }
@@ -217,34 +238,55 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       <div class="plans">
         <div class="plan">
           <div class="plan-name">Free</div>
-          <div class="plan-price"><span class="num">$0</span><span class="per">/ 月</span></div>
+          <div class="plan-price"><span class="num">$0</span><span class="per">USD / 月</span></div>
           <p class="plan-note">不需要信用卡。</p>
           <hr />
           <ul>
-            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>App 數量無上限</li>
-            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>每月提供少量測試用量，帳號底下所有 app 共用</li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>1 個 app，最多 5 個工具</span></li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>每月提供少量測試用量，帳號底下所有 app 共用</span></li>
             <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>完整 console 功能——app、工具、Playground</li>
             <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><code style="font-family:var(--mono);color:var(--accent-2)">onagent</code> CLI + Agent Bridge SDK</li>
           </ul>
           <a class="btn btn-primary btn-lg" href="#" data-console>試試看 →</a>
         </div>
 
+        <!-- Builder 介於 Free 與 Starter 之間：用「實際測試並回饋」換取
+             付費方案等級的額度，而不是付錢。費用寫在價格欄、不藏在功能列表裡，
+             讓人在註冊前就清楚要付出什麼。 -->
+        <div class="plan featured">
+          <span class="soon-badge">免費一個月</span>
+          <div class="plan-name">Builder</div>
+          <div class="plan-price"><span class="num">$0</span><span class="was">$7.80</span><span class="per">USD · 為期一個月</span></div>
+          <p class="plan-note">
+            <strong>實際測試過，然後給我們回饋。</strong>
+            先填一份簡短的表單，測試完再回來說說用起來如何。
+          </p>
+          <hr />
+          <ul>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>這個月 <strong>1,000 個 prompt</strong>，帳號底下所有 app 共用</span></li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>3 個 app，每個最多 5 個工具</span></li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>啟用後為期一個月，到期自動回到 Free</span></li>
+          </ul>
+          <a class="btn btn-primary btn-lg" href="#" data-console>開始做 →</a>
+        </div>
+
         <div class="plan disabled">
           <span class="soon-badge">即將推出</span>
           <div class="plan-name">Starter</div>
-          <div class="plan-price"><span class="num">—</span></div>
-          <p class="plan-note">價格尚未確定。</p>
+          <div class="plan-price"><span class="num">$39</span><span class="per">USD / 月</span></div>
+          <p class="plan-note">月繳。</p>
           <hr />
           <ul>
-            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>比 Free 更高的每月用量額度</li>
-            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>包含 Free 的所有功能，外加優先支援</li>
-            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>詳細內容仍在規劃中</li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><strong>每月 5,000 個 prompt</strong>，帳號底下所有 app 共用</span></li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>App 數量無上限，每個最多 10 個工具</span></li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>優先支援</span></li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>隨時可取消，沒有年約</span></li>
           </ul>
           <button class="btn btn-lg" disabled>尚未開放</button>
         </div>
       </div>
 
-      <p class="foot-note">額度用完會怎樣？Session 進行中用完的話連線不會斷，只是暫時不再回應 prompt，等下個計費週期開始就恢復；但額度用完之後才**新開**的連線，會在連線當下就被擋下來。</p>
+      <p class="foot-note">額度用完會怎樣？Session 進行中用完的話連線不會斷，只是暫時不再回應 prompt，等下個計費週期開始就恢復；但額度用完之後才<strong>新開</strong>的連線，會在連線當下就被擋下來。</p>
     </div>
   </main>
 

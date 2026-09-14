@@ -29,20 +29,20 @@
   <title>Pricing — onagent</title>
   <meta
     name="description"
-    content="onagent's Free plan: unlimited apps, a small monthly usage allowance for testing, no credit card required."
+    content="onagent pricing: Free with 1 app, 5 tools and a small monthly allowance, Builder free for a month with 1,000 prompts in exchange for testing it and sending feedback, and Starter at $39/month for 5,000 prompts."
   />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Pricing — onagent" />
   <meta
     property="og:description"
-    content="onagent's Free plan: unlimited apps, a small monthly usage allowance for testing, no credit card required."
+    content="onagent pricing: Free with 1 app, 5 tools and a small monthly allowance, Builder free for a month with 1,000 prompts in exchange for testing it and sending feedback, and Starter at $39/month for 5,000 prompts."
   />
   <meta property="og:url" content="https://onagent.shuttle.tools/pricing/" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="Pricing — onagent" />
   <meta
     name="twitter:description"
-    content="onagent's Free plan: unlimited apps, a small monthly usage allowance for testing, no credit card required."
+    content="onagent pricing: Free with 1 app, 5 tools and a small monthly allowance, Builder free for a month with 1,000 prompts in exchange for testing it and sending feedback, and Starter at $39/month for 5,000 prompts."
   />
   <style>
     :root {
@@ -134,22 +134,40 @@
     .head p { color: var(--text-2); font-size: 17px; line-height: 1.65; }
 
     .plans {
-      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px;
-      max-width: 780px; margin: 0 auto;
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px;
+      max-width: 1080px; margin: 0 auto;
     }
+    /* Column layout so the CTA can be pinned to the bottom regardless of how
+       much copy sits above it — grid already equalises the cards' heights,
+       but without this the buttons float at three different offsets. */
     .plan {
       position: relative;
+      display: flex; flex-direction: column;
       background: linear-gradient(180deg, var(--panel) 0%, var(--bg-2) 100%);
       border: 1px solid rgba(201,162,75,0.32); border-radius: 20px;
       padding: 40px 32px; box-shadow: var(--shadow-glow);
     }
+    /* The middle plan is the one we want people to take, so it carries a
+       brighter border and a lift; kept to those two cues rather than a
+       different background, which would fight the other two cards. */
+    .plan.featured { border-color: rgba(201,162,75,0.55); transform: translateY(-8px); }
+    .plan.featured .soon-badge { background: var(--accent-soft); border-color: rgba(201,162,75,0.45); color: var(--accent-2); }
+    @media (max-width: 980px) { .plan.featured { transform: none; } }
+
     .plan-name { font-size: 13px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent-2); margin-bottom: 10px; }
     .plan-price { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
     .plan-price .num { font-size: 3rem; font-weight: 800; letter-spacing: -0.02em; }
     .plan-price .per { color: var(--text-3); font-size: 14px; }
+    /* The struck-through figure is what this allowance would cost on a paid
+       plan — it prices the feedback, so "free" reads as a real trade rather
+       than as the plan being worth nothing. Kept small and dim so it never
+       competes with the $0 it qualifies. */
+    .plan-price .was { color: var(--text-3); font-size: 13px; text-decoration: line-through; text-decoration-thickness: 1px; opacity: 0.75; }
     .plan-note { color: var(--text-2); font-size: 14.5px; margin-bottom: 28px; }
     .plan hr { border: none; border-top: 1px solid var(--border-soft); margin: 0 0 24px; }
     .plan ul { display: flex; flex-direction: column; gap: 13px; margin-bottom: 30px; }
+    /* Soaks up the leftover height so the button lands on the bottom edge. */
+    .plan .btn { margin-top: auto; }
     .plan li { display: flex; align-items: flex-start; gap: 10px; font-size: 14.5px; color: var(--text-2); line-height: 1.5; }
     .plan li svg { flex: none; width: 17px; height: 17px; margin-top: 2px; stroke: var(--ok); stroke-width: 2.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
     .plan .btn { width: 100%; }
@@ -186,6 +204,10 @@
     .foot-bottom a { color: var(--text-3); }
     .foot-bottom a:hover { color: var(--text-2); }
 
+    @media (max-width: 980px) {
+      .plans { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 740px; }
+    }
+
     @media (max-width: 640px) {
       .topbar-links a:not(.lang-switch) { display: none; }
       .plans { grid-template-columns: 1fr; max-width: 460px; }
@@ -220,28 +242,51 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       <div class="plans">
         <div class="plan">
           <div class="plan-name">Free</div>
-          <div class="plan-price"><span class="num">$0</span><span class="per">/ month</span></div>
+          <div class="plan-price"><span class="num">$0</span><span class="per">USD / month</span></div>
           <p class="plan-note">No credit card required.</p>
           <hr />
           <ul>
-            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Unlimited apps</li>
-            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>A small monthly usage allowance for testing and evaluation, shared across all your apps</li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>1 app, up to 5 tools</span></li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>A small monthly usage allowance for testing and evaluation, shared across all your apps</span></li>
             <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Full console access — apps, tools, Playground</li>
             <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><code style="font-family:var(--mono);color:var(--accent-2)">onagent</code> CLI + Agent Bridge SDK</li>
           </ul>
           <a class="btn btn-primary btn-lg" href="#" data-console>Try it out →</a>
         </div>
 
+        <!-- Builder sits between Free and Starter: the same allowance a paid
+             plan would give, earned by doing the thing we most need early on
+             (actually testing it and telling us how it went) rather than
+             by paying. The "price" is stated in the price slot, not buried in
+             the feature list, so what it costs is unambiguous before signup. -->
+        <div class="plan featured">
+          <span class="soon-badge">One month, free</span>
+          <div class="plan-name">Builder</div>
+          <div class="plan-price"><span class="num">$0</span><span class="was">$7.80</span><span class="per">USD · for one month</span></div>
+          <p class="plan-note">
+            <strong>Put it through a real test, then send us feedback.</strong>
+            A short form now, and how it went once you have tried it.
+          </p>
+          <hr />
+          <ul>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><strong>1,000 prompts</strong> for the month, shared across all your apps</span></li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>3 apps, up to 5 tools each</span></li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>Runs for one month from activation, then reverts to Free</span></li>
+          </ul>
+          <a class="btn btn-primary btn-lg" href="#" data-console>Start building →</a>
+        </div>
+
         <div class="plan disabled">
           <span class="soon-badge">Coming soon</span>
           <div class="plan-name">Starter</div>
-          <div class="plan-price"><span class="num">—</span></div>
-          <p class="plan-note">Pricing not finalized yet.</p>
+          <div class="plan-price"><span class="num">$39</span><span class="per">USD / month</span></div>
+          <p class="plan-note">Billed monthly.</p>
           <hr />
           <ul>
-            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>A higher monthly usage allowance than Free</li>
-            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Everything in Free, plus priority support</li>
-            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>Details are still being worked out</li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span><strong>5,000 prompts / month</strong>, shared across all your apps</span></li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>Unlimited apps, up to 10 tools each</span></li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>Priority support</span></li>
+            <li><svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg><span>Cancel any time; no annual commitment</span></li>
           </ul>
           <button class="btn btn-lg" disabled>Not yet available</button>
         </div>

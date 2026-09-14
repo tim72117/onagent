@@ -6,6 +6,37 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.5.8
+
+No breaking changes. Four new tables, six new endpoints; nothing existing
+removed or renamed.
+
+- Add an in-process event pipeline — `internal/events` (pub/sub),
+  `internal/notify` (rules), and the `notifications` / `rule_progress`
+  tables. Rules decide when someone should be told something; app creation
+  and console sessions are the event sources today. Notifications are
+  surfaced by `GET /console/notifications` and updated by
+  `PATCH /console/notifications/{id}`.
+
+- Add the Builder plan's first-stage form: `GET`/`PUT /console/use-case`
+  over a new `use_case_responses` table, reached from the welcome
+  notification. One row per user — re-submitting replaces, since this is a
+  statement of intent someone refines rather than a log.
+
+- Store console feedback instead of discarding it. `POST /console/apps/
+  {appId}/feedback` now writes to a new `feedback` table, append-only
+  because each message is its own thing somebody said. `app_id`/`user_id`
+  are `ON DELETE SET NULL`, so a message outlives the app it came from.
+
+- Length caps are counted in characters, not bytes, in both new stores. A
+  Traditional Chinese answer was previously refused at roughly a third of
+  the advertised limit, quoting a character count the writer could see was
+  wrong.
+
+- Both new stores separate caller mistakes from infrastructure failures
+  (`ErrInvalid`), so a database outage answers 500 rather than telling the
+  user their input was rejected — and stays visible in the 5xx rate.
+
 ## v0.5.7
 
 No breaking changes.

@@ -52,6 +52,24 @@ export interface CurrentUser {
   email: string
 }
 
+// Mirrors backend/internal/console.notificationResponse. appId rides along
+// on every row even though listNotifications already merges every owned
+// app's notifications into one combined list — it's what a future "open
+// the app this is about" action would key off, and the only place that
+// association survives once results from several apps are merged.
+export interface Notification {
+  id: number
+  appId: string
+  title: string
+  body: string
+  actionLabel?: string
+  actionTarget?: string
+  status: 'pending' | 'completed' | 'dismissed'
+  createdAt: string
+  readAt: string | null
+  completedAt: string | null
+}
+
 // Mirrors backend/internal/console.quotaResponse, itself named to match the
 // admin back-office's per-user shape (quota.UserSummary) — tier/limit/used
 // mean the same thing on both surfaces, just scoped to "me" here instead of
@@ -90,6 +108,24 @@ export interface Quota {
 // was also triggering the browser's Local Network Access permission
 // prompt, since a public page reaching for localhost looks identical to
 // an attack from the browser's perspective.
+// Mirrors backend/internal/usecase.Response. handledToday is optional for
+// the person answering, so it is always sent — as "" when skipped — rather
+// than omitted, which keeps the request shape fixed.
+export interface UseCaseAnswers {
+  domain: string
+  goal: string
+  handledToday: string
+}
+
+// Mirrors backend/internal/console.useCaseResponse. `answered` is what the
+// console reads to decide whether the welcome notification still has
+// anything to ask; an absent `response` alone could not distinguish
+// "never answered" from "answered with nothing".
+export interface UseCaseStatus {
+  answered: boolean
+  response?: UseCaseAnswers & { updatedAt: string }
+}
+
 export const BASE: string = import.meta.env.VITE_CONSOLE_API_URL ?? window.location.origin
 
 export class ApiError extends Error {
@@ -146,6 +182,15 @@ export const api = {
   me: (): Promise<CurrentUser> => request('GET', '/auth/me').then((r) => r.json()),
 
   getQuota: (): Promise<Quota> => request('GET', '/console/quota').then((r) => r.json()),
+
+  // Part A of the Builder flow (see UseCaseSheet.tsx). PUT, not POST: the
+  // resource is "this user's answer" — one per account, replaced on
+  // re-submission — so the call is idempotent and carries no id.
+  getUseCase: (): Promise<UseCaseStatus> =>
+    request('GET', '/console/use-case').then((r) => r.json()),
+
+  saveUseCase: (body: UseCaseAnswers): Promise<void> =>
+    request('PUT', '/console/use-case', body).then(() => undefined),
 
   listApps: (): Promise<AppSummary[]> => request('GET', '/console/apps').then((r) => r.json()),
 
@@ -212,4 +257,27 @@ export const api = {
 
   approveCliAuth: (sessionId: string): Promise<{ redirectUri: string }> =>
     request('POST', `/console/cli-auth/${id(sessionId)}/approve`).then((r) => r.json()),
+
+  // Not persisted server-side beyond publishing an event (see backend's
+  // submitFeedback) — there is no feedback inbox to read this back from.
+  submitFeedback: (appId: string, message: string, cardTitle: string): Promise<void> =>
+    request('POST', `/console/apps/${id(appId)}/feedback`, { message, cardTitle }).then(() => undefined),
+
+  // Combined across every app the caller owns — see backend's
+  // listNotifications for why this isn't per-app.
+  listNotifications: (): Promise<Notification[]> =>
+    request('GET', '/console/notifications').then((r) => r.json()),
+
+  // status: 'completed' (acted on the suggested next step) or 'dismissed'
+  // (closed without acting) — see Notification's own doc comment on why
+  // these, plus 'pending', are independent facts.
+  updateNotification: (notificationId: number, status: 'completed' | 'dismissed'): Promise<void> =>
+    request('PATCH', `/console/notifications/${id(String(notificationId))}`, { status }).then(() => undefined),
+
+  // Called once per page load (see App.tsx) — publishes "session.started"
+  // server-side, which feeds notify's catch_up_welcome Rule: a user who
+  // created their apps before any notify rule existed has no other event
+  // left to hang a one-time catch-up welcome notice on.
+  sessionStarted: (): Promise<void> =>
+    request('POST', '/console/session-started').then(() => undefined),
 }
