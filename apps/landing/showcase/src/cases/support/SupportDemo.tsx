@@ -246,16 +246,27 @@ type Entry = ToolCallEntry | ChatEntry
 
 let nextEntryId = 0
 
+// initialLang reads ?lang= once, at module scope, so the first render and
+// the opening greeting already agree with it — reading it in an effect would
+// show English for a frame and then swap.
+//
+// Still not auto-detected from the browser's locale: the language is either
+// asked for in the link or chosen with the toggle, the same explicit-choice
+// approach src/marketing-demo/widget.js's own lang param takes. Anything
+// other than "zh" falls back to English rather than erroring, since this
+// value arrives from ad sitelinks and shared URLs.
+function initialLang(): Lang {
+  if (typeof window === 'undefined') return 'en'
+  return new URLSearchParams(window.location.search).get('lang') === 'zh' ? 'zh' : 'en'
+}
+
 export function SupportDemo() {
-  // Defaults to English; toggled via the phone-frame's own language
-  // button (see the JSX below) — a page-load-time-only choice (not
-  // synced with the browser's locale or the rest of showcase), the
-  // same "explicit toggle, not auto-detected" approach
-  // src/marketing-demo/widget.js's own lang param uses.
-  const [lang, setLang] = useState<Lang>('en')
+  // Set from the URL at page load, then toggled via the phone-frame's own
+  // language button (see the JSX below).
+  const [lang, setLang] = useState<Lang>(initialLang)
   const t = STRINGS[lang]
-  const [entries, setEntries] = useState<Entry[]>([
-    { kind: 'assistant', id: nextEntryId++, text: STRINGS.en.greeting },
+  const [entries, setEntries] = useState<Entry[]>(() => [
+    { kind: 'assistant', id: nextEntryId++, text: STRINGS[initialLang()].greeting },
   ])
   // Re-translates the greeting in place when the visitor switches
   // language — but only while it's still the sole, untouched entry (a

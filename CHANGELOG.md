@@ -6,6 +6,25 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.5.9
+
+No breaking changes.
+
+- Fix `schema_check.go`'s drift check silently skipping six tables
+  (`identities`, `agent_experiences`, `notifications`, `rule_progress`,
+  `use_case_responses`, `feedback`) and the `apps.max_prompt_length`
+  column — `GET /admin/api/schema-check` was reporting `ok: true` while
+  never actually checking them against `schema.sql`.
+
+- Landing page copy: reworded the homepage hero and footer taglines
+  (English and Traditional Chinese) around "Agentic API" positioning, and
+  temporarily hid the Builder plan card on `/pricing/` (still reachable by
+  existing Builder users; the signup flow itself is untouched).
+
+- The `/showcase/support` demo now reads `?lang=zh` from the URL at load,
+  so a shared or ad link can land a visitor directly on the Chinese
+  version instead of always defaulting to English.
+
 ## v0.5.8
 
 No breaking changes. Four new tables, six new endpoints; nothing existing

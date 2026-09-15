@@ -80,13 +80,14 @@ type cliAuthSessionsFull struct {
 func (cliAuthSessionsFull) TableName() string { return "cli_auth_sessions" }
 
 type appsFull struct {
-	AppID          string         `gorm:"column:app_id;primaryKey"`
-	OwnerID        *int64         `gorm:"column:owner_id"`
-	APIKeyHash     *string        `gorm:"column:api_key_hash"`
-	AllowedOrigins pq.StringArray `gorm:"column:allowed_origins;type:text[]"`
-	Thought        *string        `gorm:"column:thought"`
-	Public         bool           `gorm:"column:public"`
-	CreatedAt      time.Time      `gorm:"column:created_at"`
+	AppID           string         `gorm:"column:app_id;primaryKey"`
+	OwnerID         *int64         `gorm:"column:owner_id"`
+	APIKeyHash      *string        `gorm:"column:api_key_hash"`
+	AllowedOrigins  pq.StringArray `gorm:"column:allowed_origins;type:text[]"`
+	Thought         *string        `gorm:"column:thought"`
+	MaxPromptLength *int           `gorm:"column:max_prompt_length"`
+	Public          bool           `gorm:"column:public"`
+	CreatedAt       time.Time      `gorm:"column:created_at"`
 }
 
 func (appsFull) TableName() string { return "apps" }
@@ -130,6 +131,79 @@ type usageEventsFull struct {
 
 func (usageEventsFull) TableName() string { return "usage_events" }
 
+type identitiesFull struct {
+	ID             int64     `gorm:"column:id;primaryKey"`
+	UserID         int64     `gorm:"column:user_id"`
+	Provider       string    `gorm:"column:provider"`
+	ProviderUserID string    `gorm:"column:provider_user_id"`
+	ProviderEmail  *string   `gorm:"column:provider_email"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
+}
+
+func (identitiesFull) TableName() string { return "identities" }
+
+type agentExperiencesFull struct {
+	ID        int64     `gorm:"column:id;primaryKey"`
+	SessionID string    `gorm:"column:session_id"`
+	AppID     string    `gorm:"column:app_id"`
+	ExpID     string    `gorm:"column:exp_id"`
+	Data      string    `gorm:"column:data"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+func (agentExperiencesFull) TableName() string { return "agent_experiences" }
+
+type notificationsFull struct {
+	ID           int64      `gorm:"column:id;primaryKey"`
+	SubjectID    string     `gorm:"column:subject_id"`
+	RuleName     string     `gorm:"column:rule_name"`
+	Title        string     `gorm:"column:title"`
+	Body         string     `gorm:"column:body"`
+	ActionLabel  *string    `gorm:"column:action_label"`
+	ActionTarget *string    `gorm:"column:action_target"`
+	Status       string     `gorm:"column:status"`
+	CreatedAt    time.Time  `gorm:"column:created_at"`
+	ReadAt       *time.Time `gorm:"column:read_at"`
+	CompletedAt  *time.Time `gorm:"column:completed_at"`
+}
+
+func (notificationsFull) TableName() string { return "notifications" }
+
+// rule_progress has a COMPOSITE primary key, the only table here that does.
+// Both halves carry primaryKey so db.CheckTable compares the whole key
+// rather than half of it.
+type ruleProgressFull struct {
+	SubjectID  string     `gorm:"column:subject_id;primaryKey"`
+	RuleName   string     `gorm:"column:rule_name;primaryKey"`
+	ADoneAt    *time.Time `gorm:"column:a_done_at"`
+	BDoneAt    *time.Time `gorm:"column:b_done_at"`
+	NotifiedAt *time.Time `gorm:"column:notified_at"`
+}
+
+func (ruleProgressFull) TableName() string { return "rule_progress" }
+
+type useCaseResponsesFull struct {
+	UserID       int64     `gorm:"column:user_id;primaryKey"`
+	Domain       string    `gorm:"column:domain"`
+	Goal         string    `gorm:"column:goal"`
+	HandledToday *string   `gorm:"column:handled_today"`
+	CreatedAt    time.Time `gorm:"column:created_at"`
+	UpdatedAt    time.Time `gorm:"column:updated_at"`
+}
+
+func (useCaseResponsesFull) TableName() string { return "use_case_responses" }
+
+type feedbackFull struct {
+	ID        int64     `gorm:"column:id;primaryKey"`
+	AppID     *string   `gorm:"column:app_id"`
+	UserID    *int64    `gorm:"column:user_id"`
+	CardTitle *string   `gorm:"column:card_title"`
+	Message   string    `gorm:"column:message"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+func (feedbackFull) TableName() string { return "feedback" }
+
 type adminUsersFull struct {
 	ID           int64     `gorm:"column:id;primaryKey"`
 	Email        string    `gorm:"column:email"`
@@ -153,16 +227,22 @@ func (adminSessionsFull) TableName() string { return "admin_sessions" }
 // schema.sql gains one, or the new table silently drops out of this check.
 func schemaCheckTargets() map[string][]any {
 	return map[string][]any{
-		"users":             {&usersFull{}},
-		"sessions":          {&sessionsFull{}},
-		"user_tokens":       {&userTokensFull{}},
-		"cli_auth_sessions": {&cliAuthSessionsFull{}},
-		"apps":              {&appsFull{}},
-		"tools":             {&toolsFull{}},
-		"subscriptions":     {&subscriptionsFull{}},
-		"usage_events":      {&usageEventsFull{}},
-		"admin_users":       {&adminUsersFull{}},
-		"admin_sessions":    {&adminSessionsFull{}},
+		"users":              {&usersFull{}},
+		"sessions":           {&sessionsFull{}},
+		"user_tokens":        {&userTokensFull{}},
+		"cli_auth_sessions":  {&cliAuthSessionsFull{}},
+		"apps":               {&appsFull{}},
+		"tools":              {&toolsFull{}},
+		"subscriptions":      {&subscriptionsFull{}},
+		"usage_events":       {&usageEventsFull{}},
+		"admin_users":        {&adminUsersFull{}},
+		"admin_sessions":     {&adminSessionsFull{}},
+		"identities":         {&identitiesFull{}},
+		"agent_experiences":  {&agentExperiencesFull{}},
+		"notifications":      {&notificationsFull{}},
+		"rule_progress":      {&ruleProgressFull{}},
+		"use_case_responses": {&useCaseResponsesFull{}},
+		"feedback":           {&feedbackFull{}},
 	}
 }
 

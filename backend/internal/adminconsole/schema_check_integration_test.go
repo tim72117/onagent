@@ -98,9 +98,15 @@ func TestSchemaCheckReportsOkAgainstTheRealSchema(t *testing.T) {
 	if !got.Ok {
 		t.Errorf("schema-check ok = false, want true against the real schema")
 	}
+	// Listed by hand rather than derived from the checker's own table map:
+	// deriving it would make this assertion vacuous — a table silently
+	// dropped from that map would take the expectation with it. Adding a
+	// table means adding it here too, which is the point.
 	wantTables := []string{
 		"users", "sessions", "user_tokens", "cli_auth_sessions", "apps",
 		"tools", "subscriptions", "usage_events", "admin_users", "admin_sessions",
+		"identities", "agent_experiences", "notifications", "rule_progress",
+		"use_case_responses", "feedback",
 	}
 	if len(got.Tables) != len(wantTables) {
 		t.Fatalf("schema-check returned %d tables, want %d: %+v", len(got.Tables), len(wantTables), got.Tables)
