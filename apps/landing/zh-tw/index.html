@@ -350,7 +350,36 @@
       background: linear-gradient(180deg, var(--panel) 0%, var(--bg-2) 100%); overflow: hidden;
       transition: transform 0.2s, border-color 0.2s;
     }
+    /* 改成卡片自己的外框在呼吸，這才是標示「這張是活的、可以進去」的東西，
+       而且不需要多一種訊號色——它用的就是整頁既有的金色。幅度壓低、週期放慢
+       到 3.6 秒是刻意的：在餘光裡讀得出來，又不會變成跟文案搶注意力的閃爍。 */
+    .case-live { animation: caseBreathe 3.6s ease-in-out infinite; }
+    /* 卡片底下那片暖色散光，就是 hero 終端機用的同一組 --shadow-glow——但寫在
+       兩個 keyframe 端點裡，而不是單獨設在 .case 上：動畫算出來的 box-shadow
+       會蓋過靜態規則，寫在外面的話光暈只會在循環之間短暫出現，看起來像閃爍。
+       所以呼吸改變的是光暈的強弱，而不是把它開開關關。 */
+    @keyframes caseBreathe {
+      0%, 100% {
+        border-color: var(--border-soft);
+        box-shadow: 0 0 0 1px rgba(201,162,75,0.10), 0 24px 70px -28px rgba(201,162,75,0.26);
+      }
+      50% {
+        border-color: rgba(201,162,75,0.40);
+        box-shadow: 0 0 0 1px rgba(201,162,75,0.24), 0 30px 90px -26px rgba(201,162,75,0.42);
+      }
+    }
+    /* hover 必須蓋過動畫——動畫的計算值本來就會贏過一般規則，所以這裡要把它
+       暫停（而不是只在這裡設 border-color），hover 的回饋才真的顯示得出來。 */
+    .case-live:hover { animation-play-state: paused; }
     .case:hover { transform: translateY(-4px); border-color: rgba(201,162,75,0.35); }
+    @media (prefers-reduced-motion: reduce) {
+      /* 關掉動畫，但光暈本身不是動態效果——固定在呼吸週期的中點，讓這張卡
+         仍然看得出是「活的」那一張。 */
+      .case-live {
+        animation: none; border-color: rgba(201,162,75,0.28);
+        box-shadow: 0 0 0 1px rgba(201,162,75,0.16), 0 26px 78px -27px rgba(201,162,75,0.32);
+      }
+    }
     /* Capped and centered rather than stretching to the full card width —
        at this card's full width (now the only one, spanning the section)
        both columns would otherwise grow uncomfortably wide with no
@@ -362,7 +391,11 @@
        sits on its own row below the illustration+text row, centered
        rather than stretched — one action for the whole card, not tied to
        either column's width. */
-    .case-try-row { grid-column: 1 / -1; display: flex; justify-content: center; margin-top: 28px; }
+    .case-try-row { grid-column: 1 / -1; display: flex; justify-content: center; gap: 14px; margin-top: 28px; }
+    /* 與英文版同步：這顆連到 /showcase/ 的按鈕之前中文版沒有，所以這條和
+       底下 760px 的堆疊規則原本都缺。見 .case-try-row 的 max-width:760px
+       規則——窄螢幕改成上下堆疊，不要兩顆擠同一列。 */
+    .case-showcase-link { display: inline-flex; }
     /* Fixed width, not 100% — .collage's children (the app window, the
        overlapping chart card, the floating bubbles) are all absolutely
        positioned in real pixels, so letting this stretch to whatever
@@ -374,6 +407,13 @@
     @media (max-width: 760px) {
       .case-split { grid-template-columns: 1fr; justify-items: center; }
       .case-illustration, .case-content { width: 100%; max-width: 380px; }
+      /* 兩顆全寬按鈕（「體驗看看」+「更多線上體驗」）在手機寬度並排會擠，
+         改成上下堆疊。 */
+      .case-try-row { flex-direction: column; }
+      .case-try-btn { width: 100%; }
+      /* 不再需要調整排序：主要動作現在就放在 .case-content 裡、緊接在範例
+         問句下方，手機版塌成單欄時本來就已經在很上面。底下的 .case-try-row
+         只剩 showcase 連結，那確實是次要的，排在最後剛好。 */
     }
     /* Layered product-illustration collage: a soft gradient backdrop
        holding a main "app window" (sidebar + KPIs + trend chart), a
@@ -428,9 +468,38 @@
     .b-ring { width: 22px; height: 22px; left: 44%; bottom: -10px; border: 3px solid var(--accent-2); background: transparent; box-shadow: none; }
     .b-mini { width: 26px; height: 26px; left: -8px; top: 40px; background: #fff; color: var(--accent); }
     .b-mini svg { width: 13px; height: 13px; }
+    /* 刻意維持靜態：「這張是活的」這個提示由卡片自己的呼吸外框（上面的
+       .case-live）承擔，徽章本身不帶任何動態。若徽章也會動，等於同一件事
+       有兩個互相競爭的訊號。 */
     .case-badge {
       display: inline-block; font-family: var(--mono); font-size: 12px; color: var(--accent-2);
       background: var(--accent-soft); border: 1px solid rgba(201,162,75,0.28); padding: 4px 10px; border-radius: 7px; margin-bottom: 16px;
+    }
+
+    /* 插圖是整張卡最大的元素，而訪客本能上就會想點圖，所以把它接上開啟 demo，
+       不再只是純裝飾。hover／focus 時壓暗並浮出播放提示，這才是真正告訴第一次
+       來的訪客「這張卡可以進去」的東西——在此之前，唯一的訊號是一顆在手機上
+       遠在螢幕外的按鈕。 */
+    .case-illustration-btn {
+      display: block; width: 100%; padding: 0; border: 0; background: none;
+      cursor: pointer; border-radius: 16px; position: relative;
+    }
+    .case-illustration-btn .collage { transition: transform 0.25s, filter 0.25s; }
+    .case-illustration-btn:hover .collage,
+    .case-illustration-btn:focus-visible .collage { transform: scale(1.02); filter: brightness(0.62); }
+    .case-play {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      gap: 9px; opacity: 0; transition: opacity 0.25s; pointer-events: none;
+      font-size: 15px; font-weight: 700; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    }
+    .case-illustration-btn:hover .case-play,
+    .case-illustration-btn:focus-visible .case-play { opacity: 1; }
+    .case-play svg { width: 34px; height: 34px; fill: #fff; filter: drop-shadow(0 2px 10px rgba(0,0,0,0.5)); }
+    /* 觸控沒有 hover，提示在手機上永遠不會出現——改成持續顯示，但強度調低，
+       讓它讀起來像疊在插圖上的提示，而不是蓋住插圖的遮罩。 */
+    @media (hover: none) {
+      .case-play { opacity: 1; }
+      .case-illustration-btn .collage { filter: brightness(0.72); }
     }
     .case h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
     .case p { color: var(--text-2); font-size: 15px; line-height: 1.6; margin-bottom: 18px; }
@@ -507,6 +576,10 @@
        bundle (mountMarketingDemo(inner, { lang: 'zh' }) below), so the
        styling has to match regardless of which page it's opened from. */
     .case-try-btn { width: auto; min-width: 260px; padding: 15px 28px; font-size: 16.5px; }
+    /* 卡內的 CTA 位在較窄的文字欄裡，共用的 .case-try-btn 那個 260px 最小寬度
+       在欄位變窄時會溢出——所以這裡取消該下限，改成撐滿欄寬。 */
+    .case-content-cta { margin-top: 18px; }
+    .case-content-cta .case-try-btn { min-width: 0; width: 100%; }
     .md-modal-backdrop {
       position: fixed; inset: 0; z-index: 100;
       background: rgba(28, 25, 23, 0.72); backdrop-filter: blur(3px);
@@ -614,7 +687,12 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         <div class="nav-right">
           <nav class="nav-links">
             <a href="#features">功能</a>
-            <a href="#cases">範例</a>
+            <!-- 指向真正的 /showcase/ 頁面，不是底下的 #cases 區塊：
+                 「線上體驗」承諾的是現在就能在瀏覽器裡動手玩，而那個東西
+                 只存在於 showcase（兩個會真的連線、真的呼叫 tool 的 demo）。
+                 #cases 區塊仍可從 footer 的「範例應用」進入，那段靜態的
+                 「能做什麼」文案本來就該叫範例。 -->
+            <a href="/showcase/">線上體驗</a>
             <a href="/docs/">文件</a>
             <a href="/zh-tw/pricing/">費用方案</a>
             <a class="lang-switch" href="/">EN</a>
@@ -645,7 +723,11 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
             透過 Agentic API 輕鬆串接，讓使用者直接用自然語言執行任務。
           </p>
           <div class="hero-cta">
-            <a class="btn btn-primary btn-lg" href="#" data-console>開啟 Console</a>
+            <!-- 刻意不加 data-console：那個屬性會讓檔案底部的 script 把 href
+                 覆寫成 CONSOLE_URL，變成掛著「線上體驗」卻連到 /app。Console
+                 仍可從導覽列與頁尾 CTA 進入——hero 這顆的任務是讓第一次來的
+                 訪客先看到東西會動，而不是先要他登入。 -->
+            <a class="btn btn-primary btn-lg" href="/showcase/">線上體驗 →</a>
           </div>
         </div>
 
@@ -709,24 +791,24 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       <div class="wrap">
         <div class="sec-head reveal">
           <div class="sec-tag">Why onagent</div>
-          <h2>把 AI 接進介面，該有的都幫你準備好</h2>
-          <p>從 LLM 基礎設施、AI 操作介面，到能對外服務真實客戶，一次到位。</p>
+          <h2>把 AI 接進介面，都幫你準備好了</h2>
+          <p>從定義工具到對外服務真實客戶。</p>
         </div>
         <div class="features">
           <div class="feature reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M4 8h10M8 4v4M4 16h10M8 12v4"/><circle cx="18" cy="8" r="2"/><circle cx="18" cy="16" r="2"/></svg></div>
-            <h3>免建 LLM 基礎設施</h3>
-            <p>不用自己選模型、串 API、處理重試與逾時——onagent 把 LLM 推論的基礎設施準備好，你只要定義工具。</p>
+            <h3>幾分鐘就能上線</h3>
+            <p>建立 agent、定義工具，就能開始用。</p>
           </div>
           <div class="feature reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z"/></svg></div>
             <h3>AI 直接操作你的介面</h3>
-            <p>tool call 會派發到你註冊的 handler：填表單、跳頁、勾選、點按鈕——不只是回一段文字，而是真的動起來。</p>
+            <p>填寫表單、檢索資料、介面互動——不只是回一段文字，而是真的動起來。</p>
           </div>
           <div class="feature reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></div>
             <h3>直接串接現有介面</h3>
-            <p>不用重寫前端。工具對應現有功能，即可讓 AI 操作——純前端也能直接串接，不需要更動後端。</p>
+            <p>不用重寫前端。工具對應現有功能，即可讓 AI 操作——純前端也能直接串接。</p>
           </div>
         </div>
       </div>
@@ -739,8 +821,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <h2>用一句話，驅動真實的介面操作</h2>
         </div>
         <div class="cases cases-single">
-          <div class="case case-split reveal">
+          <div class="case case-split case-live reveal">
             <div class="case-illustration">
+              <!-- 用真正的 <button>，不是在 div 上掛 click handler：手機版
+                   .case-split 塌成單欄後，文字按鈕遠在螢幕外，這裡是卡片主要的
+                   入口，必須能用鍵盤到達、也必須被讀成一個動作。collage 本身
+                   維持 aria-hidden——它是裝飾，輔助科技讀的是按鈕自己的標籤。 -->
+              <button type="button" class="case-illustration-btn" id="marketing-demo-illustration" aria-label="體驗行銷數據分析 demo">
               <div class="collage" aria-hidden="true">
                 <div class="win">
                   <div class="win-bar">
@@ -780,15 +867,28 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
                 <span class="bubble b-ring"></span>
                 <span class="bubble b-mini"><svg viewBox="0 0 24 24"><path d="M4 19V9M12 19V5M20 19v-7"/></svg></span>
               </div>
+              <span class="case-play" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                體驗看看
+              </span>
+              </button>
             </div>
             <div class="case-content">
-              <span class="case-badge">串接展示</span>
+              <span class="case-badge">線上展示</span>
               <h3>行銷數據分析助手</h3>
               <p>描述你想了解的廣告活動數據，AI 會自動選出相關變數與分析方式。</p>
               <div class="chat chat-examples">
                 <span class="bubble-u">廣告花費、點擊數跟營收之間有關聯嗎？</span>
-                <span class="bubble-u">這一季哪個通路的營收表現最好？</span>
-                <span class="bubble-u">點擊率這幾個月的趨勢如何？</span>
+              </div>
+              <!-- 卡片的主要動作直接放在範例問句下方，不再擺到跨兩欄的
+                   .case-try-row：讓人想進去的是那句問句，所以入口就該緊接在
+                   它後面，而不是隔一段距離。showcase 連結留在 .case-try-row——
+                   它去的是完全不同的地方，把兩者在視覺上分開，才不會讓
+                   「玩這個」和「看別的」讀起來像兩個同級選項。 -->
+              <div class="case-content-cta">
+                <button type="button" class="btn btn-primary case-try-btn" id="marketing-demo-toggle">
+                  體驗看看 →
+                </button>
               </div>
             </div>
           </div>
@@ -803,9 +903,11 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
                column, since it's the one action for the whole card, not
                just its copy. -->
           <div class="case-try-row">
-            <button type="button" class="btn btn-primary case-try-btn" id="marketing-demo-toggle">
-              體驗看看 →
-            </button>
+            <!-- 與英文版對齊：這顆之前中文版沒有，導致整個中文首頁沒有任何
+                 連結能到 /showcase/。 -->
+            <a class="btn btn-ghost case-try-btn case-showcase-link" href="/showcase/">
+              更多線上體驗 →
+            </a>
           </div>
         </div>
       </div>
@@ -1080,6 +1182,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     var DEMOS = {
       analysis: {
         toggleBtn: document.getElementById('marketing-demo-toggle'),
+        illustrationBtn: document.getElementById('marketing-demo-illustration'),
         backdrop: document.getElementById('md-modal-backdrop'),
         closeBtn: document.getElementById('md-modal-close'),
         inner: document.getElementById('marketing-demo-inner'),
@@ -1152,6 +1255,12 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     Object.keys(DEMOS).forEach(function (id) {
       var demo = DEMOS[id];
       demo.toggleBtn.addEventListener('click', function () { openDemo(id, false); });
+      // 進入同一個 modal 的第二個入口：卡片的插圖。每個 demo 不一定都有
+      // （目前只有 marketing 這張卡有），所以要判斷——將來某張沒有插圖按鈕的
+      // 卡片不能在這裡拋錯，否則這個迴圈後面的綁定全部不會執行。
+      if (demo.illustrationBtn) {
+        demo.illustrationBtn.addEventListener('click', function () { openDemo(id, false); });
+      }
       demo.closeBtn.addEventListener('click', function () { closeDemo(id, false); });
       demo.backdrop.addEventListener('click', function (e) {
         if (e.target === demo.backdrop) closeDemo(id, false);

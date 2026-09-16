@@ -356,7 +356,41 @@
       background: linear-gradient(180deg, var(--panel) 0%, var(--bg-2) 100%); overflow: hidden;
       transition: transform 0.2s, border-color 0.2s;
     }
+    /* The card's own outline breathes, which is what marks this one as the
+       live, enterable example without adding a second signal color: it
+       animates the existing gold accent the rest of the page already uses.
+       Low amplitude and a slow 3.6s cycle on purpose — readable in
+       peripheral vision, never a blinking element competing with the copy. */
+    .case-live { animation: caseBreathe 3.6s ease-in-out infinite; }
+    /* The wide warm cast under the card is the same lift the hero terminal
+       gets (--shadow-glow) — carried inside both keyframe stops rather than
+       set once on .case, because an animation's computed box-shadow wins
+       over a static rule: declaring it outside would leave the glow visible
+       only between cycles, reading as a flicker. Breathing therefore varies
+       the glow's strength, never switches it on and off. */
+    @keyframes caseBreathe {
+      0%, 100% {
+        border-color: var(--border-soft);
+        box-shadow: 0 0 0 1px rgba(201,162,75,0.10), 0 24px 70px -28px rgba(201,162,75,0.26);
+      }
+      50% {
+        border-color: rgba(201,162,75,0.40);
+        box-shadow: 0 0 0 1px rgba(201,162,75,0.24), 0 30px 90px -26px rgba(201,162,75,0.42);
+      }
+    }
+    /* Hover must win over the animation — an animation's computed value
+       normally beats a plain rule, so pausing it (rather than just setting
+       border-color here) is what lets the hover state actually show. */
+    .case-live:hover { animation-play-state: paused; }
     .case:hover { transform: translateY(-4px); border-color: rgba(201,162,75,0.35); }
+    @media (prefers-reduced-motion: reduce) {
+      /* Animation off, but the glow itself is not motion — keep it at the
+         cycle's midpoint so the card still reads as the live one. */
+      .case-live {
+        animation: none; border-color: rgba(201,162,75,0.28);
+        box-shadow: 0 0 0 1px rgba(201,162,75,0.16), 0 26px 78px -27px rgba(201,162,75,0.32);
+      }
+    }
     /* Capped and centered rather than stretching to the full card width —
        at this card's full width (now the only one, spanning the section)
        both columns would otherwise grow uncomfortably wide with no
@@ -386,12 +420,17 @@
     @media (max-width: 760px) {
       .case-split { grid-template-columns: 1fr; justify-items: center; }
       .case-illustration, .case-content { width: 100%; max-width: 380px; }
-      /* Two full-width buttons ("Try it live" + "See more examples") no
+      /* Two full-width buttons ("Try it live" + "More live demos") no
          longer fit comfortably side by side on a phone-width row now that
          the showcase link is visible here too, so stack them instead of
          squeezing both into .case-try-row's flex row. */
       .case-try-row { flex-direction: column; }
       .case-try-btn { width: 100%; }
+      /* No order juggling needed anymore: the primary action now lives
+         inside .case-content directly under the example question, so it is
+         already high on a stacked phone layout. .case-try-row below holds
+         only the showcase link, which is genuinely secondary and belongs
+         last. */
     }
     /* Layered product-illustration collage: a soft gradient backdrop
        holding a main "app window" (sidebar + KPIs + trend chart), a
@@ -446,9 +485,42 @@
     .b-ring { width: 22px; height: 22px; left: 44%; bottom: -10px; border: 3px solid var(--accent-2); background: transparent; box-shadow: none; }
     .b-mini { width: 26px; height: 26px; left: -8px; top: 40px; background: #fff; color: var(--accent); }
     .b-mini svg { width: 13px; height: 13px; }
+    /* Static by design: the "this one is live" cue is carried by the card's
+       own breathing outline (.case-live above), not by anything on the
+       badge. An animated badge on top of that would be two competing
+       signals for the same fact. */
     .case-badge {
       display: inline-block; font-family: var(--mono); font-size: 12px; color: var(--accent-2);
       background: var(--accent-soft); border: 1px solid rgba(201,162,75,0.28); padding: 4px 10px; border-radius: 7px; margin-bottom: 16px;
+    }
+
+    /* The collage is the biggest thing on the card and visitors instinctively
+       click artwork, so it's wired to open the demo rather than sitting inert
+       as decoration. Hover/focus dims it and floats a play affordance over it,
+       which is what actually tells a first-time visitor the card is enterable
+       — previously the only such signal was a button far below the fold on
+       mobile. */
+    .case-illustration-btn {
+      display: block; width: 100%; padding: 0; border: 0; background: none;
+      cursor: pointer; border-radius: 16px; position: relative;
+    }
+    .case-illustration-btn .collage { transition: transform 0.25s, filter 0.25s; }
+    .case-illustration-btn:hover .collage,
+    .case-illustration-btn:focus-visible .collage { transform: scale(1.02); filter: brightness(0.62); }
+    .case-play {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      gap: 9px; opacity: 0; transition: opacity 0.25s; pointer-events: none;
+      font-size: 15px; font-weight: 700; color: #fff; text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    }
+    .case-illustration-btn:hover .case-play,
+    .case-illustration-btn:focus-visible .case-play { opacity: 1; }
+    .case-play svg { width: 34px; height: 34px; fill: #fff; filter: drop-shadow(0 2px 10px rgba(0,0,0,0.5)); }
+    /* Touch has no hover, so the affordance would never appear on a phone —
+       show it persistently there instead, at lower strength so it reads as a
+       hint over the artwork rather than a scrim covering it. */
+    @media (hover: none) {
+      .case-play { opacity: 1; }
+      .case-illustration-btn .collage { filter: brightness(0.72); }
     }
     .case h3 { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
     .case p { color: var(--text-2); font-size: 15px; line-height: 1.6; margin-bottom: 18px; }
@@ -469,6 +541,11 @@
        since this one is a real, operable connection, not a scripted
        preview. */
     .case-try-btn { width: auto; min-width: 260px; padding: 15px 28px; font-size: 16.5px; }
+    /* The in-content CTA sits in the narrower text column, where the shared
+       .case-try-btn min-width of 260px would overflow once the column gets
+       tight — so it drops that floor and stretches to the column instead. */
+    .case-content-cta { margin-top: 18px; }
+    .case-content-cta .case-try-btn { min-width: 0; width: 100%; }
     /* Near-full-page modal, not edge-to-edge: a fixed backdrop with a
        centered panel sized by inset (24px on every side) rather than a
        literal 100vw/100vh panel, so it still reads as "a panel over the
@@ -663,7 +740,14 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         <div class="nav-right">
           <nav class="nav-links">
             <a href="#features">Features</a>
-            <a href="#cases">Examples</a>
+            <!-- Points at the real /showcase/ page, not the "#cases" section
+                 below it: "Live demo" promises something you can actually
+                 drive in this browser right now, and the showcase app is
+                 where that actually exists (two connected, tool-calling
+                 demos). The "#cases" section stays reachable from the
+                 footer's Examples link, which is what that static
+                 "what you can build" copy actually is. -->
+            <a href="/showcase/">Live demo</a>
             <a href="/docs/">Docs</a>
             <a href="/pricing/">Pricing</a>
             <a class="lang-switch" href="/zh-tw/">中文</a>
@@ -696,7 +780,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
             Connect via an Agentic API, and let your users execute tasks in natural language.
           </p>
           <div class="hero-cta">
-            <a class="btn btn-primary btn-lg" href="#" data-console>Open Console</a>
+            <!-- Deliberately NOT data-console: that attribute makes the
+                 script at the bottom of this file overwrite href with
+                 CONSOLE_URL, which would send this button to /app despite
+                 its label. Console is still reachable from the nav and the
+                 closing CTA — the hero's job here is to let a first-time
+                 visitor see the thing run before being asked to sign in. -->
+            <a class="btn btn-primary btn-lg" href="/showcase/">Try live demo →</a>
           </div>
         </div>
 
@@ -760,24 +850,24 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
       <div class="wrap">
         <div class="sec-head reveal">
           <div class="sec-tag">Why onagent</div>
-          <h2>Everything you need to wire AI into your UI</h2>
-          <p>From LLM infrastructure to AI that drives your UI, to serving real customers — all in one place.</p>
+          <h2>Wire AI into your UI — it's all handled</h2>
+          <p>From defining tools to serving real customers.</p>
         </div>
         <div class="features">
           <div class="feature reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M4 8h10M8 4v4M4 16h10M8 12v4"/><circle cx="18" cy="8" r="2"/><circle cx="18" cy="16" r="2"/></svg></div>
-            <h3>No LLM infrastructure to build</h3>
-            <p>No picking a model, wiring up an API, or handling retries and timeouts yourself — onagent takes care of the LLM inference infrastructure so you can just define tools.</p>
+            <h3>Up and running in minutes</h3>
+            <p>Create an agent, define its tools — and you're running.</p>
           </div>
           <div class="feature reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-2 6z"/></svg></div>
             <h3>AI drives your UI directly</h3>
-            <p>Tool calls dispatch straight to the handler you registered: fill forms, navigate, check boxes, click buttons — not just a reply, but a real action.</p>
+            <p>Fill forms, retrieve data, interact with the UI — not just a reply, but a real action.</p>
           </div>
           <div class="feature reveal">
             <div class="ic"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg></div>
             <h3>Wires straight into your existing UI</h3>
-            <p>No frontend rewrite needed. Map tools to what's already there, and AI can operate it — works with a pure frontend, no backend changes required.</p>
+            <p>No frontend rewrite needed. Map tools to what's already there, and AI can operate it — works with a pure frontend.</p>
           </div>
         </div>
       </div>
@@ -790,8 +880,15 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <h2>Drive real UI actions with a single sentence</h2>
         </div>
         <div class="cases cases-single">
-          <div class="case case-split reveal">
+          <div class="case case-split case-live reveal">
             <div class="case-illustration">
+              <!-- A real <button>, not a click handler on the div: this is the
+                   card's primary way in on mobile (the text button sits far
+                   below the fold once .case-split stacks), so it has to be
+                   reachable by keyboard and announced as an action. The
+                   collage itself stays aria-hidden — it's decoration; the
+                   button's own label is what assistive tech reads. -->
+              <button type="button" class="case-illustration-btn" id="marketing-demo-illustration" aria-label="Try the marketing analytics demo live">
               <div class="collage" aria-hidden="true">
                 <div class="win">
                   <div class="win-bar">
@@ -831,15 +928,31 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
                 <span class="bubble b-ring"></span>
                 <span class="bubble b-mini"><svg viewBox="0 0 24 24"><path d="M4 19V9M12 19V5M20 19v-7"/></svg></span>
               </div>
+              <span class="case-play" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                Try it live
+              </span>
+              </button>
             </div>
             <div class="case-content">
-              <span class="case-badge">Live integration</span>
+              <span class="case-badge">Live demo</span>
               <h3>Marketing analytics assistant</h3>
               <p>Describe what you want to know about your campaign data, and AI picks the right variables and analysis method.</p>
               <div class="chat chat-examples">
                 <span class="bubble-u">Is there a relationship between ad spend, clicks, and revenue?</span>
-                <span class="bubble-u">Which channel has the best revenue this quarter?</span>
-                <span class="bubble-u">How has click-through rate trended over the last few months?</span>
+              </div>
+              <!-- The card's primary action sits right under the example
+                   question rather than in .case-try-row below both columns:
+                   the question is what makes a visitor want in, so the way
+                   in belongs immediately after it, not a scroll away. The
+                   showcase link stays in .case-try-row — it goes somewhere
+                   else entirely, so keeping the two visually separated is
+                   what stops "try this one" and "see others" from reading
+                   as a pair of equal choices. -->
+              <div class="case-content-cta">
+                <button type="button" class="btn btn-primary case-try-btn" id="marketing-demo-toggle">
+                  Try it live →
+                </button>
               </div>
             </div>
           </div>
@@ -857,11 +970,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
                rather than pinned under just the text column, since it's
                the one action for the whole card, not just its copy. -->
           <div class="case-try-row">
-            <button type="button" class="btn btn-primary case-try-btn" id="marketing-demo-toggle">
-              Try it live →
-            </button>
             <a class="btn btn-ghost case-try-btn case-showcase-link" href="/showcase/">
-              See more examples →
+              More live demos →
             </a>
           </div>
         </div>
@@ -1144,6 +1254,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     var DEMOS = {
       analysis: {
         toggleBtn: document.getElementById('marketing-demo-toggle'),
+        illustrationBtn: document.getElementById('marketing-demo-illustration'),
         backdrop: document.getElementById('md-modal-backdrop'),
         closeBtn: document.getElementById('md-modal-close'),
         inner: document.getElementById('marketing-demo-inner'),
@@ -1217,6 +1328,13 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     Object.keys(DEMOS).forEach(function (id) {
       var demo = DEMOS[id];
       demo.toggleBtn.addEventListener('click', function () { openDemo(id, false); });
+      // Second way into the same modal: the card's artwork. Optional per
+      // demo (only the marketing case has one), hence the guard — a future
+      // case card without an illustration button must not throw here and
+      // kill the rest of this loop's wiring.
+      if (demo.illustrationBtn) {
+        demo.illustrationBtn.addEventListener('click', function () { openDemo(id, false); });
+      }
       demo.closeBtn.addEventListener('click', function () { closeDemo(id, false); });
       demo.backdrop.addEventListener('click', function (e) {
         if (e.target === demo.backdrop) closeDemo(id, false);

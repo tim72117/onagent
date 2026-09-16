@@ -1,0 +1,33 @@
+# analysis-app 的其中一個 tool，實作在 ../../../../src/marketing-demo/widget.js
+# 的 defineTool('select_analysis', ...)；六種 method 對應同檔 runByMethod()
+# 裡的分支，參數順序的規則寫在下面 variables 的 description。
+#
+# 推上去（一份檔案一個 tool，指令依檔案裡的 name 新增或取代同名 tool）：
+#   onagent tool create analysis-app select_analysis.yaml -api http://localhost:8081
+name: select_analysis
+description: >-
+  Run an analysis method against the chosen variables and display the
+  result (table + chart) on the page.
+parameters:
+  type: object
+  properties:
+    method:
+      type: string
+      enum: [frequency, crossTable, correlation, regression, trend, ranking]
+      description: Which analysis method to run.
+    variables:
+      type: array
+      items:
+        type: string
+      description: >-
+        Variable names in the order the method needs them: frequency
+        takes one; crossTable takes [row, col]; correlation takes two or
+        more; regression takes [dependent, ...independents] (order
+        matters); trend takes one continuous variable; ranking takes
+        [groupVariable, metricVariable].
+    topN:
+      type: integer
+      description: For ranking only — how many top items to return. Defaults to 5.
+  required:
+    - method
+    - variables

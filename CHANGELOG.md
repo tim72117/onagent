@@ -6,6 +6,39 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.5.10
+
+No breaking changes. Landing page only — no backend, API, or SDK changes.
+
+- Homepage navigation and hero now point at the live demo instead of the
+  console: the nav's "Examples" anchor (which only scrolled to the static
+  `#cases` section) became a "Live demo" link to `/showcase/`, and the hero
+  CTA changed from "Open Console" to "Try live demo". Console stays
+  reachable from the nav button, the closing CTA, and the footer. The
+  Traditional Chinese page had no link to `/showcase/` at all before this;
+  it now matches the English one.
+
+- Rewrote the "Why onagent" section's heading and all three feature cards
+  (both languages) to drop the LLM-infrastructure framing in favor of what
+  a developer gets: "Up and running in minutes", plainer tool-call copy,
+  and a shorter section subtitle.
+
+- The marketing analytics case card now signals that it is enterable: its
+  outline breathes in the existing gold accent with the same wide glow the
+  hero terminal uses, the illustration itself became a keyboard-reachable
+  button that opens the demo (with a play affordance on hover, shown
+  persistently on touch), and the primary action moved up next to the
+  example question — which is now a single question instead of three.
+  Honors `prefers-reduced-motion`.
+
+- Split `apps/landing/src/marketing-demo/tools.yaml` into two
+  single-tool files under `showcase/src/cases/marketing/`
+  (`list_variables.yaml`, `select_analysis.yaml`). The old file's format —
+  a `tools:` array plus `thought` in one file — is no longer accepted by
+  `onagent tool create`, and its header still referenced the removed
+  `onagent save-tools` / `onagent set-thought` commands. It now keeps only
+  the thought and points at the two new files.
+
 ## v0.5.9
 
 No breaking changes.

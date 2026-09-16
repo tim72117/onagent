@@ -1,11 +1,19 @@
 # appId 這個欄位僅供人類參考，onagent CLI 不讀取它——實際套用到哪個 app
-# 完全由指令參數決定（onagent save-tools <appId> tools.yaml），這裡寫的值
-# 會被忽略。
+# 完全由指令參數決定，這裡寫的值會被忽略。
 appId: analysis-app
 
-# 注意：`onagent save-tools` 只會送出 tools 陣列，不會送出 thought！
-# 要讓 thought 生效必須另外執行：
-#   onagent set-thought <appId> "<這份檔案裡 thought 的內容>"
+# 注意：這份檔案是「一份檔案含多個 tool」的舊格式，現在的 onagent CLI
+# 不吃它——`onagent tool create` 要求一份檔案只描述一個 tool（頂層直接是
+# name/description/parameters，沒有 tools: 陣列）。底下 tools: 陣列裡的兩個
+# tool 已經各自拆成一份可直接推送的檔案，推的時候用那兩份，不要用這份：
+#   ../../showcase/src/cases/marketing/list_variables.yaml
+#   ../../showcase/src/cases/marketing/select_analysis.yaml
+#
+# thought 也不會隨 tool 一起送出，必須另外執行（內容就是這份檔案底下的
+# thought 欄位——這份檔案目前的作用就是保存它）：
+#   onagent app thought set <appId> "<這份檔案裡 thought 的內容>" -api <url>
+#
+# （舊版的 `onagent save-tools` / `onagent set-thought` 指令已不存在。）
 thought: |-
   You are a marketing data analyst helping the user pick suitable variables to analyze from multi-channel ad campaign data.
 

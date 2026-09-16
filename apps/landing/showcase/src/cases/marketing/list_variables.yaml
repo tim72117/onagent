@@ -1,0 +1,43 @@
+# analysis-app 的其中一個 tool，實作在 ../../../../src/marketing-demo/widget.js
+# 的 defineTool('list_variables', ...)。與 ../support/support-app-tools.yaml
+# 同樣的擺法：tool 定義跟用到它的 demo 放在一起。
+#
+# 推上去（一份檔案一個 tool，指令依檔案裡的 name 新增或取代同名 tool）：
+#   onagent tool create analysis-app list_variables.yaml -api http://localhost:8081
+#
+# thought 不隨 tool 送出，要另外設；內容見
+# ../../../../src/marketing-demo/tools.yaml 的 thought 欄位：
+#   onagent app thought set analysis-app "<thought>" -api http://localhost:8081
+name: list_variables
+description: >-
+  Ask the page for the list of all available analysis variables right
+  now, each with its name (the id to pass to select_analysis), its
+  human-readable title, and its type (category or continuous). Use this
+  to find which variable matches what the user is describing.
+kind: query
+parameters:
+  type: object
+  properties:
+    limit:
+      type: integer
+      description: >-
+        Max number of variables to return. Always provide a value — pass
+        100 if you want effectively all of them (there are never more
+        than a couple dozen variables on this page).
+  required:
+    - limit
+returns:
+  type: array
+  items:
+    type: object
+    properties:
+      name:
+        type: string
+        description: The variable's id, to pass to select_analysis.
+      title:
+        type: string
+        description: The human-readable variable title.
+      type:
+        type: string
+        description: Either "category" or "continuous".
+  description: All available variables, each with name, title, and type.
