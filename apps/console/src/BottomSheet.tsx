@@ -4,9 +4,9 @@ import styles from './BottomSheet.module.css'
 
 // Every BottomSheet's .backdrop/.panel share the same fixed z-index
 // (30/31, see BottomSheet.module.css) — fine when only one sheet is ever
-// open at a time, but ToolEditSheet.tsx nests four more BottomSheets
-// (ToolNameSheet/ToolDescriptionSheet/ToolParametersSheet/
-// ToolReturnsSheet) as its own children, each independently
+// open at a time, but ToolEditSheet.tsx nests three more BottomSheets
+// (ToolNameSheet/ToolDescriptionSheet/ToolParametersSheet) as its own
+// children, each independently
 // always-mounted and each portaled to document.body. With identical
 // z-index across all of them, which one visually wins is decided by DOM
 // order among document.body's children — and every sheet here is
@@ -48,7 +48,7 @@ export function BottomSheet({
   fullscreen?: boolean
   // Set on every sheet with actual editable fields (KeyEditSheet,
   // OriginEditSheet, ThoughtEditSheet, ToolNameSheet, ToolDescriptionSheet,
-  // ToolParametersSheet, ToolReturnsSheet, ToolEditSheet) — a stray tap
+  // ToolParametersSheet, ToolEditSheet) — a stray tap
   // just outside the sheet while mid-edit (easy to do one-handed on a
   // phone) silently discarding whatever was being typed is worse than
   // requiring the explicit close (X) button. Left enabled (the default)

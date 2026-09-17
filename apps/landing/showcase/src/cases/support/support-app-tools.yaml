@@ -79,18 +79,6 @@ tools:
             "date" to get today's exact date (YYYY-MM-DD), or "weekday"
             to get today's day of the week (e.g. "Wednesday"). Required
             — pick whichever one you actually need.
-    returns:
-      type: object
-      description: >
-        Exactly one of these two fields is present, matching whichever
-        format you asked for.
-      properties:
-        isoDate:
-          type: string
-          description: Present when format was "date". Today's date as YYYY-MM-DD.
-        weekday:
-          type: string
-          description: Present when format was "weekday". Today's day of the week, e.g. "Wednesday".
 
   - name: check_availability
     description: >
@@ -116,44 +104,6 @@ tools:
           description: >
             Optional. A stylist's name (e.g. "Amy") to narrow the search
             to just their slots. Omit to check every stylist.
-    returns:
-      type: object
-      description: >
-        The matching slots for the requested date/stylist (or everything
-        available if neither was given). Only slots where a stylist is
-        actually scheduled are included — a time this list omits simply
-        has no stylist working it, not that it's booked.
-      properties:
-        slots:
-          type: array
-          description: Each matching, staffed time slot, in order.
-          items:
-            type: object
-            properties:
-              slotId:
-                type: string
-                description: >
-                  Opaque identifier for this exact slot. Pass it back
-                  unchanged to book_appointment to book it — don't try to
-                  construct or guess this value yourself.
-              date:
-                type: string
-                description: This slot's exact date, as YYYY-MM-DD.
-              day:
-                type: string
-                description: >
-                  A friendly weekday label for this slot, e.g. "Tue" —
-                  use this (not `date`) when telling the visitor which
-                  day a slot is on.
-              time:
-                type: string
-                description: e.g. "10am".
-              stylist:
-                type: string
-                description: The stylist scheduled for this slot.
-              available:
-                type: boolean
-                description: True if this slot is still open, false if another customer already booked it.
 
   - name: get_my_appointments
     description: >
@@ -166,34 +116,6 @@ tools:
     parameters:
       type: object
       properties: {}
-    returns:
-      type: object
-      description: The visitor's own upcoming booked slots, if any.
-      properties:
-        appointments:
-          type: array
-          description: Each of the visitor's own upcoming bookings, in order. Empty if they have none.
-          items:
-            type: object
-            properties:
-              slotId:
-                type: string
-                description: Opaque identifier for this appointment's slot.
-              date:
-                type: string
-                description: This appointment's exact date, as YYYY-MM-DD.
-              day:
-                type: string
-                description: >
-                  A friendly weekday label for this appointment, e.g.
-                  "Tue" — use this (not `date`) when telling the visitor
-                  which day it's on.
-              time:
-                type: string
-                description: e.g. "10am".
-              stylist:
-                type: string
-                description: The stylist this appointment is with.
 
   - name: book_appointment
     description: >
@@ -222,32 +144,3 @@ tools:
           description: >
             "book" to reserve the slot, or "cancel" to give up one of the
             visitor's own existing bookings. Defaults to "book" if omitted.
-    returns:
-      type: object
-      description: Whether the booking/cancellation succeeded, and the slot it applies to.
-      properties:
-        booked:
-          type: boolean
-          description: >
-            Present when action was "book". True if the booking succeeded.
-            False if the slot was invalid or had already been booked by
-            someone else in the meantime.
-        cancelled:
-          type: boolean
-          description: >
-            Present when action was "cancel". True if the cancellation
-            succeeded.
-        date:
-          type: string
-          description: This slot's exact date, as YYYY-MM-DD.
-        time:
-          type: string
-          description: e.g. "10am".
-        stylist:
-          type: string
-          description: The stylist the slot is/was with.
-        customer:
-          type: string
-          description: >
-            Present when action was "book". The name the booking was made
-            under — confirm this back to the visitor.

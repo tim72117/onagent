@@ -26,6 +26,9 @@
   <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="canonical" href="https://onagent.shuttle.tools/docs/" />
+  <link rel="alternate" hreflang="en" href="https://onagent.shuttle.tools/docs/" />
+  <link rel="alternate" hreflang="zh-Hant" href="https://onagent.shuttle.tools/zh-tw/docs/" />
+  <link rel="alternate" hreflang="x-default" href="https://onagent.shuttle.tools/docs/" />
   <title>onagent docs — integrate the platform</title>
   <meta
     name="description"
@@ -103,10 +106,12 @@
       border-bottom: 1px solid var(--border-soft);
     }
     .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; color: var(--text); }
+    /* Container for the inline sphere logo — no tile background of its own;
+       the sphere is the shape. */
     .mark {
-      display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px;
-      background: var(--grad); color: #1a1408; font-size: 14px; font-weight: 700;
+      display: grid; place-items: center; width: 26px; height: 26px; flex: none;
     }
+    .mark svg { display: block; width: 100%; height: 100%; }
     .brand .sep { color: var(--text-3); font-weight: 400; margin: 0 2px; }
     .brand .doctag { color: var(--text-2); font-weight: 600; font-size: 14px; }
     .topbar-links { display: flex; align-items: center; gap: 18px; font-size: 13.5px; color: var(--text-2); }
@@ -309,7 +314,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   <div class="bg-fx"></div>
 
   <header class="topbar">
-    <a class="brand" href="../index.html"><span class="mark">⌘</span>onagent<span class="sep">/</span><span class="doctag">docs</span></a>
+    <a class="brand" href="../index.html"><span class="mark"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="mds" cx="36%" cy="28%" r="76%"><stop offset="0" stop-color="#4a4030"/><stop offset="0.22" stop-color="#2e2819"/><stop offset="0.48" stop-color="#181410"/><stop offset="0.74" stop-color="#0a0907"/><stop offset="1" stop-color="#030302"/></radialGradient><radialGradient id="mdb" cx="50%" cy="50%" r="50%"><stop offset="0.62" stop-color="#c9a24b" stop-opacity="0"/><stop offset="0.88" stop-color="#8a6f34" stop-opacity="0.30"/><stop offset="1" stop-color="#6b5528" stop-opacity="0.16"/></radialGradient><linearGradient id="mdr" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#f6e6bd" stop-opacity="0.85"/><stop offset="0.45" stop-color="#c9a24b" stop-opacity="0.55"/><stop offset="1" stop-color="#8a6f34" stop-opacity="0.40"/></linearGradient><radialGradient id="mdp" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.50"/><stop offset="0.45" stop-color="#fff4d6" stop-opacity="0.16"/><stop offset="1" stop-color="#f0dfae" stop-opacity="0"/></radialGradient><radialGradient id="mdo" cx="50%" cy="46%" r="52%"><stop offset="0.55" stop-color="#000000" stop-opacity="0.55"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient><radialGradient id="mdg" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f6e6bd" stop-opacity="0.44"/><stop offset="0.5" stop-color="#e0c98a" stop-opacity="0.15"/><stop offset="1" stop-color="#c9a24b" stop-opacity="0"/></radialGradient><radialGradient id="mdi" cx="42%" cy="36%" r="68%"><stop offset="0" stop-color="#fffdf4"/><stop offset="0.34" stop-color="#ffeec4"/><stop offset="0.68" stop-color="#e8c982"/><stop offset="1" stop-color="#a8813a"/></radialGradient></defs><circle cx="32" cy="32" r="31" fill="url(#mds)"/><circle cx="32" cy="32" r="31" fill="url(#mdb)"/><circle cx="32" cy="32" r="30" fill="none" stroke="url(#mdr)" stroke-width="2"/><ellipse cx="22" cy="17" rx="13" ry="8.5" fill="url(#mdp)" transform="rotate(-24 22 17)"/><circle cx="23" cy="28" r="11" fill="url(#mdo)"/><circle cx="41" cy="28" r="11" fill="url(#mdo)"/><circle cx="23" cy="28" r="10" fill="url(#mdg)"/><circle cx="41" cy="28" r="10" fill="url(#mdg)"/><circle cx="23" cy="28" r="5.6" fill="url(#mdi)"/><circle cx="41" cy="28" r="5.6" fill="url(#mdi)"/><circle cx="21.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92"/><circle cx="39.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92"/></svg></span>onagent<span class="sep">/</span><span class="doctag">docs</span></a>
     <div class="topbar-links">
       <a href="../index.html">← Back to site</a>
       <a href="/zh-tw/docs/">中文</a>
@@ -633,7 +638,6 @@ Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">
               <tr><td>name</td><td>Yes</td><td>Identifier the LLM uses to call this tool. Must match <code>^[a-zA-Z_][a-zA-Z0-9_]*$</code> and be unique within the app.</td></tr>
               <tr><td>description</td><td>Yes</td><td>Tells the LLM when and why to call this tool. This is the primary signal the model uses to pick between tools — be specific.</td></tr>
               <tr><td>parameters</td><td>Yes</td><td>A JSON-Schema object: <code>type: object</code>, a <code>properties</code> map (each with a <code>type</code> — <code>string</code>, <code>number</code>, <code>integer</code>, <code>boolean</code>, <code>array</code>, or <code>object</code> — and optional <code>description</code>), and an optional <code>required</code> list of property names. Array-typed properties use <code>items</code>; object-typed properties can nest another <code>properties</code>/<code>required</code>. Any property can also take an optional <code>enum</code> — a list of allowed string values — to constrain the LLM to one of a fixed set instead of free text.</td></tr>
-              <tr><td>returns</td><td>No</td><td>Same shape as <code>parameters</code>, documenting what the frontend sends back. Not sent to the LLM as part of the tool schema — used for TypeScript codegen, and for <code>query</code>-kind tools, this is also the shape the LLM receives back as data (see below).</td></tr>
               <tr><td>kind</td><td>No</td><td><code>action</code> (default) or <code>query</code> — see <a href="#tool-kind">action vs. query</a> below.</td></tr>
             </tbody>
           </table>
@@ -656,13 +660,6 @@ Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">
       <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">integer</span>
   <span class="t-key">required</span><span class="t-punc">:</span>
     <span class="t-punc">-</span> <span class="t-str">query</span>
-<span class="t-key">returns</span><span class="t-punc">:</span>
-  <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">array</span>
-  <span class="t-key">items</span><span class="t-punc">:</span>
-    <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">object</span>
-    <span class="t-key">properties</span><span class="t-punc">:</span>
-      <span class="t-key">id</span><span class="t-punc">:</span> <span class="t-punc">{</span> <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span> <span class="t-punc">}</span>
-      <span class="t-key">name</span><span class="t-punc">:</span> <span class="t-punc">{</span> <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span> <span class="t-punc">}</span>
 <span class="t-key">kind</span><span class="t-punc">:</span> <span class="t-str">query</span>   <span class="t-com"># the LLM needs the actual search results back</span></pre>
         </div>
         <p class="body-text">A second tool, with no <code>kind</code> (defaults to <code>action</code>):</p>
@@ -815,8 +812,7 @@ Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</
             <thead><tr><th>Tool has…</th><th>What the Playground does</th></tr></thead>
             <tbody>
               <tr><td>A <code>click_button</code> or <code>fill_form</code> template</td><td>Renders a real, clickable mock UI (buttons or text fields, built from the tool's <code>enum</code> options) — the LLM calling the tool and you clicking it by hand both run the same code path and produce the same result.</td></tr>
-              <tr><td>A <code>returns</code> schema, no mock</td><td>Fabricates placeholder data shaped to match <code>returns</code>, reports it back as a successful call, and labels it "fabricated data" in the transcript so you don't mistake it for something real.</td></tr>
-              <tr><td>No <code>returns</code>, no mock</td><td>Waits 2 seconds, then reports the call as failed with an explicit "nothing here can perform it for real" message — a nudge that this tool needs an actual page to answer it.</td></tr>
+              <tr><td>No mock</td><td>Waits 2 seconds, then reports the call as failed with an explicit "nothing here can perform it for real" message — a nudge that this tool needs an actual page to answer it. This applies to <code>query</code> tools too: the Playground never fabricates an answer, since a made-up one is worse than an honest failure.</td></tr>
             </tbody>
           </table>
         </div>
@@ -901,8 +897,8 @@ Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</
           returns (or resolves to) whatever value is appropriate for that tool's <code>kind</code>:
         </p>
         <ul class="doc-list">
-          <li>For an <code>action</code> tool, the return value is ignored by the LLM — only whether your handler threw determines success/failure. Still return something meaningful if you want it visible via <code>tool list</code>/codegen tooling, but don't rely on the model seeing it.</li>
-          <li>For a <code>query</code> tool, whatever you return (sync or via a resolved Promise) is serialized and fed straight back into the LLM's reasoning — shape it to match the tool's <code>returns</code> schema.</li>
+          <li>For an <code>action</code> tool, the return value is ignored by the LLM — only whether your handler threw determines success/failure. Don't rely on the model seeing it.</li>
+          <li>For a <code>query</code> tool, whatever you return (sync or via a resolved Promise) is serialized and fed straight back into the LLM's reasoning. Nothing declares its shape up front, so return what the prompt actually needs to be answered.</li>
           <li>Throwing (or an async handler's Promise rejecting) reports failure back to the backend with the error's message.</li>
         </ul>
         <div class="callout tip">

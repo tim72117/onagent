@@ -5,9 +5,21 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
+
+// MaxDescriptionLength caps a tool's description, counted in runes so the
+// limit means the same thing for CJK and emoji as it does for ASCII.
+//
+// Enforced here rather than only in the console, because `onagent tool
+// create` pushes YAML straight past the console's own field — a console-only
+// cap would be advisory, not a limit. The console mirrors this number (see
+// apps/console/src/schema.ts's MAX_DESCRIPTION) and stops typing at it, so
+// an over-long description is refused as it is written rather than after a
+// round trip.
+const MaxDescriptionLength = 600
 
 var nameRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
@@ -97,6 +109,9 @@ func (a *App) Validate() error {
 		if t.Description == "" {
 			return fmt.Errorf("tool %q is missing a description", t.Name)
 		}
+		if n := utf8.RuneCountInString(t.Description); n > MaxDescriptionLength {
+			return fmt.Errorf("tool %q has a description of %d characters (limit is %d)", t.Name, n, MaxDescriptionLength)
+		}
 		if t.Parameters.Type == "" {
 			return fmt.Errorf("tool %q is missing parameters.type", t.Name)
 		}
@@ -104,9 +119,6 @@ func (a *App) Validate() error {
 		case "", ToolKindAction, ToolKindQuery:
 		default:
 			return fmt.Errorf("tool %q has invalid kind %q (must be %q or %q)", t.Name, t.Kind, ToolKindAction, ToolKindQuery)
-		}
-		if t.Kind == ToolKindQuery && t.Returns == nil {
-			return fmt.Errorf("tool %q is kind %q but has no returns schema — a query tool must declare the shape of the frontend's answer", t.Name, ToolKindQuery)
 		}
 		if t.BackendDispatch != nil && t.BackendDispatch.Endpoint == "" {
 			return fmt.Errorf("tool %q has a backendDispatch block but no endpoint", t.Name)

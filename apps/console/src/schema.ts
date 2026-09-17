@@ -30,7 +30,6 @@ export interface Tool {
   name: string
   description: string
   parameters: ParameterSchema
-  returns?: ParameterSchema
   // Mirrors toolschema.Tool.Kind. Empty/undefined means 'action' (the
   // backend's own default — see backend/internal/toolschema/registry.go's
   // saveTool, which fills an empty Kind in as ToolKindAction on write).
@@ -62,6 +61,15 @@ export interface App {
 
 // Same regexp as toolschema/loader.go's nameRE.
 export const TOOL_NAME_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/
+
+// Mirrors toolschema.MaxDescriptionLength, which is what actually enforces
+// this — `onagent tool create` pushes YAML past every field in this app, so
+// the cap has to live on the server and be echoed here.
+//
+// maxLength counts UTF-16 code units where the server counts runes, so this
+// is a shade stricter for astral characters (emoji): it can only refuse
+// slightly early, never let through what the server would reject.
+export const MAX_DESCRIPTION = 600
 
 // Mirrors backend/internal/inference/want_tools.go's defaultThought exactly
 // — shown to developers as "what applies if you leave Thought empty."

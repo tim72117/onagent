@@ -38,7 +38,6 @@ interface ProposeToolArgs {
   name?: unknown
   description?: unknown
   parameters?: unknown
-  returns?: unknown
   kind?: unknown
 }
 
@@ -66,7 +65,6 @@ function toTool(args: ProposeToolArgs): Tool | null {
     name: args.name,
     description: args.description,
     parameters: args.parameters as Tool['parameters'],
-    returns: (args.returns as Tool['returns'] | undefined) ?? undefined,
     kind,
   }
 }

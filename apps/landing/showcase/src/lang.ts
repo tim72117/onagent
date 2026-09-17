@@ -11,7 +11,7 @@ export type Lang = 'en' | 'zh'
 // Read once at module scope, not in an effect: an effect would render
 // English for one frame and then swap, which is visible as a flash on
 // every /showcase/?lang=zh load.
-export function initialLang(): Lang {
+function initialLang(): Lang {
   if (typeof window === 'undefined') return 'en'
   return new URLSearchParams(window.location.search).get('lang') === 'zh' ? 'zh' : 'en'
 }

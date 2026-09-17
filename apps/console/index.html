@@ -24,6 +24,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Console — onagent</title>
 
+    <!-- Same icon set the landing pages use. The console is served at /app
+         (see backend/cmd/server/web.go's mountConsole) from the same origin
+         as the landing build at / (mountLanding), so these resolve to
+         apps/landing/public/'s files without the console needing a public/
+         directory of its own.
+
+         Root-absolute on purpose: vite.config.ts sets base:'/app/', which
+         would rewrite a relative href to /app/favicon.svg — a path that
+         doesn't exist. A leading slash is left alone by that rewrite.
+
+         Dev-server caveat: `npm run dev` on :5173 serves only this app, so
+         these 404 locally and the tab shows Vite's default icon. They
+         resolve in the Docker image, where both builds sit behind one
+         origin. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
     <!-- Google Tag Manager: loads the onagent container (GTM-MXMK83XR),
          which owns the GA4 tag, the Ads tag, and the Ads registration
          conversion tag — none of that config lives in this repo anymore,

@@ -90,21 +90,6 @@ tools:
             than a couple dozen variables on this page).
       required:
         - limit
-    returns:
-      type: array
-      items:
-        type: object
-        properties:
-          name:
-            type: string
-            description: The variable's id, to pass to select_analysis.
-          title:
-            type: string
-            description: The human-readable variable title.
-          type:
-            type: string
-            description: Either "category" or "continuous".
-      description: All available variables, each with name, title, and type.
 
   - name: select_analysis
     description: >-

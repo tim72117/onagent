@@ -199,13 +199,11 @@ function slotId(isoDate: string, time: string): string {
 // know who's chatting.
 const CURRENT_CUSTOMER = { name: 'Jordan Lee' }
 
-// The demo's own static UI copy, switchable independently of the rest of
-// showcase: the page chrome now has its own language state (../../lang.ts,
-// owned by App.tsx and driven by the Topbar toggle), but this panel keeps
-// its own — both read the same ?lang= at load, so they agree on arrival,
-// while this component's in-panel toggle still switches only itself. A
-// salon-booking assistant is a plausible bilingual storefront in a way the
-// marketing-analytics demo isn't, which is why it had one first.
+// This demo's own static UI copy, selected by the `lang` prop App.tsx
+// passes down (../../lang.ts) — the same value the Topbar toggle writes,
+// so the panel and the chrome around it are always in one language. This
+// component used to own both a lang state and an in-panel toggle, which
+// is what let the two disagree.
 // Deliberately NOT the LLM's own reply language — that's set by
 // support-app-tools.yaml's `thought` on the backend and unaffected by
 // this toggle; only the page's own static labels/placeholder/greeting
@@ -221,6 +219,11 @@ const STRINGS: Record<Lang, {
   greeting: string
   inputPlaceholder: string
   inputPlaceholderOffline: string
+  panelTitle: string
+  statusOnline: string
+  statusOffline: string
+  metaTitle: string
+  metaDescription: string
 }> = {
   en: {
     scheduleTitle: "Acme Salon's Bookings",
@@ -228,6 +231,12 @@ const STRINGS: Record<Lang, {
     greeting: "Hi! I'm Acme Salon's assistant. Ask me who's free this week, or anything else about booking an appointment.",
     inputPlaceholder: 'Ask who has an opening this week…',
     inputPlaceholderOffline: 'Demo not wired up (missing API key)',
+    panelTitle: 'Support',
+    statusOnline: 'Online · usually replies instantly',
+    statusOffline: 'Offline · demo not wired up',
+    metaTitle: 'AI Customer Support & Appointment Booking Demo — onagent',
+    metaDescription:
+      'Try a live AI customer support assistant that books, looks up, and cancels real appointments — a real AgentBridge connection, not a mock.',
   },
   zh: {
     scheduleTitle: 'Acme 沙龍預約',
@@ -235,6 +244,12 @@ const STRINGS: Record<Lang, {
     greeting: '嗨！我是 Acme 沙龍的預約助理。歡迎問我這週誰有空檔，或任何跟預約有關的問題。',
     inputPlaceholder: '問問這週誰有空檔…',
     inputPlaceholderOffline: 'Demo 尚未接上線（缺少 API key）',
+    panelTitle: '客服',
+    statusOnline: '線上 · 通常立即回覆',
+    statusOffline: '離線 · demo 尚未接上線',
+    metaTitle: 'AI 客服與線上預約 Demo — onagent',
+    metaDescription:
+      '體驗一個會真的完成預約、查詢與取消的 AI 客服助理——這是一條真的 AgentBridge 連線，不是模擬。',
   },
 }
 
@@ -254,27 +269,17 @@ type Entry = ToolCallEntry | ChatEntry
 
 let nextEntryId = 0
 
-// initialLang reads ?lang= once, at module scope, so the first render and
-// the opening greeting already agree with it — reading it in an effect would
-// show English for a frame and then swap.
-//
-// Still not auto-detected from the browser's locale: the language is either
-// asked for in the link or chosen with the toggle, the same explicit-choice
-// approach src/marketing-demo/widget.js's own lang param takes. Anything
-// other than "zh" falls back to English rather than erroring, since this
-// value arrives from ad sitelinks and shared URLs.
-function initialLang(): Lang {
-  if (typeof window === 'undefined') return 'en'
-  return new URLSearchParams(window.location.search).get('lang') === 'zh' ? 'zh' : 'en'
-}
-
-export function SupportDemo() {
-  // Set from the URL at page load, then toggled via the phone-frame's own
-  // language button (see the JSX below).
-  const [lang, setLang] = useState<Lang>(initialLang)
+// Language now arrives as a prop from App.tsx, which owns it for the whole
+// showcase (../../lang.ts) — this component used to hold its own state and
+// its own toggle, which meant the Topbar switch and this panel could end up
+// disagreeing on the same screen. There is one control now, in the Topbar.
+export function SupportDemo({ lang }: { lang: Lang }) {
   const t = STRINGS[lang]
+  // Seeded from the prop's value at mount — the greeting is a real entry in
+  // the transcript, not a rendered label, so it can't be re-read from
+  // STRINGS on later renders the way every other string here is.
   const [entries, setEntries] = useState<Entry[]>(() => [
-    { kind: 'assistant', id: nextEntryId++, text: STRINGS[initialLang()].greeting },
+    { kind: 'assistant', id: nextEntryId++, text: STRINGS[lang].greeting },
   ])
   // Re-translates the greeting in place when the visitor switches
   // language — but only while it's still the sole, untouched entry (a
@@ -390,8 +395,8 @@ export function SupportDemo() {
   // search for landing on this specific demo, rather than the generic
   // showcase-wide copy every other /showcase/* route falls back to.
   usePageMeta({
-    title: 'AI Customer Support & Appointment Booking Demo — onagent',
-    description: 'Try a live AI customer support assistant that books, looks up, and cancels real appointments — a real AgentBridge connection, not a mock.',
+    title: t.metaTitle,
+    description: t.metaDescription,
     path: '/support',
   })
 
@@ -771,20 +776,13 @@ export function SupportDemo() {
               <svg viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
             </span>
             <div className={styles.csPanelHeaderText}>
+              {/* The in-panel language toggle that used to sit here is
+                  gone — the Topbar's is the single control now, so the
+                  chrome and this panel can no longer disagree. The LLM's
+                  own reply language was never set by it anyway (that's
+                  support-app-tools.yaml's thought, on the backend). */}
               <div className={styles.csPanelTitleRow}>
-                <div className={styles.csPanelTitle}>Support</div>
-                {/* This demo's own static copy (title/legend/greeting/
-                    placeholder, see the STRINGS dict above) switches
-                    language on click; the LLM's own reply language is
-                    unaffected (that's set by support-app-tools.yaml's
-                    thought on the backend, not by this toggle). */}
-                <button
-                  type="button"
-                  className={styles.langToggle}
-                  onClick={() => setLang((l) => (l === 'en' ? 'zh' : 'en'))}
-                >
-                  {lang === 'en' ? '中文' : 'EN'}
-                </button>
+                <div className={styles.csPanelTitle}>{t.panelTitle}</div>
               </div>
               {/* Same signal the input's own placeholder/disabled state
                   already uses (API_KEY presence) — not a real "connection
@@ -794,7 +792,7 @@ export function SupportDemo() {
                   the demo is fully unwired (no key set at all). */}
               <div className={styles.csPanelSubtitle}>
                 <span className={`${styles.csDot} ${API_KEY ? '' : styles.csDotOffline}`} />
-                {API_KEY ? 'Online · usually replies instantly' : 'Offline · demo not wired up'}
+                {API_KEY ? t.statusOnline : t.statusOffline}
               </div>
             </div>
           </div>

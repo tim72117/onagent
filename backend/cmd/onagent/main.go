@@ -1095,7 +1095,7 @@ func (c *apiClient) revokeKey(appID string) error {
 }
 
 // getApp returns the full App definition (every tool with its complete
-// parameter and returns schema) — the same document runSaveTools sends,
+// parameter schema) — the same document runSaveTools sends,
 // read back. Mirrors internal/console's getApp handler, which the web
 // console's editor calls for the same purpose.
 func (c *apiClient) getApp(appID string) (toolschema.App, error) {

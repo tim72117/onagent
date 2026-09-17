@@ -34,14 +34,6 @@ type Tool struct {
 	// arguments, in the same shape OpenAI/Anthropic tool calling expects.
 	Parameters ParameterSchema `yaml:"parameters" json:"parameters"`
 
-	// Returns optionally documents the shape of the tool_result payload
-	// the front-end sends back after executing this tool. It is not sent
-	// to the LLM as part of the tool schema, but is used for TS codegen.
-	// For a Kind == ToolKindQuery tool, this is also the shape the
-	// frontend's answer is expected in — that answer is fed back into the
-	// LLM's reasoning, not just used for codegen (see Kind's doc comment).
-	Returns *ParameterSchema `yaml:"returns,omitempty" json:"returns,omitempty"`
-
 	// Kind selects what happens after this tool is called. Empty/
 	// ToolKindAction (the default, and the only behavior that existed
 	// before this field) is fire-and-forget: the call is forwarded to the

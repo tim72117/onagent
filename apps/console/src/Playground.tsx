@@ -4,7 +4,6 @@ import { MOCK_TEMPLATE_KEYS, useMockRuntimes } from './playgroundMocks'
 import { randomRequestId } from './randomRequestId'
 import { connectPlayground, send } from './playgroundProtocol'
 import type { ToolCallPayload, ToolResultPayload } from './playgroundProtocol'
-import { fakeDataFromSchema } from './fakeDataFromSchema'
 import { ToolCallDetailSheet } from './ToolCallDetailSheet'
 import { isOverQuota, useQuota } from './QuotaContext'
 import { usePopoverPlacement } from './usePopoverPlacement'
@@ -33,11 +32,7 @@ export function playgroundStatus(state: ConnectionState, ready: boolean): { labe
 
 interface ChatMessage {
   id: number
-  // 'fabricated' is distinct from 'error': it's the no-mock query-tool
-  // fallback (see handleToolMessage) reporting a fake but ok:true result —
-  // sharing 'error' styling here would read as a failure even though the
-  // agent actually got usable (fabricated) data back.
-  role: 'user' | 'assistant' | 'tool_call' | 'tool_query' | 'error' | 'fabricated'
+  role: 'user' | 'assistant' | 'tool_call' | 'tool_query' | 'error'
   text: string
 }
 
@@ -95,11 +90,10 @@ const NO_MOCK_TIMEOUT_MS = 2_000
 // whether the effect actually took hold, never assumed — see
 // handleToolMessage's doc comment. A tool whose template has no
 // registered mock (or a call naming a target Playground didn't prepare
-// for) gets an honest "no mock effect" failure — unless it's a query tool
-// (has a `returns` schema), in which case it gets a clearly-labeled
-// fabricated placeholder value instead (see fakeDataFromSchema.ts and
-// handleToolMessage's own doc comment for why query tools get this
-// treatment and action tools don't).
+// for) gets an honest "no mock effect" failure — every tool, query
+// included. Query tools used to be fabricated a placeholder from their
+// declared `returns` schema; that field is gone, so there is nothing to
+// shape one from (see handleToolMessage's own doc comment).
 export function Playground({
   appId,
   tools,
@@ -373,21 +367,19 @@ export function Playground({
   // was, or what shape its arguments take — it's purely a toolName →
   // templateKey → runtime lookup (see toolTemplateRef/mockRuntimesRef).
   //
-  // For everything else, this does NOT fabricate a fake success for an
-  // action tool (no `returns`) — that would let the LLM believe an action
-  // happened when it didn't, silently corrupting the rest of the
-  // conversation. But a query tool (has `returns`) exists specifically to
-  // hand data back for the LLM to reason about, and always failing it left
-  // a developer with no way to test that reasoning without a real page —
-  // so this fabricates a schema-shaped placeholder value instead (see
-  // fakeDataFromSchema.ts) and reports ok:true with it, clearly labeled as
-  // fabricated in the transcript so it's never mistaken for a real mock's
-  // honestly-observed result. An action tool with no `returns` still gets
-  // the honest path: shows the call and, after a short grace period, sends
-  // back an explicit ok:false tool_result ("no mock effect for this tool
-  // in Playground") so the LLM gets a clear, truthful answer quickly
-  // rather than the developer having to wait out the backend's full
-  // interaction timeout to learn the same thing.
+  // For everything else, this never fabricates a fake success — that would
+  // let the LLM believe something happened when it didn't, silently
+  // corrupting the rest of the conversation. Instead it shows the call and,
+  // after a short grace period, sends back an explicit ok:false tool_result
+  // ("no mock effect for this tool in Playground") so the LLM gets a clear,
+  // truthful answer quickly rather than the developer having to wait out
+  // the backend's full interaction timeout to learn the same thing.
+  //
+  // Query tools used to be an exception: a declared `returns` schema let
+  // this fabricate a shaped placeholder so their reasoning could be tested
+  // without a real page. That schema no longer exists, so they take the
+  // same honest path as every other tool — to exercise a query tool now,
+  // point it at a real page.
   function handleToolMessage(
     ws: WebSocket,
     type: 'tool_call' | 'tool_query',
@@ -403,21 +395,6 @@ export function Playground({
       const outcome = runtime.invoke(payload.args)
       settleToolCall(callId, outcome)
       send(ws, 'tool_result', requestId, { toolName: payload.toolName, ...outcome } satisfies ToolResultPayload)
-      return
-    }
-
-    const returnsSchema = toolsByNameRef.current.get(payload.toolName)?.returns
-    if (returnsSchema) {
-      // Query tool, no real mock — fabricate a schema-shaped placeholder
-      // instead of failing outright (see this function's own doc comment
-      // above for why action vs query tools are treated differently here).
-      const fakeResult = fakeDataFromSchema(returnsSchema)
-      appendMessage(
-        'fabricated',
-        `"${payload.toolName}" has no mock effect in Playground — returning fabricated placeholder data (${JSON.stringify(fakeResult)}) so the agent has something to reason about.`
-      )
-      settleToolCall(callId, { ok: true, result: fakeResult })
-      send(ws, 'tool_result', requestId, { toolName: payload.toolName, ok: true, result: fakeResult } satisfies ToolResultPayload)
       return
     }
 
@@ -475,7 +452,6 @@ export function Playground({
     tool_call: styles.playgroundMsgTool_call,
     tool_query: '',
     error: styles.playgroundMsgError,
-    fabricated: styles.playgroundMsgFabricated,
   }
 
   // What-is-this help (collapsed behind a ? trigger instead of a
@@ -520,10 +496,8 @@ export function Playground({
               Test prompts against this app's agent without a real site. Some templates (a
               click-a-button tool, a fill-a-form-field tool) get real mock controls below that
               respond when the agent calls them — you can operate them yourself too, same controls,
-              same effect. A query tool with no mock instead gets a fabricated placeholder result
-              (clearly labeled as such in the transcript), so the agent has something to reason
-              about; everything else honestly reports failure back to the agent, since there's no
-              real page here to act on it.
+              same effect. Everything else honestly reports failure back to the agent, since
+              there's no real page here to act on it.
             </div>
           )}
         </div>
@@ -647,7 +621,6 @@ export function Playground({
                   <span className={styles.playgroundMsgLabel}>{m.role === 'tool_call' ? 'tool call' : 'tool query'}</span>
                 )}
                 {m.role === 'error' && <span className={styles.playgroundMsgLabel}>error</span>}
-                {m.role === 'fabricated' && <span className={styles.playgroundMsgLabel}>fabricated data</span>}
                 <span className="playground-msg-text">{m.text}</span>
               </div>
             ))}

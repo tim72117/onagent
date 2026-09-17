@@ -7,7 +7,7 @@ import styles from './ToolFieldSheet.module.css'
 
 // One row of ToolEditSheet.tsx's list — editing a tool's name in
 // isolation, same local-draft-then-Save pattern as its siblings
-// (ToolDescriptionSheet/ToolParametersSheet/ToolReturnsSheet). See
+// (ToolDescriptionSheet/ToolParametersSheet). See
 // ToolEditSheet.tsx's own comment for why this list-of-rows shape
 // replaced a single flat ToolForm sheet.
 export function ToolNameSheet({

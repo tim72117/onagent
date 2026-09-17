@@ -174,7 +174,6 @@ CREATE TABLE IF NOT EXISTS tools (
     name             TEXT NOT NULL,
     description      TEXT NOT NULL,
     parameters       JSONB NOT NULL, -- toolschema.ParameterSchema, serialized
-    returns          JSONB,          -- toolschema.ParameterSchema, serialized; NULL if undeclared
     kind             TEXT NOT NULL DEFAULT 'action', -- toolschema.ToolKind: "action" (default) or "query"
     backend_dispatch JSONB,          -- toolschema.BackendDispatch, serialized; NULL if this tool dispatches to the browser (the default)
     position         INTEGER NOT NULL, -- preserves declaration order within an app

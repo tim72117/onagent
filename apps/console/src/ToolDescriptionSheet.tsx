@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BottomSheet } from './BottomSheet'
 import { SheetHeader } from './SheetHeader'
 import { focusAndReveal } from './focusField'
+import { MAX_DESCRIPTION } from './schema'
 import styles from './ToolFieldSheet.module.css'
 
 // See ToolNameSheet.tsx's own comment — same local-draft-then-Save shape,
@@ -45,13 +46,20 @@ export function ToolDescriptionSheet({
           <SheetHeader title="Description" onClose={onClose} saveLabel="Done" saveDisabled={draft.trim() === description} />
         </div>
         <div className={styles.body}>
+          {/* Same cap as the desktop field and the server (see
+              schema.ts's MAX_DESCRIPTION) — a limit enforced on only one
+              of the two editors isn't a limit. */}
           <textarea
             ref={textareaRef}
             className={styles.descriptionInput}
+            maxLength={MAX_DESCRIPTION}
             placeholder="What does this tool do, and when should the model call it?"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
           />
+          <p className={styles.charCount}>
+            {draft.length} / {MAX_DESCRIPTION}
+          </p>
         </div>
       </form>
     </BottomSheet>

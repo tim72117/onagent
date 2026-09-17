@@ -194,23 +194,14 @@
 .csAvatar svg { stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .csAvatarLg { width: 36px; height: 36px; }
 .csAvatarLg svg { width: 18px; height: 18px; }
-/* Fills the header's remaining width (avatar is flex: none) so
-   .csPanelTitleRow's own justify-content: space-between has a real
-   right edge to push .langToggle against, instead of the row only ever
-   being as wide as "Support" + the button. */
+/* Fills the header's remaining width (avatar is flex: none) so the title
+   row spans the panel rather than shrinking to its own text. Kept after
+   the in-panel language toggle was removed (the Topbar owns that control
+   now): the subtitle below still wants the full width. */
 .csPanelHeaderText { flex: 1; min-width: 0; }
 .csPanelTitleRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .csPanelTitle { font-weight: 700; font-size: 15px; color: var(--sl-text); }
 .csPanelSubtitle { font-size: 12px; color: var(--sl-text-3); display: flex; align-items: center; gap: 4px; }
-/* Same-row toggle next to "Support" (see SupportDemo.tsx's
-   csPanelTitleRow) — this demo's own static copy only (STRINGS/lang
-   state), not the rest of showcase. */
-.langToggle {
-  padding: 3px 10px; border: 1px solid var(--sl-border); border-radius: 999px;
-  background: var(--sl-bg); color: var(--sl-text);
-  font-size: 11px; font-weight: 600; cursor: pointer; flex: none;
-}
-.langToggle:hover { border-color: rgba(201,162,75,0.6); }
 .csDot { width: 6px; height: 6px; border-radius: 50%; background: #3fa86a; display: inline-block; }
 /* No API key set (SupportDemo.tsx's API_KEY) — same "not wired up" state
    the input's own disabled/placeholder already communicates, so the dot

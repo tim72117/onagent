@@ -1,20 +1,31 @@
+import type { ReactNode } from 'react'
 import styles from './SidebarNav.module.css'
 
-// Desktop-only Agent/Playground nav — mobile has no equivalent nav item
-// (Playground is reached from MobileBottomBar.tsx instead).
+// Desktop-only Agent nav — mobile has no equivalent nav item (Playground is
+// reached from MobileBottomBar.tsx instead).
+//
+// Two exports rather than one: Thought and Tools are peer items inside the
+// Agent section, while Playground is its own section rendered *below* that
+// one — same level as the Agent section itself, not a row within it.
+// Keeping them in one component would mean rendering a section and a
+// sibling section from the same place, which is exactly the nesting the
+// sidebar is trying to express.
+
+// The Agent section: Thought and Tools as peer rows, tool rows nested
+// under Tools. `toolsSlot` is ToolList.tsx's rendered output, passed in
+// rather than imported so this component stays unaware of tool state —
+// Sidebar.tsx already owns every tool prop.
 export function AgentNav({
   agentSelected,
-  playgroundSelected,
   onSelectAgent,
-  onSelectPlayground,
+  toolsSlot,
 }: {
   agentSelected: boolean
-  playgroundSelected: boolean
   onSelectAgent: () => void
-  onSelectPlayground: () => void
+  toolsSlot?: ReactNode
 }) {
   return (
-    <div className={styles.section}>
+    <div className={styles.sectionAgent}>
       <div className={styles.sectionHead}>
         <span>Agent</span>
       </div>
@@ -43,6 +54,25 @@ export function AgentNav({
             </span>
           </button>
         </li>
+      </ul>
+      {toolsSlot}
+    </div>
+  )
+}
+
+// Standalone row below the Agent section — same level as that section, not
+// an item within it. Mirrors the YAML/Settings rows in Sidebar.tsx, which
+// use this same bare-list-in-a-section shape.
+export function PlaygroundNav({
+  playgroundSelected,
+  onSelectPlayground,
+}: {
+  playgroundSelected: boolean
+  onSelectPlayground: () => void
+}) {
+  return (
+    <div className={styles.section}>
+      <ul className={styles.list}>
         <li>
           <button
             type="button"

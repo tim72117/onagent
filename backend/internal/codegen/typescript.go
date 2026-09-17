@@ -40,22 +40,15 @@ func TypeScript(app *toolschema.App) (string, error) {
 		}
 		b.WriteString("\n")
 
-		if t.Returns != nil {
-			retType := pascalCase(t.Name) + "Result"
-			if err := writeInterface(&b, retType, t.Returns); err != nil {
-				return "", fmt.Errorf("codegen: tool %q returns: %w", t.Name, err)
-			}
-			b.WriteString("\n")
-		}
 	}
 
 	b.WriteString("export interface ToolHandlers {\n")
 	for _, t := range app.Tools {
 		argsType := pascalCase(t.Name) + "Args"
+		// One handler signature for every tool: the schema no longer
+		// describes what a tool sends back, so a query tool's answer is
+		// typed as loosely as an action tool's side effect.
 		retType := "void | Record<string, unknown>"
-		if t.Returns != nil {
-			retType = pascalCase(t.Name) + "Result"
-		}
 		fmt.Fprintf(&b, "  /** %s */\n", strings.ReplaceAll(t.Description, "\n", " "))
 		fmt.Fprintf(&b, "  %s(args: %s): Promise<%s> | %s;\n", t.Name, argsType, retType, retType)
 	}

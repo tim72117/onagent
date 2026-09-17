@@ -36,11 +36,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<ShowcaseList lang={lang} />} />
             <Route path="/marketing" element={<MarketingDemo lang={lang} />} />
-            {/* SupportDemo keeps its own in-panel language state and
-                toggle (it predates this one and owns 904 lines of its own
-                copy); both read the same ?lang= at load, so they agree on
-                arrival. Its in-panel toggle still switches only itself. */}
-            <Route path="/support" element={<SupportDemo />} />
+            <Route path="/support" element={<SupportDemo lang={lang} />} />
           </Routes>
         </div>
       </main>

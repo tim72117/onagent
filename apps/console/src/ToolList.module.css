@@ -4,15 +4,38 @@
   gap: 4px;
 }
 
-.sectionGrow {
+/* The Tools row + its nested tool list, rendered inside AgentNav's section
+   as a peer of Thought. Grows to absorb the section's spare height so the
+   tool list itself is what scrolls when there are many tools. */
+.group {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
+/* Same geometry as a nav .item, but it's a <div>, not a button — there's no
+   Tools screen to open. Cursor/hover are suppressed so it doesn't invite a
+   click that does nothing; the two icon buttons inside it stay interactive. */
+.groupRow {
+  cursor: default;
+}
+
+.groupRow:hover {
+  background: transparent;
+  color: var(--ink-dim);
+}
+
+/* Aligns the empty state with the nested tool rows rather than the Tools
+   row above it. */
+.groupEmpty {
+  padding-left: 32px;
+}
+
+/* One level deeper than Thought/Tools (which sit at .item's own 8px), so
+   the nesting reads without a connector line. */
 .itemTool {
   font-family: var(--font-mono);
   font-size: 12.5px;
-  padding-left: 16px;
+  padding-left: 32px;
 }

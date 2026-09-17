@@ -136,8 +136,7 @@ onagent app thought set <appId> <thought>
   - `properties`：物件，每個 key 是參數名稱，value 描述該參數的 `type`（支援 `string`、`number`、`integer`、`boolean`、`array`、`object`）與選填的 `description`。
   - `required`（選填）：陣列，列出哪些參數名稱是必填。
   - 若某個參數本身是 `array`，用 `items` 描述元素型別；若是 `object`，用 `properties`（可再搭配 `required`）描述其欄位，可以巢狀。
-- `returns`（選填）：格式與 `parameters` 相同的 JSON Schema 子集，用來描述回傳值的形狀。這個欄位只用於 TypeScript 型別產生（codegen），不會送給 LLM，可以省略。
-- `kind`（選填）：`action`（預設，不填即是這個）或 `query`。`action` 是 fire-and-forget——onagent 只在意呼叫成功與否，你的回傳值不會被 LLM 看到；`query` 會把你的回傳值（依 `returns` 的形狀）餵回 LLM 的推理過程。兩者目前都是阻塞式的，差別只在回傳值是否被 LLM 讀取，不在於是否等待回應。
+- `kind`（選填）：`action`（預設，不填即是這個）或 `query`。`action` 是 fire-and-forget——onagent 只在意呼叫成功與否，你的回傳值不會被 LLM 看到；`query` 會把你的回傳值餵回 LLM 的推理過程。兩者目前都是阻塞式的，差別只在回傳值是否被 LLM 讀取，不在於是否等待回應。回傳值的形狀不需要事先宣告，handler 回傳什麼就餵回什麼。
 
 （`onagent app thought set <appId> <thought>`（見上一節「設定 Thought」）是設定/修改 thought 唯一的方式，跟這裡的 tool 檔案完全無關，是獨立的兩件事。）
 
@@ -156,13 +155,6 @@ parameters:
       type: integer
   required:
     - query
-returns:
-  type: array
-  items:
-    type: object
-    properties:
-      id: { type: string }
-      name: { type: string }
 kind: query
 ```
 

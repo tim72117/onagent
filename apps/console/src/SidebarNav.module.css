@@ -9,6 +9,18 @@
   margin-bottom: 20px;
 }
 
+/* The Agent section now holds the tool list (AgentNav.tsx's toolsSlot), so
+   it takes over the growth that used to live on ToolList's own section —
+   it's the element that has to absorb the sidebar's spare height and let
+   the nested list scroll rather than push the footer off-screen. */
+.sectionAgent {
+  margin-bottom: 20px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .sectionHead {
   display: flex;
   align-items: center;

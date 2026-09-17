@@ -41,7 +41,6 @@ type toolRow struct {
 	Name            string  `gorm:"column:name"`
 	Description     string  `gorm:"column:description"`
 	Parameters      []byte  `gorm:"column:parameters"`
-	Returns         []byte  `gorm:"column:returns"`
 	Kind            string  `gorm:"column:kind"`
 	BackendDispatch []byte  `gorm:"column:backend_dispatch"`
 	Position        int     `gorm:"column:position"`
@@ -432,13 +431,6 @@ func loadAllApps(db *gorm.DB) (map[string]*App, error) {
 		if tr.SourceTemplate != nil {
 			tool.SourceTemplate = *tr.SourceTemplate
 		}
-		if tr.Returns != nil {
-			var ret ParameterSchema
-			if err := json.Unmarshal(tr.Returns, &ret); err != nil {
-				return nil, fmt.Errorf("toolschema: unmarshal returns for %s.%s: %w", tr.AppID, tr.Name, err)
-			}
-			tool.Returns = &ret
-		}
 		if tr.BackendDispatch != nil {
 			var bd BackendDispatch
 			if err := json.Unmarshal(tr.BackendDispatch, &bd); err != nil {
@@ -506,13 +498,6 @@ func saveTool(db *gorm.DB, appID string, tool Tool) (id int64, err error) {
 		if err != nil {
 			return fmt.Errorf("toolschema: marshal parameters for %s: %w", tool.Name, err)
 		}
-		var returnsJSON []byte
-		if tool.Returns != nil {
-			returnsJSON, err = json.Marshal(tool.Returns)
-			if err != nil {
-				return fmt.Errorf("toolschema: marshal returns for %s: %w", tool.Name, err)
-			}
-		}
 		kind := tool.Kind
 		if kind == "" {
 			kind = ToolKindAction
@@ -541,7 +526,7 @@ func saveTool(db *gorm.DB, appID string, tool Tool) (id int64, err error) {
 				Where("id = ? AND app_id = ?", tool.ID, appID).
 				Updates(map[string]any{
 					"name": tool.Name, "description": tool.Description,
-					"parameters": paramsJSON, "returns": returnsJSON, "kind": string(kind),
+					"parameters": paramsJSON, "kind": string(kind),
 					"backend_dispatch": backendDispatchJSON, "source_template": sourceTemplate,
 				})
 			if res.Error != nil {
@@ -574,13 +559,13 @@ func saveTool(db *gorm.DB, appID string, tool Tool) (id int64, err error) {
 
 		row := toolRow{
 			AppID: appID, Name: tool.Name, Description: tool.Description,
-			Parameters: paramsJSON, Returns: returnsJSON, Kind: string(kind),
+			Parameters: paramsJSON, Kind: string(kind),
 			BackendDispatch: backendDispatchJSON, Position: position, SourceTemplate: sourceTemplate,
 		}
 		err = tx.Clauses(clause.OnConflict{
 			Columns: []clause.Column{{Name: "app_id"}, {Name: "name"}},
 			DoUpdates: clause.AssignmentColumns([]string{
-				"description", "parameters", "returns", "kind", "backend_dispatch", "source_template",
+				"description", "parameters", "kind", "backend_dispatch", "source_template",
 			}),
 		}).Create(&row).Error
 		if err != nil {

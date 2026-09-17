@@ -10,8 +10,34 @@
   font-family: var(--font-mono);
 }
 
-.row input {
+.row > input {
   flex: 1;
+  min-width: 0;
+}
+
+/* A schema's own fields (Description, then type) stack instead of sharing
+   a row: side by side, the select took its width from its widest <option>
+   and left the Description a few characters wide. Stacked, each field gets
+   the full width and the pair reads top to bottom like the rest of the
+   form. The property header above it (name / required / ×) keeps .row,
+   where three small controls genuinely belong on one line. */
+.fieldStack {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.fieldStack select {
+  width: 100%;
+  font-family: var(--font-mono);
+}
+
+/* .inline-label is itself a column flex container, so its input never
+   picked up a width from the row — it needs one of its own. */
+.fieldStack :global(.inline-label) input {
+  width: 100%;
 }
 
 .sub {

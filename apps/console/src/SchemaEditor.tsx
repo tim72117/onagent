@@ -117,15 +117,11 @@ export function SchemaEditor({
 
   return (
     <div className={depth > 0 ? styles.nested : undefined}>
+      {/* Description first, type after, stacked rather than side by side —
+          what the parameter is for is the part someone writes and reads;
+          its type is a detail picked once from a short list. */}
       {!hideRootHeader && (
-        <div className={styles.row}>
-          <select value={schema.type} onChange={(e) => setType(e.target.value as ParamType)}>
-            {PARAM_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+        <div className={styles.fieldStack}>
           <label className="inline-label">
             Description
             <input
@@ -134,6 +130,13 @@ export function SchemaEditor({
               onChange={(e) => onChange({ ...schema, description: e.target.value })}
             />
           </label>
+          <select value={schema.type} onChange={(e) => setType(e.target.value as ParamType)}>
+            {PARAM_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 

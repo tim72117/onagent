@@ -28,7 +28,6 @@ function toolToPlain(t: Tool) {
     description: t.description,
     parameters: schemaToPlain(t.parameters),
   }
-  if (t.returns) out.returns = schemaToPlain(t.returns)
   return out
 }
 

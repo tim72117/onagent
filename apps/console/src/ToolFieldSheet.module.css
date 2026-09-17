@@ -39,6 +39,17 @@
   min-height: 160px;
 }
 
+/* Counter under the description box, right-aligned to the field's own edge
+   — same information the desktop form shows, so a limit hit on one editor
+   isn't a surprise on the other. */
+.charCount {
+  margin: 8px 0 0;
+  text-align: right;
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
 .intro {
   margin: 0 0 12px;
   font-size: 12.5px;

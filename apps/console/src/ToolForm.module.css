@@ -6,23 +6,152 @@
   max-width: 640px;
 }
 
+/* Holds only the name field now — Save moved to .saveRow at the foot of
+   the form, so there is no second item to space apart. */
 .toolFormHeader {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
   margin-bottom: 16px;
 }
 
+/* No flex sizing any more — .toolFormHeader stopped being a flex row when
+   Save moved out of it, so this just fills the form's width. */
 .toolNameField {
-  flex: 1;
+  width: 100%;
 }
 
-.toolNameInput {
+/* Outlined field with the label straddling the top border, the way Google
+   Ads and Material text fields do it. The label is absolutely positioned
+   over the border and paints its own background to knock a gap in the
+   line, rather than the border being drawn in segments — so it keeps
+   working at any label width, in either theme, and with the field's own
+   background showing through underneath.
+   Shared by Name and Description. Desktop only: the mobile editor uses
+   ToolNameSheet / ToolDescriptionSheet instead. */
+.outlined {
+  position: relative;
+  /* Room for the label to sit on the border without clipping. */
+  padding-top: 2px;
+}
+
+/* Applies to whatever control the field wraps — <input> for Name,
+   <textarea> for Description — so both get the same box.
+   Doubled class on the ancestor purely for specificity: style.css's own
+   `.field textarea` rule matches these too and ties on specificity, which
+   would otherwise leave the winner down to stylesheet order. */
+.outlined.outlined input,
+.outlined.outlined textarea {
   width: 100%;
+  /* Taller and rounder than the global input box, which is sized for
+     dense form rows; these are the editor's primary fields. */
+  padding: 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  /* Set here, not on .toolNameInput: both fields are the same rank, so
+     they take the same size. Leaving it off Description dropped it to the
+     global 13px and made the pair look mismatched. */
+  font-size: 15px;
+}
+
+/* Overrides the global `textarea { resize: vertical }`: the drag handle
+   sits in the bottom-right corner, which is exactly where the character
+   counter goes — and a field whose height the visitor can change makes the
+   counter's position unstable. Height comes from `rows` instead. */
+.outlined.outlined textarea {
+  resize: none;
+}
+
+.outlined input:focus-visible,
+.outlined textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  /* Second ring rather than a thicker border, so the box doesn't shift by
+     a pixel when focus lands on it. */
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* Name stays monospace — it's an identifier the model calls, not prose.
+   Size comes from .outlined, shared with Description. */
+.toolNameInput {
   font-family: var(--font-mono);
   font-weight: 600;
-  font-size: 15px;
+}
+
+.outlinedLabel {
+  position: absolute;
+  top: -5px;
+  left: 9px;
+  z-index: 1;
+  padding: 0 5px;
+  /* Matches the field's own fill, which is what makes the border appear to
+     break around the text. */
+  background: var(--bg-raised);
+  font-size: 11.5px;
+  line-height: 1;
+  color: var(--ink-dim);
+  pointer-events: none;
+}
+
+/* Focus recolors the label with the border it sits on, so the two read as
+   one control rather than a box with a caption pinned to it. */
+.outlined:focus-within .outlinedLabel {
+  color: var(--accent);
+}
+
+/* Help text under the field, matching the screenshot's grey caption. */
+.toolNameHint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+
+/* Takes the hint's place when the name is invalid: same position and
+   metrics, red text only — no fill or rounded box, which at this size
+   reads as a banner bolted under the field rather than a note about it. */
+.toolNameError {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--danger);
+}
+
+/* Same treatment for every other field's message. Separate from
+   .toolNameError only because that one replaces a hint line that sits
+   tight under its box, while these follow a control and need the gap. */
+.fieldError {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--danger);
+}
+
+/* Help text and counter share one row under the field, so the counter sits
+   at the box's bottom-right without being pinned over the textarea itself —
+   where it would sit on top of whatever the last line of text says. */
+.fieldFooter {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 6px;
+}
+
+.fieldFooter > :first-child {
+  margin-top: 0;
+}
+
+.charCount {
+  flex: none;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Only at the ceiling — a counter that is red all the way up reads as an
+   error before anything is wrong. */
+.charCountFull {
+  color: var(--danger);
 }
 
 .sourceTemplate {
@@ -30,6 +159,21 @@
   margin-top: 6px;
   font-size: 11px;
   color: var(--ink-faint);
+}
+
+/* The form's commit row. A rule above it closes off the fields, so Save
+   reads as acting on everything above rather than on the last field it
+   happens to follow. */
+.saveRow {
+  display: flex;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.saveRow > button {
+  padding-block: 11px;
+  padding-inline: 24px;
 }
 
 /* Same pattern as AppSettingsView.module.css/AppSettingsList.module.css's

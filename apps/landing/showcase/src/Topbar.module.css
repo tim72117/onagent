@@ -19,19 +19,21 @@
    level, not one href for the whole string. */
 .brandLink { display: flex; align-items: center; gap: 9px; color: inherit; text-decoration: none; }
 .brandLink:hover { color: var(--accent-2, var(--text)); }
+/* Container for the inline sphere logo (Topbar.tsx) — no tile background of
+   its own any more; the sphere is the shape. */
 .mark {
-  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px;
-  background: var(--grad); color: #1a1408; font-size: 14px; font-weight: 700;
+  display: grid; place-items: center; width: 26px; height: 26px; flex: none;
 }
+.mark svg { display: block; width: 100%; height: 100%; }
 .sep { color: var(--text-3); font-weight: 400; margin: 0 2px; }
 .suffix { color: var(--text-2); font-weight: 600; font-size: 14px; }
 .links { display: flex; align-items: center; gap: 18px; font-size: 13.5px; color: var(--text-2); }
 .links a { color: var(--text-2); }
 .links a:hover { color: var(--text); }
 
-/* Same pill shape SupportDemo.module.css's own .langToggle uses, so the
-   two language controls read as the same kind of control even though
-   they switch different scopes (page chrome vs. that demo's panel). */
+/* The showcase's single language control. SupportDemo used to carry a
+   second one inside its phone panel, switching only its own copy; that
+   one is gone, so the two can no longer disagree on screen. */
 .langToggle {
   padding: 3px 10px; border: 1px solid var(--border-soft); border-radius: 999px;
   background: transparent; color: var(--text-2);

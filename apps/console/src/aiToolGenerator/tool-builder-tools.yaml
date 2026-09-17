@@ -19,23 +19,19 @@ thought: |
     that takes no arguments at all (e.g. "scroll to the top of the page"),
     still emit {"type": "object", "properties": {}, "required": []} — never
     omit "type", even when there are zero properties.
-  - returns: only include this field at all if the tool's caller (the web
-    page) would send back data the LLM needs to reason about afterwards
-    (e.g. "how many results were found") — omit the whole "returns" key for
-    a fire-and-forget action tool (e.g. "click the submit button"). When you
-    DO include it, it follows the exact same rule as parameters above:
-    always {"type": "object", ...}, with "type" present even if you can't
-    think of any properties to add.
-  - kind: always required, must be exactly "query" if you included
-    "returns" above, or exactly "action" if you didn't — the two always
-    move together. Never emit "returns" with kind "action": the caller's
-    data would silently never reach the model, defeating the entire point
-    of declaring "returns" in the first place.
-  - Every "type" value anywhere in parameters or returns (including their
-    own top-level "object") must be lowercase JSON Schema style — "string",
-    "number", "integer", "boolean", "array", "object" — never uppercase
-    (e.g. never "STRING" or "OBJECT"), and "type" is never optional or
-    omitted on any schema object, top-level or nested.
+  - kind: always required. "query" means the conversation waits for the
+    page's real answer and reasons about it — pick this whenever the tool
+    exists to fetch something the model needs (e.g. a weather lookup's
+    temperature, a search's result list). "action" means fire-and-forget
+    (e.g. clicking a button): the page's response, if any, never reaches
+    the model. Judge this from what the tool is FOR, not from its shape —
+    a tool whose whole purpose is answering a question is "query" even
+    when the answer is a single number.
+  - Every "type" value anywhere in parameters (including its own top-level
+    "object") must be lowercase JSON Schema style — "string", "number",
+    "integer", "boolean", "array", "object" — never uppercase (e.g. never
+    "STRING" or "OBJECT"), and "type" is never optional or omitted on any
+    schema object, top-level or nested.
   - When a string parameter only ever takes one of a small fixed set of
     values (e.g. a category, a status, a mode), give it an "enum" array of
     those exact string values instead of just describing the allowed values
@@ -47,11 +43,9 @@ tools:
       Call this once with a complete tool definition for the new tool the
       developer described. This is the only tool available in this
       conversation — always respond by calling it, never with plain text.
-    # Fire-and-forget: the console's acknowledgement (returns, below) is
-    # never reasoned about further — the conversation ends as soon as this
-    # is called — so this is ToolKindAction, not ToolKindQuery, despite
-    # having a returns block (returns is also used for TS codegen, which
-    # applies regardless of Kind — see toolschema.Tool's doc comment).
+    # Fire-and-forget: the console acts on the proposal itself, and the
+    # conversation ends as soon as this is called, so nothing the console
+    # sends back needs to reach the model.
     kind: action
     parameters:
       type: object
@@ -79,38 +73,16 @@ tools:
             "array" an items sub-schema}); required lists which of those
             argument names must always be present. An empty properties map
             means the tool takes no arguments at all.
-        returns:
-          type: object
-          properties: {}
-          description: >
-            Optional. Only include this field if the web page sends back
-            data after running this tool that the conversation should
-            reason about afterwards (a "query" tool) — omit it entirely for
-            a fire-and-forget action. Same JSON Schema "object" shape as
-            parameters above.
         kind:
           type: string
           enum: [action, query]
           description: >
-            Required whenever you include "returns" above. "query" means
-            the conversation actually waits for the page's real answer and
-            reasons about it — pick this whenever "returns" describes real
-            data the tool's caller needs (e.g. a weather lookup's
-            temperature, a search's result list). "action" means the tool
-            is fire-and-forget (e.g. clicking a button) and the page's
-            response, if any, is never seen by the conversation — pick this
-            whenever you did NOT include "returns", or the tool has no
-            meaningful data to report back. Getting this wrong silently
-            breaks the tool: a "query"-shaped tool saved as "action" will
-            always tell the model it "succeeded" without ever delivering
-            the data "returns" promised.
-    returns:
-      type: object
-      description: >
-        The console's acknowledgement that it received and is reviewing the
-        proposed tool definition. Not used to reason further — the
-        conversation ends as soon as this comes back.
-      properties:
-        ok:
-          type: boolean
-          description: Always true — the console always accepts the proposal for review.
+            Required. "query" means the conversation actually waits for the
+            page's real answer and reasons about it — pick this whenever the
+            tool's purpose is to fetch data the model needs (e.g. a weather
+            lookup's temperature, a search's result list). "action" means
+            the tool is fire-and-forget (e.g. clicking a button) and the
+            page's response, if any, is never seen by the conversation.
+            Getting this wrong silently breaks the tool: a question-answering
+            tool saved as "action" will always tell the model it "succeeded"
+            without ever delivering the answer.

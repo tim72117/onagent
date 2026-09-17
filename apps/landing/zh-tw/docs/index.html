@@ -25,6 +25,9 @@
   <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="canonical" href="https://onagent.shuttle.tools/zh-tw/docs/" />
+  <link rel="alternate" hreflang="en" href="https://onagent.shuttle.tools/docs/" />
+  <link rel="alternate" hreflang="zh-Hant" href="https://onagent.shuttle.tools/zh-tw/docs/" />
+  <link rel="alternate" hreflang="x-default" href="https://onagent.shuttle.tools/docs/" />
   <title>onagent 開發文件 — 串接平台</title>
   <meta
     name="description"
@@ -103,10 +106,11 @@
       border-bottom: 1px solid var(--border-soft);
     }
     .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; color: var(--text); }
+    /* 裝內嵌球體 logo 的容器，本身不帶底色——球體就是形狀。 */
     .mark {
-      display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px;
-      background: var(--grad); color: #1a1408; font-size: 14px; font-weight: 700;
+      display: grid; place-items: center; width: 26px; height: 26px; flex: none;
     }
+    .mark svg { display: block; width: 100%; height: 100%; }
     .brand .sep { color: var(--text-3); font-weight: 400; margin: 0 2px; }
     .brand .doctag { color: var(--text-2); font-weight: 600; font-size: 14px; }
     .topbar-links { display: flex; align-items: center; gap: 18px; font-size: 13.5px; color: var(--text-2); }
@@ -309,7 +313,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   <div class="bg-fx"></div>
 
   <header class="topbar">
-    <a class="brand" href="../index.html"><span class="mark">⌘</span>onagent<span class="sep">/</span><span class="doctag">docs</span></a>
+    <a class="brand" href="../index.html"><span class="mark"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="mzds" cx="36%" cy="28%" r="76%"><stop offset="0" stop-color="#4a4030"/><stop offset="0.22" stop-color="#2e2819"/><stop offset="0.48" stop-color="#181410"/><stop offset="0.74" stop-color="#0a0907"/><stop offset="1" stop-color="#030302"/></radialGradient><radialGradient id="mzdb" cx="50%" cy="50%" r="50%"><stop offset="0.62" stop-color="#c9a24b" stop-opacity="0"/><stop offset="0.88" stop-color="#8a6f34" stop-opacity="0.30"/><stop offset="1" stop-color="#6b5528" stop-opacity="0.16"/></radialGradient><linearGradient id="mzdr" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#f6e6bd" stop-opacity="0.85"/><stop offset="0.45" stop-color="#c9a24b" stop-opacity="0.55"/><stop offset="1" stop-color="#8a6f34" stop-opacity="0.40"/></linearGradient><radialGradient id="mzdp" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.50"/><stop offset="0.45" stop-color="#fff4d6" stop-opacity="0.16"/><stop offset="1" stop-color="#f0dfae" stop-opacity="0"/></radialGradient><radialGradient id="mzdo" cx="50%" cy="46%" r="52%"><stop offset="0.55" stop-color="#000000" stop-opacity="0.55"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient><radialGradient id="mzdg" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f6e6bd" stop-opacity="0.44"/><stop offset="0.5" stop-color="#e0c98a" stop-opacity="0.15"/><stop offset="1" stop-color="#c9a24b" stop-opacity="0"/></radialGradient><radialGradient id="mzdi" cx="42%" cy="36%" r="68%"><stop offset="0" stop-color="#fffdf4"/><stop offset="0.34" stop-color="#ffeec4"/><stop offset="0.68" stop-color="#e8c982"/><stop offset="1" stop-color="#a8813a"/></radialGradient></defs><circle cx="32" cy="32" r="31" fill="url(#mzds)"/><circle cx="32" cy="32" r="31" fill="url(#mzdb)"/><circle cx="32" cy="32" r="30" fill="none" stroke="url(#mzdr)" stroke-width="2"/><ellipse cx="22" cy="17" rx="13" ry="8.5" fill="url(#mzdp)" transform="rotate(-24 22 17)"/><circle cx="23" cy="28" r="11" fill="url(#mzdo)"/><circle cx="41" cy="28" r="11" fill="url(#mzdo)"/><circle cx="23" cy="28" r="10" fill="url(#mzdg)"/><circle cx="41" cy="28" r="10" fill="url(#mzdg)"/><circle cx="23" cy="28" r="5.6" fill="url(#mzdi)"/><circle cx="41" cy="28" r="5.6" fill="url(#mzdi)"/><circle cx="21.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92"/><circle cx="39.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92"/></svg></span>onagent<span class="sep">/</span><span class="doctag">docs</span></a>
     <div class="topbar-links">
       <a href="../index.html">← 回到網站</a>
       <a href="/docs/">EN</a>
@@ -624,7 +628,6 @@ Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">
               <tr><td>name</td><td>是</td><td>LLM 呼叫這個 tool 時使用的識別名稱。必須符合 <code>^[a-zA-Z_][a-zA-Z0-9_]*$</code>，且在同一個 app 裡不可重複。</td></tr>
               <tr><td>description</td><td>是</td><td>告訴 LLM 何時、為何該呼叫這個 tool。這是模型在多個 tool 之間做選擇時最主要的依據——請寫得具體。</td></tr>
               <tr><td>parameters</td><td>是</td><td>一個 JSON Schema 物件：<code>type: object</code>、一個 <code>properties</code> 對應表（每一項都要有 <code>type</code>——<code>string</code>、<code>number</code>、<code>integer</code>、<code>boolean</code>、<code>array</code> 或 <code>object</code>——以及選填的 <code>description</code>），還有選填的 <code>required</code> 屬性名稱清單。型別為陣列的屬性用 <code>items</code> 描述；型別為物件的屬性可以再巢狀一層 <code>properties</code>／<code>required</code>。任何屬性也都可以加上選填的 <code>enum</code>——一份允許的字串值清單——把 LLM 限制在固定選項之中，而不是自由填寫。</td></tr>
-              <tr><td>returns</td><td>否</td><td>結構與 <code>parameters</code> 相同，用來描述前端回傳的內容。它不會隨 tool schema 一起送給 LLM——它的用途是 TypeScript 的程式碼產生；而對 <code>query</code> 類型的 tool 而言，這同時也是 LLM 收到的資料形狀（見下文）。</td></tr>
               <tr><td>kind</td><td>否</td><td><code>action</code>（預設）或 <code>query</code>——見下方 <a href="#tool-kind">action 與 query</a>。</td></tr>
             </tbody>
           </table>
@@ -647,13 +650,6 @@ Set <span class="t-str">"my-app"</span>'s allowed origin to <span class="t-str">
       <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">integer</span>
   <span class="t-key">required</span><span class="t-punc">:</span>
     <span class="t-punc">-</span> <span class="t-str">query</span>
-<span class="t-key">returns</span><span class="t-punc">:</span>
-  <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">array</span>
-  <span class="t-key">items</span><span class="t-punc">:</span>
-    <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">object</span>
-    <span class="t-key">properties</span><span class="t-punc">:</span>
-      <span class="t-key">id</span><span class="t-punc">:</span> <span class="t-punc">{</span> <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span> <span class="t-punc">}</span>
-      <span class="t-key">name</span><span class="t-punc">:</span> <span class="t-punc">{</span> <span class="t-key">type</span><span class="t-punc">:</span> <span class="t-str">string</span> <span class="t-punc">}</span>
 <span class="t-key">kind</span><span class="t-punc">:</span> <span class="t-str">query</span>   <span class="t-com"># LLM 需要拿回實際的搜尋結果</span></pre>
         </div>
         <p class="body-text">第二個 tool，沒有寫 <code>kind</code>（預設為 <code>action</code>）：</p>
@@ -802,8 +798,7 @@ Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</
             <thead><tr><th>這個 tool 有…</th><th>Playground 的行為</th></tr></thead>
             <tbody>
               <tr><td>一個 <code>click_button</code> 或 <code>fill_form</code> 範本</td><td>會繪出一個真的、可點的模擬介面（按鈕或文字欄位，依該 tool 的 <code>enum</code> 選項建立）——LLM 呼叫這個 tool、以及你自己動手點，走的是同一條程式碼路徑，產生的結果也相同。</td></tr>
-              <tr><td>有 <code>returns</code> 結構、但沒有 mock</td><td>會依 <code>returns</code> 的形狀捏造一份佔位資料，當成一次成功的呼叫回報，並在對話紀錄中標示為「fabricated data」，以免你誤以為那是真實資料。</td></tr>
-              <tr><td>沒有 <code>returns</code>、也沒有 mock</td><td>等待 2 秒，然後回報這次呼叫失敗，並附上明確的「這裡沒有任何東西能真的執行它」訊息——提醒你這個 tool 需要一個真實的頁面來回應。</td></tr>
+              <tr><td>沒有 mock</td><td>等待 2 秒，然後回報這次呼叫失敗，並附上明確的「這裡沒有任何東西能真的執行它」訊息——提醒你這個 tool 需要一個真實的頁面來回應。<code>query</code> 類型的 tool 也一樣：Playground 不會捏造答案，因為編造的答案比誠實的失敗更糟。</td></tr>
             </tbody>
           </table>
         </div>
@@ -888,8 +883,8 @@ Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</
           並依該 tool 的 <code>kind</code> 回傳（或 resolve 出）合適的值：
         </p>
         <ul class="doc-list">
-          <li>對 <code>action</code> 類型的 tool，回傳值會被 LLM 忽略——只有你的 handler 有沒有拋出例外會決定成功或失敗。如果你希望透過 <code>tool list</code>／程式碼產生工具看到有意義的內容，還是可以回傳些什麼，但別指望模型看得到它。</li>
-          <li>對 <code>query</code> 類型的 tool，你回傳的任何東西（同步回傳、或由 Promise resolve）都會被序列化並直接餵回 LLM 的推理過程——請把它的形狀對齊該 tool 的 <code>returns</code> 結構。</li>
+          <li>對 <code>action</code> 類型的 tool，回傳值會被 LLM 忽略——只有你的 handler 有沒有拋出例外會決定成功或失敗，別指望模型看得到回傳的內容。</li>
+          <li>對 <code>query</code> 類型的 tool，你回傳的任何東西（同步回傳、或由 Promise resolve）都會被序列化並直接餵回 LLM 的推理過程。沒有任何地方會事先宣告它的形狀，所以請回傳「這則 prompt 真正需要的東西」。</li>
           <li>拋出例外（或非同步 handler 的 Promise 被 reject）會把失敗連同錯誤訊息一起回報給後端。</li>
         </ul>
         <div class="callout tip">

@@ -6,6 +6,76 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.6.0
+
+**Breaking.** Removed `returns` from the tool schema entirely — the YAML
+key, `toolschema.Tool.Returns`, the `tools.returns` column, and the
+console's Returns editor. It never reached the LLM (`ToLLMTools` sends only
+name/description/parameters, and a query tool's answer is fed back as the
+page's actual JSON), so it only ever fed TypeScript codegen and the
+Playground's mock generator.
+
+- **Migration:** existing databases need `ALTER TABLE tools DROP COLUMN
+  returns`. `schema.sql` covers fresh installs only. A `returns:` key left
+  in a YAML file is ignored, not rejected, so tool files need no edit to
+  keep working.
+
+- **`kind` is unaffected.** `query` still blocks the prompt and feeds the
+  page's answer back to the model; it simply no longer requires a `returns`
+  schema to declare it. The old "a query tool must declare the shape of the
+  frontend's answer" validation error is gone.
+
+- **Codegen type safety is reduced.** Every generated `ToolHandlers` entry
+  now returns `void | Record<string, unknown>`. Previously a tool declaring
+  `returns` got a generated `<Name>Result` interface, so a query tool's
+  handler was checked against the shape it promised. Nothing replaces that
+  today — handler return values are unchecked.
+
+Also in this release, non-breaking:
+
+- Tool descriptions are capped at 600 characters, counted in runes so the
+  limit means the same for CJK as for ASCII. Enforced in
+  `toolschema.Validate` (the CLI pushes YAML straight past the console's
+  own field) and mirrored by the console's own counter.
+
+- Console validation messages are attributed to the field they belong to
+  and render under that input, rather than as a list at the top of the
+  form. They no longer print the regex source or re-name the tool.
+
+- The tool form's Name and Description use an outlined field with the label
+  on the border. Description is capped, non-resizable, and carries a
+  character counter; Save moved to the bottom of the form. A parameter's
+  description and type now stack vertically instead of sitting side by
+  side, description first.
+
+- Replaced the brand mark everywhere with the sphere logo: the console
+  sidebar and login card, all 10 inline copies across the landing pages,
+  the showcase Topbar, and every favicon (`.svg`, `.ico`, and the 16/32/48
+  and apple-touch PNGs, all previously a text "o" from an older design).
+  The rim light is drawn as an inset stroke rather than a radial-gradient
+  fill — as a fill its bright band was under a pixel wide at icon sizes and
+  shared an edge with two other circles, which rasterised into a visibly
+  jagged ring. The raster icons use a darker variant: the values tuned to
+  read as a lit sphere at display size wash out to muddy olive when
+  flattened to an opaque 16px icon.
+
+- The console's `index.html` had no icon tags at all, so its tab showed no
+  favicon. Added them pointing at the landing build's icons, which resolve
+  because the console is served at `/app` from the same origin. They 404 on
+  the console's own dev server, which serves that app alone.
+
+- Desktop sidebar regrouped: Tools is now a peer of Thought inside the
+  Agent section with the tool rows nested under it, and Playground is its
+  own row below that section.
+
+- Fixed the support showcase demo owning a second, independent language
+  state and its own in-panel toggle, which let it disagree with the
+  Topbar's switch on the same screen. It now takes `lang` as a prop, and
+  its page title/description are translated with the rest of its copy.
+
+- Removed `examples/react-demo` (20 files, ~86MB). It was not referenced by
+  any build, test, or documentation path.
+
 ## v0.5.11
 
 No breaking changes. Landing page only — no backend, API, or SDK changes.

@@ -37,6 +37,12 @@
   <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   <link rel="canonical" href="https://onagent.shuttle.tools/zh-tw/" />
+  <!-- 告訴搜尋引擎這兩個網址是同一個頁面的不同語言版本，而不是互相競爭的
+       重複內容。同一組裡的每個頁面都必須列出所有語言版本（含自己），
+       再加上 x-default 指明語言不符時該落到哪一個。 -->
+  <link rel="alternate" hreflang="en" href="https://onagent.shuttle.tools/" />
+  <link rel="alternate" hreflang="zh-Hant" href="https://onagent.shuttle.tools/zh-tw/" />
+  <link rel="alternate" hreflang="x-default" href="https://onagent.shuttle.tools/" />
   <title>onagent — 讓你的網站長出 AI 助手</title>
   <meta
     name="description"
@@ -129,11 +135,12 @@
        界，不會被推擠或縮小。 */
     .nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
     .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+    /* 裝球體 logo（內嵌 <svg>）的容器，所以它自己不再帶底色、圓角或陰影——
+       球體本身就是形狀，後面再墊一塊金色方塊會變成「標記裡包著標記」。 */
     .mark {
-      display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px;
-      background: var(--grad); color: #1a1408; font-size: 16px; font-weight: 700;
-      box-shadow: 0 6px 18px -6px rgba(201, 162, 75, 0.55);
+      display: grid; place-items: center; width: 30px; height: 30px; flex: none;
     }
+    .mark svg { display: block; width: 100%; height: 100%; }
     /* 把 nav-links 跟 CTA 包成 .nav 右側單一個 flex item，讓 .nav 永遠只有
        兩個項目（brand、這一整組）——space-between 就只需要分配這兩者，不
        管在哪個寬度下，都不會有第三個項目要參與仲裁。 */
@@ -687,7 +694,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   <header id="nav">
     <div class="wrap">
       <div class="nav">
-        <a class="brand" href="#top"><span class="mark">⌘</span>onagent</a>
+        <a class="brand" href="#top"><span class="mark"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="mz3s" cx="36%" cy="28%" r="76%"><stop offset="0" stop-color="#4a4030"/><stop offset="0.22" stop-color="#2e2819"/><stop offset="0.48" stop-color="#181410"/><stop offset="0.74" stop-color="#0a0907"/><stop offset="1" stop-color="#030302"/></radialGradient><radialGradient id="mz3b" cx="50%" cy="50%" r="50%"><stop offset="0.62" stop-color="#c9a24b" stop-opacity="0"/><stop offset="0.88" stop-color="#8a6f34" stop-opacity="0.30"/><stop offset="1" stop-color="#6b5528" stop-opacity="0.16"/></radialGradient><linearGradient id="mz3r" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#f6e6bd" stop-opacity="0.85"/><stop offset="0.45" stop-color="#c9a24b" stop-opacity="0.55"/><stop offset="1" stop-color="#8a6f34" stop-opacity="0.40"/></linearGradient><radialGradient id="mz3p" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.50"/><stop offset="0.45" stop-color="#fff4d6" stop-opacity="0.16"/><stop offset="1" stop-color="#f0dfae" stop-opacity="0"/></radialGradient><radialGradient id="mz3o" cx="50%" cy="46%" r="52%"><stop offset="0.55" stop-color="#000000" stop-opacity="0.55"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient><radialGradient id="mz3g" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f6e6bd" stop-opacity="0.44"/><stop offset="0.5" stop-color="#e0c98a" stop-opacity="0.15"/><stop offset="1" stop-color="#c9a24b" stop-opacity="0"/></radialGradient><radialGradient id="mz3i" cx="42%" cy="36%" r="68%"><stop offset="0" stop-color="#fffdf4"/><stop offset="0.34" stop-color="#ffeec4"/><stop offset="0.68" stop-color="#e8c982"/><stop offset="1" stop-color="#a8813a"/></radialGradient></defs><circle cx="32" cy="32" r="31" fill="url(#mz3s)"/><circle cx="32" cy="32" r="31" fill="url(#mz3b)"/><circle cx="32" cy="32" r="30" fill="none" stroke="url(#mz3r)" stroke-width="2"/><ellipse cx="22" cy="17" rx="13" ry="8.5" fill="url(#mz3p)" transform="rotate(-24 22 17)"/><circle cx="23" cy="28" r="11" fill="url(#mz3o)"/><circle cx="41" cy="28" r="11" fill="url(#mz3o)"/><circle cx="23" cy="28" r="10" fill="url(#mz3g)"/><circle cx="41" cy="28" r="10" fill="url(#mz3g)"/><circle cx="23" cy="28" r="5.6" fill="url(#mz3i)"/><circle cx="41" cy="28" r="5.6" fill="url(#mz3i)"/><circle cx="21.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92"/><circle cx="39.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92"/></svg></span>onagent</a>
         <div class="nav-right">
           <nav class="nav-links">
             <a href="#features">功能</a>
@@ -957,7 +964,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     <div class="wrap">
       <div class="foot-grid">
         <div class="foot-brand">
-          <a class="brand" href="#top"><span class="mark">⌘</span>onagent</a>
+          <a class="brand" href="#top"><span class="mark"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="mz2s" cx="36%" cy="28%" r="76%"><stop offset="0" stop-color="#4a4030"/><stop offset="0.22" stop-color="#2e2819"/><stop offset="0.48" stop-color="#181410"/><stop offset="0.74" stop-color="#0a0907"/><stop offset="1" stop-color="#030302"/></radialGradient><radialGradient id="mz2b" cx="50%" cy="50%" r="50%"><stop offset="0.62" stop-color="#c9a24b" stop-opacity="0"/><stop offset="0.88" stop-color="#8a6f34" stop-opacity="0.30"/><stop offset="1" stop-color="#6b5528" stop-opacity="0.16"/></radialGradient><linearGradient id="mz2r" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#f6e6bd" stop-opacity="0.85"/><stop offset="0.45" stop-color="#c9a24b" stop-opacity="0.55"/><stop offset="1" stop-color="#8a6f34" stop-opacity="0.40"/></linearGradient><radialGradient id="mz2p" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.50"/><stop offset="0.45" stop-color="#fff4d6" stop-opacity="0.16"/><stop offset="1" stop-color="#f0dfae" stop-opacity="0"/></radialGradient><radialGradient id="mz2o" cx="50%" cy="46%" r="52%"><stop offset="0.55" stop-color="#000000" stop-opacity="0.55"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient><radialGradient id="mz2g" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f6e6bd" stop-opacity="0.44"/><stop offset="0.5" stop-color="#e0c98a" stop-opacity="0.15"/><stop offset="1" stop-color="#c9a24b" stop-opacity="0"/></radialGradient><radialGradient id="mz2i" cx="42%" cy="36%" r="68%"><stop offset="0" stop-color="#fffdf4"/><stop offset="0.34" stop-color="#ffeec4"/><stop offset="0.68" stop-color="#e8c982"/><stop offset="1" stop-color="#a8813a"/></radialGradient></defs><circle cx="32" cy="32" r="31" fill="url(#mz2s)"/><circle cx="32" cy="32" r="31" fill="url(#mz2b)"/><circle cx="32" cy="32" r="30" fill="none" stroke="url(#mz2r)" stroke-width="2"/><ellipse cx="22" cy="17" rx="13" ry="8.5" fill="url(#mz2p)" transform="rotate(-24 22 17)"/><circle cx="23" cy="28" r="11" fill="url(#mz2o)"/><circle cx="41" cy="28" r="11" fill="url(#mz2o)"/><circle cx="23" cy="28" r="10" fill="url(#mz2g)"/><circle cx="41" cy="28" r="10" fill="url(#mz2g)"/><circle cx="23" cy="28" r="5.6" fill="url(#mz2i)"/><circle cx="41" cy="28" r="5.6" fill="url(#mz2i)"/><circle cx="21.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92"/><circle cx="39.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92"/></svg></span>onagent</a>
           <p>From Chat to Execution.</p>
         </div>
         <div class="foot-col"><h4>產品</h4><a href="#" data-console>Console</a><a href="#features">功能特色</a></div>

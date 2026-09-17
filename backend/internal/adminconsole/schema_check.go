@@ -98,7 +98,6 @@ type toolsFull struct {
 	Name            string  `gorm:"column:name"`
 	Description     string  `gorm:"column:description"`
 	Parameters      []byte  `gorm:"column:parameters"`
-	Returns         []byte  `gorm:"column:returns"`
 	Kind            string  `gorm:"column:kind"`
 	BackendDispatch []byte  `gorm:"column:backend_dispatch"`
 	Position        int     `gorm:"column:position"`

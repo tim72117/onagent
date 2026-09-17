@@ -326,12 +326,6 @@
    Playground.tsx), so it uses the accent wash instead of the danger one:
    red here would misread as "this call failed" when the agent actually
    got usable (if fabricated) data back. */
-.playgroundMsgFabricated {
-  align-self: flex-start;
-  background: var(--accent-wash);
-  color: var(--ink-dim);
-  font-size: 12.5px;
-}
 
 .playgroundMsgPending {
   align-self: flex-start;

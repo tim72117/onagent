@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ParameterSchema, Tool } from './schema'
-import { emptyObjectSchema, emptyTool, TOOL_NAME_RE } from './schema'
+import { emptyTool, TOOL_NAME_RE } from './schema'
 import { SchemaEditor } from './SchemaEditor'
 import { MOCK_LOCKED_PARAM_NAMES } from './playgroundMocks'
 import { SheetHeader } from './SheetHeader'
@@ -493,23 +493,6 @@ export function ToolWizard({
           </div>
         )}
 
-        {step === 'Returns' && (
-          <div className="field">
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={!!tool.returns}
-                onChange={(e) =>
-                  setTool({ ...tool, returns: e.target.checked ? emptyObjectSchema() : undefined })
-                }
-              />
-              Declare a returns shape
-            </label>
-            {tool.returns && (
-              <SchemaEditor schema={tool.returns} onChange={(next) => setTool({ ...tool, returns: next })} />
-            )}
-          </div>
-        )}
         </div>
 
         <div className={`modal-actions ${styles.actions}`}>

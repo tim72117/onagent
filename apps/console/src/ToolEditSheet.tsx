@@ -8,7 +8,6 @@ import { SheetHeader } from './SheetHeader'
 import { ToolNameSheet } from './ToolNameSheet'
 import { ToolDescriptionSheet } from './ToolDescriptionSheet'
 import { ToolParametersSheet } from './ToolParametersSheet'
-import { ToolReturnsSheet } from './ToolReturnsSheet'
 import { useSheet } from './useSheet'
 import styles from './ToolEditSheet.module.css'
 
@@ -35,7 +34,7 @@ function paramSummary(schema: Tool['parameters']): string {
 // single flat ToolForm sheet the way an earlier version of this worked.
 //
 // Each row's own sheet (ToolNameSheet/ToolDescriptionSheet/
-// ToolParametersSheet/ToolReturnsSheet) still holds its own local draft
+// ToolParametersSheet) still holds its own local draft
 // and its own Save button (so its own validity check — e.g.
 // ToolNameSheet's TOOL_NAME_RE gate — still blocks committing a bad value
 // for that one field), but "Save" there now only writes into this sheet's
@@ -77,7 +76,6 @@ export function ToolEditSheet({
   const nameSheet = useSheet()
   const descriptionSheet = useSheet()
   const parametersSheet = useSheet()
-  const returnsSheet = useSheet()
 
   const [draft, setDraft] = useState(tool)
 
@@ -188,22 +186,10 @@ export function ToolEditSheet({
             </svg>
           </button>
 
-          <button type="button" className={styles.row} onClick={returnsSheet.onOpen}>
-            <div className={styles.rowInfo}>
-              <div className={styles.rowLabel}>Returns</div>
-              <div className={styles.rowHint}>The shape of data the page sends back — only reaches the model if Query tool below is on.</div>
-              <div className={styles.rowValue}>{draft.returns ? 'Declared' : 'Not declared'}</div>
-            </div>
-            <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
-              <path d="M9 18l6-6-6-6" />
-            </svg>
-          </button>
-
-          {/* A single on/off choice, unlike the four rows above — toggled
-              inline rather than opening its own row-sheet, same as the
-              Returns checkbox inside ToolReturnsSheet.tsx. Still only
-              writes into `draft` here, not out to onChange, like every
-              other row — see this component's own header comment. */}
+          {/* A single on/off choice, unlike the rows above — toggled inline
+              rather than opening its own row-sheet. Still only writes into
+              `draft` here, not out to onChange, like every other row — see
+              this component's own header comment. */}
           <label className={styles.row}>
             <div className={styles.rowInfo}>
               <div className={styles.rowLabel}>Query tool</div>
@@ -263,12 +249,6 @@ export function ToolEditSheet({
         onSave={(parameters) => setDraft((d) => d && { ...d, parameters })}
       />
 
-      <ToolReturnsSheet
-        open={returnsSheet.open}
-        onClose={returnsSheet.onClose}
-        returns={draft.returns}
-        onSave={(returns) => setDraft((d) => d && { ...d, returns })}
-      />
     </BottomSheet>
   )
 }
