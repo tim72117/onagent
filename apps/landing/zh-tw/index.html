@@ -396,6 +396,11 @@
        底下 760px 的堆疊規則原本都缺。見 .case-try-row 的 max-width:760px
        規則——窄螢幕改成上下堆疊，不要兩顆擠同一列。 */
     .case-showcase-link { display: inline-flex; }
+    /* 必須放在底下 max-width:760px 區塊「之前」：那裡的 .case-try-btn
+       { width: 100% } 與這條同特異性，靠原始碼順序決勝——這條若排在後面，
+       手機版的全寬覆寫就整條失效，按鈕會維持 260px 下限而在窄螢幕溢出。
+       （英文版一直是這個順序，中文版先前誤把它留在檔案後段。） */
+    .case-try-btn { width: auto; min-width: 260px; padding: 15px 28px; font-size: 16.5px; }
     /* Fixed width, not 100% — .collage's children (the app window, the
        overlapping chart card, the floating bubbles) are all absolutely
        positioned in real pixels, so letting this stretch to whatever
@@ -575,7 +580,6 @@
        this same block rule-for-rule: both pages import the same widget
        bundle (mountMarketingDemo(inner, { lang: 'zh' }) below), so the
        styling has to match regardless of which page it's opened from. */
-    .case-try-btn { width: auto; min-width: 260px; padding: 15px 28px; font-size: 16.5px; }
     /* 卡內的 CTA 位在較窄的文字欄裡，共用的 .case-try-btn 那個 260px 最小寬度
        在欄位變窄時會溢出——所以這裡取消該下限，改成撐滿欄寬。 */
     .case-content-cta { margin-top: 18px; }
@@ -692,8 +696,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
                  只存在於 showcase（兩個會真的連線、真的呼叫 tool 的 demo）。
                  #cases 區塊仍可從 footer 的「範例應用」進入，那段靜態的
                  「能做什麼」文案本來就該叫範例。 -->
-            <a href="/showcase/">線上體驗</a>
-            <a href="/docs/">文件</a>
+            <a href="/showcase/?lang=zh">線上體驗</a>
+            <a href="/zh-tw/docs/">文件</a>
             <a href="/zh-tw/pricing/">費用方案</a>
             <a class="lang-switch" href="/">EN</a>
           </nav>
@@ -706,7 +710,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
            那一列下面，而不是硬擠進去，這樣 CTA 永遠不用跟它們搶空間，也
            永遠不會被推擠或縮小。 -->
       <nav class="nav-mobile-links">
-        <a href="/docs/">文件</a>
+        <a href="/zh-tw/docs/">文件</a>
         <a href="/zh-tw/pricing/">費用方案</a>
         <a class="lang-switch" href="/">EN</a>
       </nav>
@@ -727,7 +731,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
                  覆寫成 CONSOLE_URL，變成掛著「線上體驗」卻連到 /app。Console
                  仍可從導覽列與頁尾 CTA 進入——hero 這顆的任務是讓第一次來的
                  訪客先看到東西會動，而不是先要他登入。 -->
-            <a class="btn btn-primary btn-lg" href="/showcase/">線上體驗 →</a>
+            <a class="btn btn-primary btn-lg" href="/showcase/?lang=zh">線上體驗 →</a>
           </div>
         </div>
 
@@ -905,7 +909,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <div class="case-try-row">
             <!-- 與英文版對齊：這顆之前中文版沒有，導致整個中文首頁沒有任何
                  連結能到 /showcase/。 -->
-            <a class="btn btn-ghost case-try-btn case-showcase-link" href="/showcase/">
+            <a class="btn btn-ghost case-try-btn case-showcase-link" href="/showcase/?lang=zh">
               更多線上體驗 →
             </a>
           </div>
@@ -957,8 +961,8 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <p>From Chat to Execution.</p>
         </div>
         <div class="foot-col"><h4>產品</h4><a href="#" data-console>Console</a><a href="#features">功能特色</a></div>
-        <div class="foot-col"><h4>資源</h4><a href="#cases">範例應用</a><a href="/docs/">Agent Bridge SDK</a><a href="/docs/">onagent CLI</a></div>
-        <div class="foot-col"><h4>開始</h4><a href="#" data-console>建立 App</a><a href="#" data-console>取得 API Key</a><a href="/docs/">嵌入 SDK</a></div>
+        <div class="foot-col"><h4>資源</h4><a href="#cases">範例應用</a><a href="/zh-tw/docs/">Agent Bridge SDK</a><a href="/zh-tw/docs/">onagent CLI</a></div>
+        <div class="foot-col"><h4>開始</h4><a href="#" data-console>建立 App</a><a href="#" data-console>取得 API Key</a><a href="/zh-tw/docs/">嵌入 SDK</a></div>
       </div>
       <div class="foot-bottom">
         <span>© 2026 onagent · <a href="/privacy/">隱私權政策</a> · <a href="/terms/">服務條款</a></span>

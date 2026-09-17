@@ -1,12 +1,47 @@
 import { Link } from 'react-router-dom'
 import shared from '../../Shared.module.css'
+import { type Lang } from '../../lang'
 import styles from './MarketingCase.module.css'
+
+// This card's own copy, kept beside the component that renders it rather
+// than in a central table — see lang.ts's CHROME_STRINGS comment.
+const STRINGS: Record<Lang, {
+  badge: string
+  title: string
+  body: string
+  examples: string[]
+  cta: string
+}> = {
+  en: {
+    badge: 'Live integration',
+    title: 'Marketing analytics assistant',
+    body: 'Describe what you want to know about your campaign data, and AI picks the right variables and analysis method.',
+    examples: [
+      'Is there a relationship between ad spend, clicks, and revenue?',
+      'Which channel has the best revenue this quarter?',
+      'How has click-through rate trended over the last few months?',
+    ],
+    cta: 'Try it live →',
+  },
+  zh: {
+    badge: '線上展示',
+    title: '行銷數據分析助手',
+    body: '描述你想了解的廣告活動數據，AI 會自動選出相關變數與分析方式。',
+    examples: [
+      '廣告花費、點擊數跟營收之間有關聯嗎？',
+      '這一季哪個通路的營收表現最好？',
+      '點擊率這幾個月的趨勢如何？',
+    ],
+    cta: '體驗看看 →',
+  },
+}
 
 // Marketing analytics assistant — the first showcase case's list-page
 // card. shared holds the ".case-*"/".chat"/".bubble-u" shape every case's
 // card uses; styles is this component's own browser-window collage —
 // see homepage index.html's #cases section, which this mirrors.
-export function MarketingCase() {
+export function MarketingCase({ lang }: { lang: Lang }) {
+  const t = STRINGS[lang]
   return (
     <div className={shared.caseSplit}>
       <div className={shared.caseIllustration}>
@@ -51,17 +86,23 @@ export function MarketingCase() {
         </div>
       </div>
       <div className={shared.caseContent}>
-        <span className={shared.caseBadge}>Live integration</span>
-        <h2>Marketing analytics assistant</h2>
-        <p>Describe what you want to know about your campaign data, and AI picks the right variables and analysis method.</p>
+        <span className={shared.caseBadge}>{t.badge}</span>
+        <h2>{t.title}</h2>
+        <p>{t.body}</p>
         <div className={shared.chat}>
-          <span className={shared.bubbleU}>Is there a relationship between ad spend, clicks, and revenue?</span>
-          <span className={shared.bubbleU}>Which channel has the best revenue this quarter?</span>
-          <span className={shared.bubbleU}>How has click-through rate trended over the last few months?</span>
+          {t.examples.map((q) => (
+            <span key={q} className={shared.bubbleU}>{q}</span>
+          ))}
         </div>
         <div className={shared.caseTryRow}>
-          <Link to="/marketing" className={`${shared.btn} ${shared.btnPrimary} ${shared.caseTryBtn}`}>
-            Try it live →
+          {/* Carries ?lang= across the route change — react-router's Link
+              replaces the whole location, so without this the demo route
+              would drop back to English on navigation. */}
+          <Link
+            to={lang === 'zh' ? '/marketing?lang=zh' : '/marketing'}
+            className={`${shared.btn} ${shared.btnPrimary} ${shared.caseTryBtn}`}
+          >
+            {t.cta}
           </Link>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import shared from '../../Shared.module.css'
+import { CHROME_STRINGS, type Lang } from '../../lang'
 
 declare global {
   interface Window {
@@ -31,7 +32,7 @@ type MarketingDemoModule = {
 // route) — the dynamic import is what actually defers fetching the widget
 // module (and its @onagent/bridge dependency) until that navigation, not
 // page load; visiting /showcase/ (ShowcaseList) never pays for it.
-export function MarketingDemo() {
+export function MarketingDemo({ lang }: { lang: Lang }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(true)
 
@@ -41,7 +42,10 @@ export function MarketingDemo() {
     window.dataLayer.push({ event: 'demo_open', demo_id: 'showcase-marketing' })
     import('../../../../src/marketing-demo/widget.js').then((mod) => {
       if (cancelled || !hostRef.current) return
-      ;(mod as MarketingDemoModule).mountMarketingDemo(hostRef.current, { lang: 'en' })
+      // The widget renders its own copy in whichever language it's handed
+      // — previously hardcoded 'en', which left the whole demo English
+      // even on a ?lang=zh load.
+      ;(mod as MarketingDemoModule).mountMarketingDemo(hostRef.current, { lang })
       setLoading(false)
     })
     return () => {
@@ -55,7 +59,7 @@ export function MarketingDemo() {
 
   return (
     <div className={shared.demoPanel}>
-      {loading && <div className={shared.demoLoading}>Loading demo…</div>}
+      {loading && <div className={shared.demoLoading}>{CHROME_STRINGS[lang].loadingDemo}</div>}
       <div ref={hostRef} style={{ display: loading ? 'none' : undefined }} />
     </div>
   )

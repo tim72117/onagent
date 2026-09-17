@@ -1,4 +1,5 @@
 import styles from './ShowcaseList.module.css'
+import { CHROME_STRINGS, type Lang } from './lang'
 import { MarketingCase } from './cases/marketing/MarketingCase'
 import { SupportCase } from './cases/support/SupportCase'
 
@@ -13,18 +14,19 @@ import { SupportCase } from './cases/support/SupportCase'
 // case's URL lands directly on its demo. Adding a third case is one more
 // cases/<name>/ directory plus one more <Route>, not a restructuring of
 // this file.
-export function ShowcaseList() {
+export function ShowcaseList({ lang }: { lang: Lang }) {
+  const t = CHROME_STRINGS[lang]
   return (
     <>
       <div className={styles.head}>
-        <span className={styles.eyebrow}><span className={styles.dot} />Live demo</span>
-        <h1>See onagent<br /><span className={styles.gradText}>answer real questions about real data.</span></h1>
-        <p>A live AgentBridge connection, not a recording — describe what you want to know and watch it pick the right analysis method.</p>
+        <span className={styles.eyebrow}><span className={styles.dot} />{t.listEyebrow}</span>
+        <h1>{t.listHeadA}<br /><span className={styles.gradText}>{t.listHeadB}</span></h1>
+        <p>{t.listSub}</p>
       </div>
       <div className={styles.caseList}>
-        <MarketingCase />
+        <MarketingCase lang={lang} />
         <div className={styles.caseDivider} />
-        <SupportCase />
+        <SupportCase lang={lang} />
       </div>
     </>
   )

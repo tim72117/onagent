@@ -58,6 +58,7 @@ export default defineConfig({
         docs: resolve(__dirname, 'docs/index.html'),
         pricing: resolve(__dirname, 'pricing/index.html'),
         zhTwPricing: resolve(__dirname, 'zh-tw/pricing/index.html'),
+        zhTwDocs: resolve(__dirname, 'zh-tw/docs/index.html'),
         privacy: resolve(__dirname, 'privacy/index.html'),
         terms: resolve(__dirname, 'terms/index.html'),
         showcase: resolve(__dirname, 'showcase/index.html'),

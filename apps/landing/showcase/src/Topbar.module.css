@@ -29,6 +29,20 @@
 .links a { color: var(--text-2); }
 .links a:hover { color: var(--text); }
 
+/* Same pill shape SupportDemo.module.css's own .langToggle uses, so the
+   two language controls read as the same kind of control even though
+   they switch different scopes (page chrome vs. that demo's panel). */
+.langToggle {
+  padding: 3px 10px; border: 1px solid var(--border-soft); border-radius: 999px;
+  background: transparent; color: var(--text-2);
+  font-size: 11.5px; font-weight: 600; cursor: pointer; flex: none;
+  font-family: inherit;
+}
+.langToggle:hover { color: var(--text); border-color: rgba(201,162,75,0.6); }
+
 @media (max-width: 640px) {
+  /* Only the nav links collapse — .langToggle is a <button>, so this
+     selector never matched it, which is what keeps the toggle reachable
+     on a phone. */
   .links a { display: none; }
 }

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { Topbar } from './Topbar'
 import { Footer } from './Footer'
 import { ShowcaseList } from './ShowcaseList'
+import { useLang } from './lang'
 import { MarketingDemo } from './cases/marketing/MarketingDemo'
 import { SupportDemo } from './cases/support/SupportDemo'
 import shared from './Shared.module.css'
@@ -20,20 +21,30 @@ import shared from './Shared.module.css'
 // case's demo instead of the list — adding another case is one more
 // <Route> here (plus a cases/<name>/ directory), not a change to this
 // shape.
+//
+// The UI language is owned here and passed down, not read independently
+// by each component: useLang holds state, so calling it in Topbar and in
+// each card would give every one of them a private copy and the toggle
+// would change only the Topbar's own labels. One owner, props downward.
 export function App() {
+  const [lang, setLang] = useLang()
   return (
     <BrowserRouter basename="/showcase">
-      <Topbar />
+      <Topbar lang={lang} onLangChange={setLang} />
       <main className={shared.main}>
         <div className={shared.wrap}>
           <Routes>
-            <Route path="/" element={<ShowcaseList />} />
-            <Route path="/marketing" element={<MarketingDemo />} />
+            <Route path="/" element={<ShowcaseList lang={lang} />} />
+            <Route path="/marketing" element={<MarketingDemo lang={lang} />} />
+            {/* SupportDemo keeps its own in-panel language state and
+                toggle (it predates this one and owns 904 lines of its own
+                copy); both read the same ?lang= at load, so they agree on
+                arrival. Its in-panel toggle still switches only itself. */}
             <Route path="/support" element={<SupportDemo />} />
           </Routes>
         </div>
       </main>
-      <Footer />
+      <Footer lang={lang} />
     </BrowserRouter>
   )
 }

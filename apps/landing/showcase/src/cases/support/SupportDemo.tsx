@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { AgentBridge, defineTool } from '@onagent/bridge'
 import { marked } from 'marked'
+import { type Lang as SharedLang } from '../../lang'
 import { usePageMeta } from '../../usePageMeta'
 import styles from './SupportDemo.module.css'
 
@@ -199,14 +200,21 @@ function slotId(isoDate: string, time: string): string {
 const CURRENT_CUSTOMER = { name: 'Jordan Lee' }
 
 // The demo's own static UI copy, switchable independently of the rest of
-// showcase (which has no i18n at all yet — see this component's own
-// language-toggle button below) since a salon-booking assistant is a
-// plausible bilingual storefront in a way the marketing-analytics demo
-// isn't. Deliberately NOT the LLM's own reply language — that's set by
+// showcase: the page chrome now has its own language state (../../lang.ts,
+// owned by App.tsx and driven by the Topbar toggle), but this panel keeps
+// its own — both read the same ?lang= at load, so they agree on arrival,
+// while this component's in-panel toggle still switches only itself. A
+// salon-booking assistant is a plausible bilingual storefront in a way the
+// marketing-analytics demo isn't, which is why it had one first.
+// Deliberately NOT the LLM's own reply language — that's set by
 // support-app-tools.yaml's `thought` on the backend and unaffected by
 // this toggle; only the page's own static labels/placeholder/greeting
 // switch here.
-type Lang = 'en' | 'zh'
+// Shares the showcase-wide Lang type (../../lang) so this demo and the
+// page chrome can never drift apart on what a language value is; the
+// STRINGS table below stays local to this component.
+type Lang = SharedLang
+
 const STRINGS: Record<Lang, {
   scheduleTitle: string
   stylistsLabel: string

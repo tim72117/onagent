@@ -6,6 +6,35 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.5.11
+
+No breaking changes. Landing page only — no backend, API, or SDK changes.
+
+- Added a full Traditional Chinese translation of the integration guide at
+  `/zh-tw/docs/`, and a language switch between it and `/docs/`. Commands,
+  flags, placeholders, YAML keys, TypeScript identifiers and CLI output
+  stay verbatim in English; prose and code comments are translated. The
+  Chinese homepage and pricing page now link to it instead of the English
+  docs.
+
+- The `/showcase/` SPA is now bilingual. Language is read from `?lang=`
+  once at load and owned by `App.tsx` (a new `showcase/src/lang.ts`), with
+  a toggle in the Topbar that also writes the choice back into the URL, so
+  a switched page can be shared or reloaded in that language. Page chrome,
+  both case cards, the phone-mockup thread and the loading state are
+  translated; the breadcrumb segments (`marketing`, `support`) are not,
+  since they name real URL segments.
+
+- Fixed the marketing demo mounting with a hardcoded `lang: 'en'`, which
+  left that whole demo in English even when `/showcase/?lang=zh` had
+  loaded everything around it in Chinese.
+
+- Fixed the Chinese homepage declaring `.case-try-btn` *after* its
+  `@media (max-width: 760px)` block. Both rules have equal specificity, so
+  source order decided it and the mobile `width: 100%` override never
+  applied — on a phone the two stacked buttons kept a 260px floor and could
+  overflow a narrow screen. The English page always had the correct order.
+
 ## v0.5.10
 
 No breaking changes. Landing page only — no backend, API, or SDK changes.
