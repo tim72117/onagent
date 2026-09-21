@@ -19,8 +19,8 @@
    level, not one href for the whole string. */
 .brandLink { display: flex; align-items: center; gap: 9px; color: inherit; text-decoration: none; }
 .brandLink:hover { color: var(--accent-2, var(--text)); }
-/* Container for the inline sphere logo (Topbar.tsx) — no tile background of
-   its own any more; the sphere is the shape. */
+/* Container for the inline ring logo (Topbar.tsx) — no tile background of
+   its own; the ring is the shape. */
 .mark {
   display: grid; place-items: center; width: 26px; height: 26px; flex: none;
 }

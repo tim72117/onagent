@@ -82,8 +82,9 @@
     }
     .nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
     .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; letter-spacing: -0.01em; color: var(--text); }
-    /* Container for the inline sphere logo — no tile background of its own;
-       the sphere is the shape. */
+    /* Holds the ring mark (an inline <svg>), so it carries no background,
+       radius or shadow of its own — the ring IS the shape, and a gold tile
+       behind it would read as a badge around a badge. */
     .mark {
       display: grid; place-items: center; width: 30px; height: 30px; flex: none;
     }
@@ -114,7 +115,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 <body>
   <header>
     <div class="wrap nav">
-      <a class="brand" href="/"><span class="mark"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><radialGradient id="mts" cx="36%" cy="28%" r="76%"><stop offset="0" stop-color="#4a4030"/><stop offset="0.22" stop-color="#2e2819"/><stop offset="0.48" stop-color="#181410"/><stop offset="0.74" stop-color="#0a0907"/><stop offset="1" stop-color="#030302"/></radialGradient><radialGradient id="mtb" cx="50%" cy="50%" r="50%"><stop offset="0.62" stop-color="#c9a24b" stop-opacity="0"/><stop offset="0.88" stop-color="#8a6f34" stop-opacity="0.30"/><stop offset="1" stop-color="#6b5528" stop-opacity="0.16"/></radialGradient><linearGradient id="mtr" x1="0" y1="0" x2="0.35" y2="1"><stop offset="0" stop-color="#f6e6bd" stop-opacity="0.85"/><stop offset="0.45" stop-color="#c9a24b" stop-opacity="0.55"/><stop offset="1" stop-color="#8a6f34" stop-opacity="0.40"/></linearGradient><radialGradient id="mtp" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#ffffff" stop-opacity="0.50"/><stop offset="0.45" stop-color="#fff4d6" stop-opacity="0.16"/><stop offset="1" stop-color="#f0dfae" stop-opacity="0"/></radialGradient><radialGradient id="mto" cx="50%" cy="46%" r="52%"><stop offset="0.55" stop-color="#000000" stop-opacity="0.55"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient><radialGradient id="mtg" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#f6e6bd" stop-opacity="0.44"/><stop offset="0.5" stop-color="#e0c98a" stop-opacity="0.15"/><stop offset="1" stop-color="#c9a24b" stop-opacity="0"/></radialGradient><radialGradient id="mti" cx="42%" cy="36%" r="68%"><stop offset="0" stop-color="#fffdf4"/><stop offset="0.34" stop-color="#ffeec4"/><stop offset="0.68" stop-color="#e8c982"/><stop offset="1" stop-color="#a8813a"/></radialGradient></defs><circle cx="32" cy="32" r="31" fill="url(#mts)"/><circle cx="32" cy="32" r="31" fill="url(#mtb)"/><circle cx="32" cy="32" r="30" fill="none" stroke="url(#mtr)" stroke-width="2"/><ellipse cx="22" cy="17" rx="13" ry="8.5" fill="url(#mtp)" transform="rotate(-24 22 17)"/><circle cx="23" cy="28" r="11" fill="url(#mto)"/><circle cx="41" cy="28" r="11" fill="url(#mto)"/><circle cx="23" cy="28" r="10" fill="url(#mtg)"/><circle cx="41" cy="28" r="10" fill="url(#mtg)"/><circle cx="23" cy="28" r="5.6" fill="url(#mti)"/><circle cx="41" cy="28" r="5.6" fill="url(#mti)"/><circle cx="21.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92"/><circle cx="39.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92"/></svg></span>onagent</a>
+      <a class="brand" href="/"><span class="mark"><svg viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="mtg" gradientUnits="userSpaceOnUse" x1="10" y1="10" x2="90" y2="90"><stop offset="0" stop-color="#c9a24b"/><stop offset="1" stop-color="#e0c98a"/></linearGradient></defs><path fill="url(#mtg)" fill-rule="evenodd" d="M 10 50 a 40 40 0 1 0 80 0 a 40 40 0 1 0 -80 0 Z M 27 46 a 27 27 0 1 0 54 0 a 27 27 0 1 0 -54 0 Z"/></svg></span>onagent</a>
       <a class="back" href="/">← Back to home</a>
     </div>
   </header>

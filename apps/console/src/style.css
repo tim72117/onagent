@@ -224,14 +224,9 @@ select:focus-visible {
    SidebarFooter.module.css; .sidebar-section-grow/.sidebar-item-tool, used
    only by ToolList.tsx, now live in ToolList.module.css) is component-only
    and has moved into the relevant module. */
-/* Holds the inline sphere logo (Sidebar.tsx / LoginCard.tsx): no tile
-   background, radius or color of its own — the sphere IS the shape, and an
-   accent tile behind it reads as a badge on a badge.
-
-   Sized 32px rather than a smaller mark: the sphere's rim light is a
-   sub-pixel-wide gradient band, so the extra pixels measurably reduce the
-   quantisation that made it look jagged. Paired with the rim being drawn as
-   an inset stroke rather than a fill — see Sidebar.tsx. */
+/* Holds the inline ring logo (Sidebar.tsx / LoginCard.tsx): no tile
+   background, radius or color of its own — the ring IS the shape, and an
+   accent tile behind it reads as a badge on a badge. */
 .sidebar-mark {
   display: inline-flex;
   align-items: center;

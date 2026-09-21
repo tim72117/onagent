@@ -1,71 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <!-- Drawn as shapes, not a <text> "o": the previous version rendered in
-       whatever font the viewer's OS resolved, so it looked different on
-       macOS, Windows and Android. Gradients only — no external refs. -->
-  <defs>
-    <radialGradient id="s" cx="36%" cy="28%" r="76%">
-      <stop offset="0" stop-color="#2a241a"/>
-      <stop offset="0.28" stop-color="#181410"/>
-      <stop offset="0.5" stop-color="#0a0907"/>
-      <stop offset="1" stop-color="#030302"/>
-    </radialGradient>
-    <!-- Bounce light: a real sphere's underside picks up reflected light
-         instead of going dead black. -->
-    <radialGradient id="b" cx="50%" cy="50%" r="50%">
-      <stop offset="0.62" stop-color="#c9a24b" stop-opacity="0"/>
-      <stop offset="0.88" stop-color="#8a6f34" stop-opacity="0.30"/>
-      <stop offset="1" stop-color="#6b5528" stop-opacity="0.16"/>
-    </radialGradient>
-    <!-- Gold rim all the way round, which is what separates a near-black
-         sphere from a near-black page background. Drawn as a stroke inset
-         to r=30, not a fill at r=31: as a fill its bright band spanned the
-         outermost 4% of the radius — under a pixel at tab-icon sizes — and
-         shared an edge with two other r=31 circles, so three separately
-         antialiased boundaries composited into a jagged ring. Linear, not
-         radial, so the rim brightens toward the same upper-left light as
-         the specular highlight. -->
-    <linearGradient id="r" x1="0" y1="0" x2="0.35" y2="1">
-      <stop offset="0" stop-color="#f6e6bd" stop-opacity="0.85"/>
-      <stop offset="0.45" stop-color="#c9a24b" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#8a6f34" stop-opacity="0.40"/>
-    </linearGradient>
-    <radialGradient id="sp" cx="50%" cy="50%" r="50%">
-      <stop offset="0" stop-color="#ffffff" stop-opacity="0.25"/>
-      <stop offset="0.45" stop-color="#fff4d6" stop-opacity="0.08"/>
-      <stop offset="1" stop-color="#f0dfae" stop-opacity="0"/>
-    </radialGradient>
-    <!-- Socket shadow seats each eye into the surface rather than leaving
-         it pasted on top. -->
-    <radialGradient id="so" cx="50%" cy="46%" r="52%">
-      <stop offset="0.55" stop-color="#000000" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="g" cx="50%" cy="50%" r="50%">
-      <stop offset="0" stop-color="#f6e6bd" stop-opacity="0.44"/>
-      <stop offset="0.5" stop-color="#e0c98a" stop-opacity="0.15"/>
-      <stop offset="1" stop-color="#c9a24b" stop-opacity="0"/>
-    </radialGradient>
-    <radialGradient id="i" cx="42%" cy="36%" r="68%">
-      <stop offset="0" stop-color="#fffdf4"/>
-      <stop offset="0.34" stop-color="#ffeec4"/>
-      <stop offset="0.68" stop-color="#e8c982"/>
-      <stop offset="1" stop-color="#a8813a"/>
-    </radialGradient>
-  </defs>
-  <circle cx="32" cy="32" r="31" fill="url(#s)"/>
-  <circle cx="32" cy="32" r="31" fill="url(#b)"/>
-  <circle cx="32" cy="32" r="30" fill="none" stroke="url(#r)" stroke-width="2"/>
-  <ellipse cx="22" cy="17" rx="13" ry="8.5" fill="url(#sp)" transform="rotate(-24 22 17)"/>
-  <!-- y=28, not the centre: eyes sit in the upper half of a face, and at
-       dead centre these read as two stray highlights instead. -->
-  <circle cx="23" cy="28" r="11" fill="url(#so)"/>
-  <circle cx="41" cy="28" r="11" fill="url(#so)"/>
-  <circle cx="23" cy="28" r="10" fill="url(#g)"/>
-  <circle cx="41" cy="28" r="10" fill="url(#g)"/>
-  <circle cx="23" cy="28" r="5.6" fill="url(#i)"/>
-  <circle cx="41" cy="28" r="5.6" fill="url(#i)"/>
-  <!-- Catchlights sit up-left, matching the specular highlight — that
-       shared direction is what reads as one light source. -->
-  <circle cx="21.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92"/>
-  <circle cx="39.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <!-- Halo Swell Amber — an eccentric-circle ring (outer circle minus an
+       off-center inner circle, evenodd fill), so the band width varies
+       continuously around the circumference instead of a uniform stroke.
+       This is the "even" favicon-only variant, not the site's full-strength
+       brand mark used in index.html's .brand/.foot-brand: solid #c9a24b (no
+       gradient) and a smaller eccentricity, because at 16px the full
+       gradient version's thinnest edge drops under 1.2px and, worse, its
+       lightest gradient stop lands on that same thin edge — against a white
+       or light-grey browser tab strip that combination measures under 2:1
+       contrast and the ring reads as a broken "C", not a full "O". Solid
+       #c9a24b against white is still only ~2.4:1, which is why this asset
+       stays favicon-only — the full gradient mark is for ≥48px contexts on
+       the site's own #0d0b07 ground, where contrast is 7:1+ and the extra
+       eccentricity reads clearly. -->
+  <path fill="#c9a24b" fill-rule="evenodd" d="
+    M 8 50 a 42 42 0 1 0 84 0 a 42 42 0 1 0 -84 0 Z
+    M 26 48 a 26 26 0 1 0 52 0 a 26 26 0 1 0 -52 0 Z" />
 </svg>

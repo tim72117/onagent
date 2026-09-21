@@ -55,79 +55,24 @@ export function Sidebar({
   return (
     <nav className="sidebar">
       <div className={styles.brand}>
-        {/* Sphere brand mark — kept in sync with LoginCard.tsx's copy, which
-            differs only in its gradient id prefix (SVG resolves url(#id)
-            globally, and both can be mounted at once).
-
-            The rim light is a *stroke* inset to r=30, not a fill at r=31
-            like the sphere body: as a fill, its bright band spanned the
-            outermost 4% of the radius — under a pixel wide at this size —
-            and shared an edge with two other r=31 circles, so three
-            independently-antialiased boundaries composited into a visibly
-            jagged ring. A stroke rasterises against a defined width and no
-            longer touches the silhouette. Its gradient is linear, not
-            radial, so the rim brightens toward the same upper-left light
-            source as the specular highlight; a radial one would just ring
-            the sphere evenly. */}
+        {/* Ring brand mark — kept in sync with LoginCard.tsx's copy, which
+            differs only in its gradient id (SVG resolves url(#id) globally,
+            and both can be mounted at once). Two eccentric circles
+            (outer minus an off-center inner circle, evenodd fill) so the
+            band width varies continuously around the circumference. */}
         <span className="sidebar-mark" aria-hidden="true">
-          <svg viewBox="0 0 64 64">
+          <svg viewBox="0 0 100 100">
             <defs>
-              <radialGradient id="sbMarkS" cx="36%" cy="28%" r="76%">
-                <stop offset="0" stopColor="#4a4030" />
-                <stop offset="0.22" stopColor="#2e2819" />
-                <stop offset="0.48" stopColor="#181410" />
-                <stop offset="0.74" stopColor="#0a0907" />
-                <stop offset="1" stopColor="#030302" />
-              </radialGradient>
-              {/* Bounce light: the underside of a real sphere picks up
-                  reflected light instead of going dead black. */}
-              <radialGradient id="sbMarkB" cx="50%" cy="50%" r="50%">
-                <stop offset="0.62" stopColor="#c9a24b" stopOpacity="0" />
-                <stop offset="0.88" stopColor="#8a6f34" stopOpacity="0.30" />
-                <stop offset="1" stopColor="#6b5528" stopOpacity="0.16" />
-              </radialGradient>
-              <linearGradient id="sbMarkR" x1="0" y1="0" x2="0.35" y2="1">
-                <stop offset="0" stopColor="#f6e6bd" stopOpacity="0.85" />
-                <stop offset="0.45" stopColor="#c9a24b" stopOpacity="0.55" />
-                <stop offset="1" stopColor="#8a6f34" stopOpacity="0.40" />
+              <linearGradient id="sbMarkG" gradientUnits="userSpaceOnUse" x1="10" y1="10" x2="90" y2="90">
+                <stop offset="0" stopColor="#c9a24b" />
+                <stop offset="1" stopColor="#e0c98a" />
               </linearGradient>
-              <radialGradient id="sbMarkSp" cx="50%" cy="50%" r="50%">
-                <stop offset="0" stopColor="#ffffff" stopOpacity="0.50" />
-                <stop offset="0.45" stopColor="#fff4d6" stopOpacity="0.16" />
-                <stop offset="1" stopColor="#f0dfae" stopOpacity="0" />
-              </radialGradient>
-              {/* Socket shadow seats each eye into the surface rather than
-                  leaving it pasted on top. */}
-              <radialGradient id="sbMarkSo" cx="50%" cy="46%" r="52%">
-                <stop offset="0.55" stopColor="#000000" stopOpacity="0.55" />
-                <stop offset="1" stopColor="#000000" stopOpacity="0" />
-              </radialGradient>
-              <radialGradient id="sbMarkG" cx="50%" cy="50%" r="50%">
-                <stop offset="0" stopColor="#f6e6bd" stopOpacity="0.44" />
-                <stop offset="0.5" stopColor="#e0c98a" stopOpacity="0.15" />
-                <stop offset="1" stopColor="#c9a24b" stopOpacity="0" />
-              </radialGradient>
-              <radialGradient id="sbMarkI" cx="42%" cy="36%" r="68%">
-                <stop offset="0" stopColor="#fffdf4" />
-                <stop offset="0.34" stopColor="#ffeec4" />
-                <stop offset="0.68" stopColor="#e8c982" />
-                <stop offset="1" stopColor="#a8813a" />
-              </radialGradient>
             </defs>
-            <circle cx="32" cy="32" r="31" fill="url(#sbMarkS)" />
-            <circle cx="32" cy="32" r="31" fill="url(#sbMarkB)" />
-            <circle cx="32" cy="32" r="30" fill="none" stroke="url(#sbMarkR)" strokeWidth="2" />
-            <ellipse cx="22" cy="17" rx="13" ry="8.5" fill="url(#sbMarkSp)" transform="rotate(-24 22 17)" />
-            <circle cx="23" cy="28" r="11" fill="url(#sbMarkSo)" />
-            <circle cx="41" cy="28" r="11" fill="url(#sbMarkSo)" />
-            <circle cx="23" cy="28" r="10" fill="url(#sbMarkG)" />
-            <circle cx="41" cy="28" r="10" fill="url(#sbMarkG)" />
-            <circle cx="23" cy="28" r="5.6" fill="url(#sbMarkI)" />
-            <circle cx="41" cy="28" r="5.6" fill="url(#sbMarkI)" />
-            {/* Catchlights sit up-left, matching the specular highlight —
-                that shared direction is what reads as one light source. */}
-            <circle cx="21.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92" />
-            <circle cx="39.2" cy="26.2" r="1.7" fill="#ffffff" opacity="0.92" />
+            <path
+              fill="url(#sbMarkG)"
+              fillRule="evenodd"
+              d="M 10 50 a 40 40 0 1 0 80 0 a 40 40 0 1 0 -80 0 Z M 27 46 a 27 27 0 1 0 54 0 a 27 27 0 1 0 -54 0 Z"
+            />
           </svg>
         </span>
         <span className={styles.brandName}>onagent</span>
