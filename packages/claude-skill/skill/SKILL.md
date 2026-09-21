@@ -11,13 +11,13 @@ description: 協助使用者透過 onagent CLI 登入 onagent 平台、在 conso
 
 ### 1. 檢查/取得 onagent CLI
 
-**這個 skill 內建預先編譯好的 `onagent` 執行檔**，位於 `${CLAUDE_SKILL_DIR}/bin/`（`onagent-windows-amd64.exe`、`onagent-darwin-amd64`、`onagent-darwin-arm64`、`onagent-linux-amd64`、`onagent-linux-arm64`）。全域 PATH 上通常不會有 `onagent` 指令，**不要**直接執行裸指令 `onagent`，而是呼叫 `${CLAUDE_SKILL_DIR}/bin/` 底下對應目前平台的執行檔，例如：
+`onagent` CLI 執行檔在安裝這個 skill 時（`npx claude-skill-onagent`）自動下載到 `${CLAUDE_SKILL_DIR}/bin/`，檔名依平台是 `onagent-windows-amd64.exe`、`onagent-darwin-amd64`、`onagent-darwin-arm64`、`onagent-linux-amd64`、`onagent-linux-arm64` 之一（只有目前所在平台那一個會存在，不是五個都有）。全域 PATH 上通常不會有 `onagent` 指令，**不要**直接執行裸指令 `onagent`，而是呼叫 `${CLAUDE_SKILL_DIR}/bin/` 底下對應目前平台的執行檔，例如：
 
 ```bash
 "${CLAUDE_SKILL_DIR}/bin/onagent-linux-amd64" app list
 ```
 
-若目前平台在 `bin/` 目錄下沒有對應的執行檔，不要嘗試執行不存在的檔案，也不要自行編譯或安裝——直接告知使用者這個 skill 目前沒有適用於他們平台的執行檔。
+若 `${CLAUDE_SKILL_DIR}/bin/` 底下找不到對應目前平台的執行檔（例如安裝當下這個平台沒有可下載的版本），不要嘗試執行不存在的檔案，也不要自行編譯或安裝——直接告知使用者這個 skill 目前沒有適用於他們平台的執行檔。
 
 ### 2. 登入
 
@@ -205,7 +205,7 @@ onagent tool list <appId>
 
 ## 完整流程總覽
 
-1. 判斷目前平台（`uname -sm` 或 Windows），呼叫 skill 內建的 `${CLAUDE_SKILL_DIR}/bin/onagent-<os>-<arch>[.exe]`；目前實際內建 Windows、Intel/Apple Silicon macOS、Linux（amd64/arm64）共五種組合，偵測到其他更少見的平台就告知使用者此 skill 目前沒有對應執行檔，不要自行編譯或安裝。
+1. 判斷目前平台（`uname -sm` 或 Windows），呼叫安裝時已下載到 `${CLAUDE_SKILL_DIR}/bin/onagent-<os>-<arch>[.exe]` 的執行檔；目前 GitHub Release 有 Windows、Intel/Apple Silicon macOS、Linux（amd64/arm64）共五種平台的版本可下載，若目前平台沒有對應的版本，告知使用者此 skill 目前沒有對應執行檔，不要自行編譯或安裝。
 2. 執行 `onagent login --web`（或無瀏覽器環境用 `onagent login`）登入。
 3. 用 `onagent app list` 確認不再出現「not logged in」，驗證登入成功。
 4. 執行 `onagent app create <appId>` 建立 app（也可以到 console 網頁 https://onagent.shuttle.tools/app 點「+ New app」手動建立，效果相同）。需要刪除 app 時用 `onagent app delete <appId>`（無法復原）。

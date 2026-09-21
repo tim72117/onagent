@@ -8,11 +8,6 @@ name: Release @onagent/claude-skill
 on:
   workflow_dispatch: {}
 
-env:
-  # backend/go.mod's github.com/tim72117/want is a private repo — same
-  # requirement as release-onagent.yml/deploy-cloudrun.yml.
-  GOPRIVATE: "github.com/tim72117/want"
-
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -29,47 +24,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.4'
-
-      - name: Configure git for private module access
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
-        run: |
-          git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
-
-      - name: Download Go dependencies
-        working-directory: backend
-        run: go mod download
-
-      - name: Build bundled onagent binaries
-        working-directory: backend
-        env:
-          # Static binaries — same reasoning as release-onagent.yml: without
-          # this, the linux-amd64 build linked dynamically against the CI
-          # runner's libc (a mismatch caught after 0.0.2's first CI-built
-          # publish), which can fail to run on a minimal container image
-          # lacking that exact libc.
-          CGO_ENABLED: "0"
-        run: |
-          # Same build flags as release-onagent.yml (-trimpath -ldflags="-s -w"):
-          # strips debug symbols/DWARF info and local file paths, ~30% smaller.
-          # All five platforms are bundled as of 0.0.2 — see
-          # packages/claude-skill/README.md's "Building the bundled binary".
-          mkdir -p ../packages/claude-skill/skill/bin
-          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
-            -o ../packages/claude-skill/skill/bin/onagent-windows-amd64.exe ./cmd/onagent
-          GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
-            -o ../packages/claude-skill/skill/bin/onagent-darwin-amd64 ./cmd/onagent
-          GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" \
-            -o ../packages/claude-skill/skill/bin/onagent-darwin-arm64 ./cmd/onagent
-          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" \
-            -o ../packages/claude-skill/skill/bin/onagent-linux-amd64 ./cmd/onagent
-          GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" \
-            -o ../packages/claude-skill/skill/bin/onagent-linux-arm64 ./cmd/onagent
-
+      # No Go build step here anymore — this package no longer bundles any
+      # onagent binary. cli.js downloads the latest one from this repo's
+      # GitHub Releases (release-onagent.yml) at install time instead, so
+      # a user always gets whatever's newest there, independent of when
+      # this npm package itself was last published.
       - name: Set up Node
         uses: actions/setup-node@v4
         with:

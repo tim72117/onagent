@@ -15,36 +15,42 @@ the source of truth for editing the skill's content.
 ## Usage
 
 ```
-npx claude-skill-onagent          # installs to ./.claude/skills/onagent-cli-setup
-npx claude-skill-onagent --user   # installs to ~/.claude/skills/onagent-cli-setup
+npx claude-skill-onagent            # installs to ./.claude/skills/onagent-cli-setup
+npx claude-skill-onagent --user     # installs to ~/.claude/skills/onagent-cli-setup
+npx claude-skill-onagent version    # shows the installed and latest onagent CLI release
+npx claude-skill-onagent upgrade    # re-downloads the current platform's binary if a newer release exists
 ```
+
+`version`/`upgrade` operate on whichever install `--user` selects — pass the
+same flag you installed with if you installed with `--user`.
 
 This is an explicit, user-invoked install (not a `postinstall` script) — npm
 and GitHub are moving toward disabling install scripts by default, so
 anything that auto-copies files on `npm install` is a fading, riskier
 pattern. Running this only happens when someone actually types the command.
 
-## Building the bundled binary
+## The onagent binary isn't bundled
 
-`skill/bin/` is gitignored — build it locally before publishing or testing:
+Unlike earlier versions of this package, `skill/bin/` is no longer part of
+what gets published — this package carries no onagent binary at all.
+`bin/cli.js` downloads the current platform's binary straight from this
+repo's GitHub Releases (built by `.github/workflows/release-onagent.yml`)
+the moment someone runs `npx claude-skill-onagent` (install) or
+`claude-skill-onagent upgrade`, so a user always gets whatever's newest
+there — never something pinned to whenever this npm package itself was
+last published, and this package never needs re-publishing just because a
+new onagent CLI version shipped.
 
-```
-cd ../../backend
-GOWORK=off GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../packages/claude-skill/skill/bin/onagent-windows-amd64.exe ./cmd/onagent
-GOWORK=off GOOS=darwin GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../packages/claude-skill/skill/bin/onagent-darwin-amd64 ./cmd/onagent
-GOWORK=off GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o ../packages/claude-skill/skill/bin/onagent-darwin-arm64 ./cmd/onagent
-GOWORK=off GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../packages/claude-skill/skill/bin/onagent-linux-amd64 ./cmd/onagent
-GOWORK=off GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-s -w" -o ../packages/claude-skill/skill/bin/onagent-linux-arm64 ./cmd/onagent
-```
+`.onagent-version` (written next to the downloaded binary) records which
+release tag was installed — the binary itself carries no version string
+here, since `release-onagent.yml`'s `-X main.version=...` build flag isn't
+part of this download path.
 
-`-trimpath -ldflags="-s -w"` matches `release-onagent.yml`'s own build flags
-(strips debug symbols/DWARF info and local file paths) — cuts each binary
-by roughly 30%.
-
-All five platforms are bundled as of 0.0.2: Windows (amd64), macOS (Intel
-and Apple Silicon), and Linux (amd64 and arm64). `SKILL.md`'s own fallback
-instructions (`go install .../cmd/onagent@latest`, or clone + build) still
-cover any platform not in this list.
+Platforms covered: whatever `release-onagent.yml`'s build matrix currently
+publishes (as of this writing: Windows amd64, macOS Intel/Apple Silicon,
+Linux amd64/arm64). `cli.js` prints a clear message and exits without
+attempting a download on any other platform/arch combination —
+`SKILL.md`'s own fallback instructions cover that case.
 
 ## Publishing
 
