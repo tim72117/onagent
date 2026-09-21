@@ -6,6 +6,35 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.6.1
+
+No breaking changes to this repo's own Go/TypeScript surface — patch
+release.
+
+- **Replaced the sphere-mascot brand mark with a ring** across every
+  surface: landing's nav/footer (English and Traditional Chinese, plus
+  docs/pricing/privacy/terms), `favicon.svg` and every generated size,
+  console's Sidebar and LoginCard, and showcase's Topbar. The new mark
+  ("Halo Swell Amber") is an eccentric-circle ring — an outer circle
+  minus an off-center inner circle, evenodd fill — whose band width
+  varies continuously around the circumference. Two color variants are
+  used depending on contrast risk: the full gold gradient
+  (`#c9a24b` → `#e0c98a`) for large icons on the site's own `#0d0b07`
+  dark ground, and a smaller-eccentricity solid-color variant for
+  `favicon.svg` and showcase's Topbar, where the gradient's light stop
+  measured under 2:1 contrast against a white browser tab strip /
+  near-white background at small sizes.
+- **`@onagent/claude-skill` no longer bundles an onagent CLI binary.**
+  `bin/cli.js` now downloads the current platform's binary from this
+  repo's GitHub Releases at install/upgrade time (new `version` and
+  `upgrade` subcommands), so a user always gets whatever's newest there
+  instead of whatever was bundled when the npm package was last
+  published. `release-onagent.yml`'s build matrix gained linux
+  (amd64/arm64), which it was previously missing. This is a breaking
+  change for that package specifically (bumped `0.0.4` → `0.1.0` on its
+  own, independent version line — see `packages/claude-skill/
+  package.json`), not for this repo's own version.
+
 ## v0.6.0
 
 **Breaking.** Removed `returns` from the tool schema entirely — the YAML
