@@ -12,5 +12,16 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Keeps tests out of dist: package.json ships `files: ["dist"]`, so a
+  // compiled test would be published to npm, and vitest would then collect
+  // both the source and the build output — running everything twice and
+  // reporting double the count.
+  //
+  // The trade-off is that tsc no longer sees these files at all, so type
+  // errors in a test surface when vitest runs it rather than at typecheck.
+  // Worth it to keep the published package clean; revisit with a separate
+  // tsconfig.test.json if the tests grow enough to want checking on their
+  // own.
+  "exclude": ["src/**/*.test.ts"]
 }

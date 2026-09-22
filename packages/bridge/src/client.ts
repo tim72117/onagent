@@ -117,6 +117,33 @@ export interface AgentBridgeOptions {
   minBackoffMs?: number;
   maxBackoffMs?: number;
   /**
+   * Close the socket while the page is hidden (tab switched away, window
+   * minimized), reopening it when the page is shown again. Defaults to
+   * true.
+   *
+   * A WebSocket is an open request for as long as it lives, so a serverless
+   * host bills an instance for the whole time one is held — a single
+   * forgotten tab pins an instance indefinitely, and a host that caps
+   * request duration turns that into a reconnect every time it cuts the
+   * connection, not an idle period. A hidden page can't be showing tool
+   * results to anyone, so the connection is worth nothing while it's away.
+   *
+   * Messages sent while hidden are queued and flushed on the reconnect, the
+   * same as any other pre-connection send, so callers see no difference.
+   */
+  disconnectWhenHidden?: boolean;
+  /**
+   * Wait for the first send before opening the socket, rather than
+   * connecting in the constructor. Defaults to false.
+   *
+   * Worth turning on wherever the bridge is mounted on a page most visitors
+   * never interact with (a marketing demo, a docs widget): without it every
+   * pageview opens a connection that exists only to be paid for. `prompt()`
+   * and every other send already queue until the socket is ready, so the
+   * only visible cost is connection latency on the first message.
+   */
+  lazyConnect?: boolean;
+  /**
    * HTTP endpoint to fire a best-effort `sendBeacon` to when the page is
    * hidden/unloaded with unsent queued messages. The WebSocket connection
    * closes before a final in-flight send would complete, so this mirrors
@@ -142,9 +169,20 @@ export class AgentBridge {
   private ready = false;
   private closedByUser = false;
   private backoffMs: number;
+  /** True while the socket is deliberately down and must not reconnect on
+   * its own: the page is hidden, or lazyConnect is on and nothing has been
+   * sent yet. Distinct from closedByUser, which is permanent. */
+  private suspended = false;
+  /** Whether a socket has ever opened. Lets the visibility handler tell a
+   * lazy bridge nobody has used yet (leave it closed) from one that has
+   * been used and was closed only because the page went away (reopen). */
+  private hasConnected = false;
+  /** Removes the visibilitychange listener; set while one is installed. */
+  private detachVisibility?: () => void;
 
   private readonly minBackoffMs: number;
   private readonly maxBackoffMs: number;
+  private readonly disconnectWhenHidden: boolean;
   /** opts.tools normalized to a Record once, regardless of which shape the
    * developer passed in — every other method reads this, never opts.tools
    * directly. */
@@ -155,8 +193,16 @@ export class AgentBridge {
     this.maxBackoffMs = opts.maxBackoffMs ?? 10_000;
     this.backoffMs = this.minBackoffMs;
     this.tools = Array.isArray(opts.tools) ? toToolRecord(opts.tools) : opts.tools;
+    this.disconnectWhenHidden = opts.disconnectWhenHidden ?? true;
     this.installUnloadFallback();
-    this.connect();
+    this.installVisibilityHandling();
+    // lazyConnect starts suspended rather than not-connected, so the first
+    // enqueue knows to wake the socket (see enqueue).
+    if (opts.lazyConnect) {
+      this.suspended = true;
+    } else {
+      this.connect();
+    }
   }
 
   /** Ask the inference service to reason about a prompt. */
@@ -168,6 +214,15 @@ export class AgentBridge {
   /** Tear down the connection. No further reconnect attempts will be made. */
   close(): void {
     this.closedByUser = true;
+    // Detach the page-lifecycle listener too. Without this a closed bridge
+    // stays subscribed to visibilitychange for the life of the document,
+    // and every later hide/show would run its handler — which, for a
+    // bridge that had been used, opens a fresh socket. A long-lived page
+    // that creates and closes bridges (a SPA route that mounts a demo,
+    // say) would accumulate one such listener per bridge, each reopening
+    // a connection nobody is using.
+    this.detachVisibility?.();
+    this.detachVisibility = undefined;
     this.ws?.close();
   }
 
@@ -184,6 +239,7 @@ export class AgentBridge {
 
     ws.addEventListener("open", () => {
       this.backoffMs = this.minBackoffMs;
+      this.hasConnected = true;
       this.send("hello", undefined, {
         appId: this.opts.appId,
         sdkVersion: SDK_VERSION,
@@ -197,7 +253,10 @@ export class AgentBridge {
 
     ws.addEventListener("close", () => {
       this.ready = false;
-      if (this.closedByUser) return;
+      // suspended covers a close we asked for (page hidden, or a lazy
+      // bridge that hasn't been used yet) — reconnecting here would undo
+      // it immediately and reinstate the very connection we just dropped.
+      if (this.closedByUser || this.suspended) return;
       this.scheduleReconnect();
     });
 
@@ -309,9 +368,26 @@ export class AgentBridge {
   private enqueue(msg: QueuedSend): void {
     if (this.ready && this.ws?.readyState === WebSocket.OPEN) {
       this.write(msg);
-    } else {
-      this.queue.push(msg);
+      return;
     }
+    this.queue.push(msg);
+    // A suspended bridge has no reconnect pending, so something has to
+    // start one — this is where a lazyConnect bridge opens its first
+    // socket, and where a send made while hidden gets things moving rather
+    // than waiting for the page to come back. Not done while the page is
+    // actually hidden: the queue flushes on the visibilitychange instead.
+    if (this.suspended && !this.closedByUser && !this.pageHidden()) {
+      this.suspended = false;
+      this.connect();
+    }
+  }
+
+  private pageHidden(): boolean {
+    return (
+      this.disconnectWhenHidden &&
+      typeof document !== "undefined" &&
+      document.visibilityState === "hidden"
+    );
   }
 
   private flushQueue(): void {
@@ -330,6 +406,45 @@ export class AgentBridge {
       return;
     }
     this.ws.send(JSON.stringify(msg));
+  }
+
+  /**
+   * Drops the connection while the page is hidden and restores it when the
+   * page comes back — see AgentBridgeOptions.disconnectWhenHidden for why
+   * a held-open socket is worth dropping.
+   *
+   * Separate listener from installUnloadFallback's: that one flushes the
+   * queue via sendBeacon and only when beaconUrl is set, which is a
+   * different concern on the same event.
+   */
+  private installVisibilityHandling(): void {
+    if (!this.disconnectWhenHidden) return;
+    if (typeof document === "undefined") return;
+
+    const onVisibilityChange = () => {
+      if (this.closedByUser) return;
+
+      if (document.visibilityState === "hidden") {
+        // Set before close() so the close handler sees it and skips its
+        // reconnect — the listener fires synchronously on the same tick.
+        this.suspended = true;
+        this.ws?.close();
+        return;
+      }
+
+      // Visible again. A bridge that has never been used stays suspended:
+      // showing a page is not a reason to open a connection lazyConnect
+      // deliberately deferred. Anything queued means someone tried to send
+      // while away, so that does warrant reconnecting.
+      if (!this.suspended) return;
+      if (this.opts.lazyConnect && this.queue.length === 0 && !this.hasConnected) return;
+      this.suspended = false;
+      this.connect();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    this.detachVisibility = () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
   }
 
   /**

@@ -1,6 +1,6 @@
 {
   "name": "@onagent/bridge",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Browser SDK that bridges front-end apps to the onagent inference backend: pushes page context/state over WebSocket and dispatches tool calls back into the page.",
   "type": "module",
   "main": "dist/index.js",
@@ -11,9 +11,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
-    "typescript": "^7.0.2"
+    "jsdom": "^29.1.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
   }
 }
