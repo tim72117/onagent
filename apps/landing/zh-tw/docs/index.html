@@ -870,6 +870,8 @@ Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</
               <tr><td>onAssistantMessage</td><td>否</td><td><code>(text: string) =&gt; void</code> — 收到要顯示給使用者看的自然語言訊息時呼叫（例如繪製到聊天面板裡）。</td></tr>
               <tr><td>onError</td><td>否</td><td><code>(err) =&gt; void</code> — 發生與特定呼叫無關的協定／推論錯誤時呼叫。</td></tr>
               <tr><td>onQuotaExceeded</td><td>否</td><td><code>(err) =&gt; void</code> — 當一則 prompt 因為 app 擁有者已用盡當月配額而被拒絕時，會改呼叫這個而非 <code>onError</code>。連線會保持開啟——方案升級後，同一條連線上的後續 prompt 就能再次運作。可以用它來顯示升級提示。若未設定，配額錯誤會如同其他錯誤一樣落到 <code>onError</code>。</td></tr>
+              <tr><td>disconnectWhenHidden</td><td>否</td><td>頁面隱藏時（切到其他分頁、視窗最小化）關閉連線，回到前景時重新開啟。預設為 <strong style="color:var(--text)">true</strong>。WebSocket 存在多久，就等於一個請求開著多久，後端會依此計費整段時間——而隱藏中的頁面本來就不可能把 tool 的結果顯示給任何人看。隱藏期間送出的訊息會進入佇列，重新連上時一併送出，呼叫端不會察覺差異。</td></tr>
+              <tr><td>lazyConnect</td><td>否</td><td>等到第一次送出訊息才建立連線，而不是在建構時就連。預設為 <code>false</code>。如果 bridge 放在多數訪客根本不會互動的頁面上，這個值得開啟——否則每一次瀏覽都會開一條只是拿來計費的連線。所有送出的訊息本來就會排入佇列等連線就緒，所以唯一的代價是第一則訊息要多等連線建立的時間。</td></tr>
               <tr><td>minBackoffMs / maxBackoffMs</td><td>否</td><td>重新連線的退避時間上下限（毫秒）。預設為 500ms 到 10s。</td></tr>
               <tr><td>beaconUrl</td><td>否</td><td>當頁面被隱藏／卸載時，用來以 <code>sendBeacon</code> 盡力送出仍在佇列中的訊息的 HTTP 端點——因為 WebSocket 會在傳送完成前就關閉。不需要這個備援機制就省略它。</td></tr>
             </tbody>

@@ -6,6 +6,58 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.7.0
+
+**Breaking for `@onagent/bridge` integrators** (published separately as
+npm `@onagent/bridge@0.1.0`). Nothing in this repo's own Go/HTTP/WebSocket
+surface changed; a deployment of the backend needs no migration.
+
+- **The bridge now drops its connection when nobody is using it.** A
+  WebSocket is an open request for its whole lifetime, so a serverless host
+  bills an instance for as long as one is held. Connecting on construction
+  meant every pageview of a demo widget pinned an instance, and a visitor
+  who left the tab open held one indefinitely: the host cuts the connection
+  at its request-duration cap, the SDK answers by reconnecting, and the
+  cycle reads as continuous use rather than idle. One forgotten tab on the
+  landing page did this for eleven hours.
+
+  - `disconnectWhenHidden` (**default true**) closes the socket while the
+    page is hidden and reopens it on return. This is the breaking part: an
+    integrator who upgrades without changing any code gets connections
+    that drop on tab-hide. Sends made while hidden queue and flush on the
+    reconnect, so the observable behaviour should be unchanged — but the
+    connection is no longer continuous, and anything relying on that will
+    notice. Pass `false` to keep the old behaviour.
+  - `lazyConnect` (default false) waits for the first send instead of
+    connecting in the constructor. Off by default precisely so upgrading
+    doesn't silently change when a connection appears.
+
+- **Fixed a listener leak in the SDK** that the new tests turned up: the
+  `visibilitychange` handler was never removed, so a closed bridge kept
+  reacting to page lifecycle for the life of the document — and for a
+  bridge that had been used, that meant opening a fresh socket. `close()`
+  now detaches it. A long-lived page that mounts and unmounts bridges (a
+  SPA route hosting a demo) would have accumulated one such listener, and
+  one stray connection, per bridge.
+
+- Added vitest/jsdom to `packages/bridge`, which had no test setup at all,
+  and fourteen tests covering when a socket is opened, closed, and
+  deliberately not reopened. Tests are excluded from the build: they were
+  being compiled into `dist/`, which ships to npm, and vitest was
+  collecting both the source and the compiled copy.
+
+- Declared the package's `repository` field, without which npm rejects a
+  provenance-signed publish outright (`422`, "repository.url is ''").
+
+- Both landing demos opt into `lazyConnect`: they are opened far more often
+  than they are typed into. The `AgentBridge` options table in `/docs/` and
+  `/zh-tw/docs/` documents both new options.
+
+- `docs/audit-functional.md`'s F1 entry is updated: its "stale 分頁會每 10s
+  無限敲後端" no longer holds, and one of its own proposed fixes (pause
+  reconnects while hidden) is now implemented. The terminal-state half of
+  that gap is still open.
+
 ## v0.6.1
 
 No breaking changes to this repo's own Go/TypeScript surface — patch

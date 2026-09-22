@@ -249,9 +249,11 @@
 - **位置**：`WantService.Complete`（`want.go`）從不讀 `req.Tools`（工具來源全靠預註冊的 want role）；唯一讀者是 `mock.go`。唯一真實呼叫點是 `session.go:295`（`handlePrompt`）——Playground 改用共用 `ws.Session` 後，`playground.go` 已不再自己組 `inference.Request`/呼叫 `codegen.ToLLMTools`（原本各自獨立時是兩個呼叫點,現已收斂成一個）,但這一處每次 prompt 仍計算 `codegen.ToLLMTools(app)` 傳進去——熱路徑上的浪費，也誤導讀者以為 `Tools` 對 want 有作用。
 - **修法**：要嘛讓 `Complete` 真的用 `req.Tools` 對已註冊 role 做一致性檢查，要嘛從這個呼叫點移除、保留 mock-only。
 
-### 🟠 F1. SDK 無限重連無斷路器/終端狀態
-- **位置**：`packages/bridge/src/client.ts:132-145`——`scheduleReconnect` 永遠重試（backoff 封頂 10s），無法區分暫時性斷線 vs 致命狀況（key 錯/被撤銷/app 被刪/appId 錯）。stale 分頁會每 10s 無限敲後端。無回呼告訴嵌入方「這連線已永久死掉」。
-- **修法**：加 max-attempt/max-elapsed 上限＋獨立終端狀態，透過新回呼（如 `onDisconnected(permanent)`）曝露；分頁 hidden 時暫停/減速重連。
+### 🟠 F1. SDK 無限重連無斷路器/終端狀態（部分解決，2026-09-22）
+- **位置**：`packages/bridge/src/client.ts` 的 `scheduleReconnect`——永遠重試（backoff 封頂 10s），無法區分暫時性斷線 vs 致命狀況（key 錯/被撤銷/app 被刪/appId 錯）。無回呼告訴嵌入方「這連線已永久死掉」。
+- **已解決的部分**：原本描述的「stale 分頁會每 10s 無限敲後端」在 v0.1.0 的 `@onagent/bridge` 不再成立——`disconnectWhenHidden`（預設開啟）會在分頁隱藏時關閉連線且不重連，回到前景才重開；`lazyConnect` 則讓從未被使用的頁面根本不建立連線。這正是本條原本開的修法之一（「分頁 hidden 時暫停/減速重連」）。實務動機見該版本的 CHANGELOG：一個忘記關的分頁曾讓 Cloud Run 的一個執行個體連續計費 11 小時。
+- **仍未解決**：可見分頁上的致命錯誤（key 被撤銷、app 被刪）依然無限重試，且沒有終端狀態回呼——這部分與 F2 是同一個缺口的兩面。
+- **修法**：加 max-attempt/max-elapsed 上限＋獨立終端狀態，透過新回呼（如 `onDisconnected(permanent)`）曝露。
 
 ### 🟠 F2. SDK 吞掉 WS close/error code，auth 失敗看起來跟斷線一樣
 - **位置**：`client.ts:132-141`——close handler 完全忽略 `event.code`/`reason`，error 是純 no-op。撤銷 key 產生的 auth 拒絕 close 與暫時性斷線無法區分，兩者都無限重試、零信號。

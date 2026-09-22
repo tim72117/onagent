@@ -411,6 +411,11 @@ export function SupportDemo({ lang }: { lang: Lang }) {
       url: WS_URL,
       appId: APP_ID,
       apiKey: API_KEY,
+      // Same reasoning as the marketing widget's: this demo is opened far
+      // more often than it is typed into, and a connection held open for a
+      // visitor who is not using it bills a backend instance the whole
+      // time. Sends queue until the socket opens, so nothing else changes.
+      lazyConnect: true,
       onAssistantMessage: (text) => {
         setThinking(false)
         setEntries((es) => [...es, { kind: 'assistant', id: nextEntryId++, text }])

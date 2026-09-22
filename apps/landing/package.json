@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@onagent/bridge": "^0.0.2",
+    "@onagent/bridge": "^0.1.0",
     "marked": "^18.0.11",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

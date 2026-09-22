@@ -906,6 +906,15 @@ bridge.prompt(text) // called when the user submits a question`,
     url: WS_URL,
     appId: APP_ID,
     apiKey: API_KEY,
+    // Most visitors to a marketing page scroll past this widget without
+    // ever typing in it, and a WebSocket is an open request for its whole
+    // lifetime — connecting on mount meant every pageview pinned a backend
+    // instance, and a visitor who left the tab open held one indefinitely
+    // (the host cuts the connection at its request-duration cap, which the
+    // SDK answers by reconnecting, so it reads as continuous use rather
+    // than idle). The queue buffers anything sent before the socket opens,
+    // so deferring costs only the connection latency on the first prompt.
+    lazyConnect: true,
     onAssistantMessage: (text) => {
       hideThinking()
       hideAnalyzing()
