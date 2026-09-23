@@ -25,6 +25,7 @@ type appRow struct {
 	Thought         *string `gorm:"column:thought"`
 	Public          bool    `gorm:"column:public"`
 	MaxPromptLength *int    `gorm:"column:max_prompt_length"`
+	Enabled         bool    `gorm:"column:enabled"`
 }
 
 func (appRow) TableName() string { return "apps" }
@@ -270,7 +271,11 @@ func (r *Registry) Create(appID string, ownerID int64, public bool) error {
 	if _, exists := r.Get(appID); exists {
 		return fmt.Errorf("toolschema: appId %q already exists", appID)
 	}
-	if err := r.db.Create(&appRow{AppID: appID, OwnerID: &ownerID, Public: public}).Error; err != nil {
+	// Enabled is set explicitly rather than left to the column's DEFAULT
+	// TRUE: GORM includes every non-pointer field of the struct in the
+	// INSERT, so a zero-valued bool would write false and the default
+	// would never apply — every newly created app would arrive disabled.
+	if err := r.db.Create(&appRow{AppID: appID, OwnerID: &ownerID, Public: public, Enabled: true}).Error; err != nil {
 		return fmt.Errorf("toolschema: create app %s: %w", appID, err)
 	}
 	if err := r.Reload(); err != nil {
@@ -329,6 +334,25 @@ func (r *Registry) SetThought(appID, thought string) error {
 	res := r.db.Model(&appRow{}).Where("app_id = ?", appID).Update("thought", val)
 	if res.Error != nil {
 		return fmt.Errorf("toolschema: set thought for %s: %w", appID, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("toolschema: no such app %q", appID)
+	}
+	return r.Reload()
+}
+
+// SetEnabled turns appID's embedded SDK on or off, and reloads so the
+// change applies to the next handshake. Disabling does not close the
+// connections an app already has — a live WebSocket keeps running until it
+// ends on its own, and is refused when it next tries to reconnect. Fails
+// if appID doesn't exist.
+func (r *Registry) SetEnabled(appID string, enabled bool) error {
+	if !ValidAppID(appID) {
+		return fmt.Errorf("toolschema: invalid appId %q", appID)
+	}
+	res := r.db.Model(&appRow{}).Where("app_id = ?", appID).Update("enabled", enabled)
+	if res.Error != nil {
+		return fmt.Errorf("toolschema: set enabled for %s: %w", appID, res.Error)
 	}
 	if res.RowsAffected == 0 {
 		return fmt.Errorf("toolschema: no such app %q", appID)
@@ -413,7 +437,7 @@ func loadAllApps(db *gorm.DB) (map[string]*App, error) {
 		if row.Thought != nil {
 			thought = *row.Thought
 		}
-		apps[row.AppID] = &App{AppID: row.AppID, Tools: []Tool{}, Thought: thought, Public: row.Public, MaxPromptLength: row.MaxPromptLength}
+		apps[row.AppID] = &App{AppID: row.AppID, Tools: []Tool{}, Thought: thought, Public: row.Public, MaxPromptLength: row.MaxPromptLength, Enabled: row.Enabled}
 	}
 
 	var toolRows []toolRow

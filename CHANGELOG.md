@@ -6,6 +6,46 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.7.1
+
+No breaking changes. The database gains a column, but through
+`ADD COLUMN IF NOT EXISTS ... NOT NULL DEFAULT TRUE`, so an existing
+deployment migrates itself on startup and every existing app stays
+reachable — no manual DDL, unlike v0.6.0's dropped column.
+
+- **An app can now be switched off.** `Status` on its console settings page
+  takes the embedded SDK offline: `ws.APIKeyResolver` refuses the handshake
+  before the WebSocket upgrade, so a site using that app can no longer
+  reach the agent. The key, allowed origins and tools are all kept, so
+  switching it back on restores the same setup — this is a pause, not a
+  teardown.
+
+  - Rejected *before* the upgrade on purpose. A live WebSocket is an open
+    request for its whole lifetime, so upgrading first and closing after
+    would go on billing an instance for an app its owner had just taken
+    offline.
+  - Scoped to external connections. The console's own Playground resolves
+    its app through a different resolver, so a disabled app can still be
+    developed and tested against.
+  - Connections that are already open are not closed; they are refused
+    when they next reconnect. The console says so at the point of the
+    decision rather than leaving it to be discovered.
+
+- Fixed `toolschema.Registry.Create` writing `enabled = false` for every
+  new app. GORM includes a struct's non-pointer fields in the INSERT, so a
+  zero-valued bool wrote `false` and the column's `DEFAULT TRUE` never
+  applied — every app created after this change would have arrived
+  disabled, with a symptom (a brand-new integration that simply won't
+  connect) that points nowhere near the cause. Caught by the new tests
+  before it shipped.
+
+- Fixed `adminconsole`'s apps-table schema check not knowing about the new
+  column, which would have made it report drift on a healthy database —
+  the exact false alarm that check exists to prevent.
+
+- The troubleshooting table in `/docs/` and `/zh-tw/docs/` now lists a
+  disabled app among the things that reject a handshake.
+
 ## v0.7.0
 
 **Breaking for `@onagent/bridge` integrators** (published separately as

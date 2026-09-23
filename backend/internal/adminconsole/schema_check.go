@@ -87,6 +87,7 @@ type appsFull struct {
 	Thought         *string        `gorm:"column:thought"`
 	MaxPromptLength *int           `gorm:"column:max_prompt_length"`
 	Public          bool           `gorm:"column:public"`
+	Enabled         bool           `gorm:"column:enabled"`
 	CreatedAt       time.Time      `gorm:"column:created_at"`
 }
 

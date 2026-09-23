@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS apps (
     allowed_origins TEXT[],            -- exact Origin headers a connection may present (any one matching is enough); NULL or empty = no site configured yet, so every WS handshake for this app is rejected (fail-closed) — see ws.Handler.ServeHTTP
     thought         TEXT,              -- per-app want agent system prompt; NULL = use the platform default (want_tools.go's defaultThought)
     max_prompt_length INTEGER,         -- per-app cap on a single prompt's character count; NULL = use the system-wide MAX_PROMPT_LENGTH env var. A non-NULL value can only TIGHTEN the effective limit, never loosen it past the system-wide cap — see inference.EffectiveMaxPromptLength.
+    enabled         BOOLEAN NOT NULL DEFAULT TRUE, -- false takes this app's embedded SDK offline: ws.APIKeyResolver rejects the handshake before the upgrade. Does NOT affect the console (Playground, tool editing, settings) — see that resolver's own comment. DEFAULT TRUE so an existing app stays reachable when this column is added.
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -118,6 +119,9 @@ ALTER TABLE apps ADD COLUMN IF NOT EXISTS allowed_origins TEXT[];
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES users (id) ON DELETE CASCADE;
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS thought TEXT;
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS max_prompt_length INTEGER;
+-- NOT NULL DEFAULT TRUE, so every row that predates this column is enabled:
+-- adding the switch must not take any running integration offline.
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- owner_id tightens from optional to required: every code path that creates
 -- an app now always supplies an owner (toolschema.Registry.Create takes

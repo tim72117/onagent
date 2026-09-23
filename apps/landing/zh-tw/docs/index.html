@@ -1024,7 +1024,7 @@ Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</
           <table class="doc-table">
             <thead><tr><th>症狀</th><th>可能原因</th></tr></thead>
             <tbody>
-              <tr><td>WebSocket 連不上，但 API key 看起來是對的</td><td>有幾種情況會各自導致握手被拒——無效或過期的 token、不存在的 <code>appId</code>、配額用盡——但 allowed origin 未設定或不相符是其中很常見的一種，值得優先檢查。見上方 <a href="#set-origin">origin 採 fail-closed</a>。</td></tr>
+              <tr><td>WebSocket 連不上，但 API key 看起來是對的</td><td>有幾種情況會各自導致握手被拒——無效或過期的 token、不存在的 <code>appId</code>、配額用盡，或是這個 app 被停用了（console 設定頁的<strong style="color:var(--text)">狀態</strong>）——但 allowed origin 未設定或不相符是其中很常見的一種，值得優先檢查。見上方 <a href="#set-origin">origin 採 fail-closed</a>。</td></tr>
               <tr><td><code>onagent</code> 顯示 "not logged in"</td><td>重新執行 <code>onagent login --web</code>（或 <code>onagent login</code>）；快取的 token 可能不存在或已過期。</td></tr>
               <tr><td><code>tool create</code> 驗證失敗</td><td>檢查順序為：名稱的正規表示式、缺少 <code>description</code>、缺少 <code>parameters.type</code>。你看到的會是最先發現的那一個錯誤。見上方<a href="#push-tools">推送 tool</a>。</td></tr>
               <tr><td>console 出現警告："backend declares tools with no registered handler"</td><td>平台上存在某個 tool（透過 <code>tool create</code> 或 console 編輯器推送的），但你的 <code>tools</code> 對應表裡沒有相符的 handler 鍵。補上缺少的 handler，或移除那個用不到的 tool 定義。</td></tr>

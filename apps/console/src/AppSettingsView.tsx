@@ -29,6 +29,9 @@ export function AppSettingsView({
   maxPromptLengthBusy,
   onSaveMaxPromptLength,
   systemMaxPromptLength,
+  enabled,
+  enabledBusy,
+  onToggleEnabled,
   onDeleteApp,
 }: {
   appId: string
@@ -47,6 +50,9 @@ export function AppSettingsView({
   maxPromptLengthBusy: boolean
   onSaveMaxPromptLength: (e: React.FormEvent) => Promise<boolean>
   systemMaxPromptLength: number | null
+  enabled: boolean
+  enabledBusy: boolean
+  onToggleEnabled: (next: boolean) => void
   onDeleteApp: () => void
 }) {
   function addDraft() {
@@ -159,6 +165,33 @@ export function AppSettingsView({
           system-wide limit, never loosen it.
         </span>
       </form>
+
+      {/* Placed last before the danger zone, and deliberately outside it:
+          disabling is reversible and keeps the app's key, origins and
+          tools, so it doesn't belong beside an irreversible delete — but
+          it is still the control that takes a live site offline, so it
+          sits closer to that end than to the editing fields above. */}
+      <div className={styles.originForm}>
+        <span className="micro-label">Status</span>
+        <div className={styles.originRow}>
+          <button
+            type="button"
+            className="text-btn"
+            disabled={enabledBusy}
+            onClick={() => onToggleEnabled(!enabled)}
+          >
+            {enabledBusy ? 'Saving…' : enabled ? 'Disable' : 'Enable'}
+          </button>
+          <span className={styles.originListItemText}>
+            {enabled ? 'Enabled — the embedded SDK can connect.' : 'Disabled — the embedded SDK cannot connect.'}
+          </span>
+        </div>
+        <span className={styles.originWarning} style={{ color: 'inherit', opacity: 0.7 }}>
+          Disabling refuses new connections from the site using this app. Pages that are
+          already connected keep working until their connection ends. The console
+          Playground is unaffected, so you can keep developing against a disabled app.
+        </span>
+      </div>
 
       <div className={styles.dangerZone}>
         <button type="button" className="text-btn danger" onClick={onDeleteApp}>

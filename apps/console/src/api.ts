@@ -27,6 +27,12 @@ export interface AppSummary {
    * caps this value too, even when set: an app can only tighten the limit,
    * never loosen it past the system-wide cap). */
   maxPromptLength: number | null
+  /** Whether this app's embedded SDK may open connections. false makes the
+   * backend reject a site's WebSocket handshake before the upgrade (see
+   * ws.APIKeyResolver); the console's own Playground keeps working either
+   * way, so a disabled app can still be developed against. Defaults to
+   * true, including for apps created before the switch existed. */
+  enabled: boolean
   /** The system-wide prompt character cap (backend's MAX_PROMPT_LENGTH env
    * var, or its own built-in default) — the ceiling maxPromptLength above
    * can tighten but never loosen past. Same value for every app. */
@@ -236,6 +242,14 @@ export const api = {
   // system-wide default); a positive number sets it.
   setMaxPromptLength: (appId: string, maxPromptLength: number | null): Promise<AppSummary> =>
     request('PUT', `/console/apps/${id(appId)}/max-prompt-length`, { maxPromptLength }).then((r) => r.json()),
+
+  // Takes the app's embedded SDK offline (false) or puts it back (true).
+  // Leaves the key, origins and tools alone, so re-enabling restores the
+  // same configuration — this is a pause, not a teardown. Connections that
+  // are already open are not closed; they are refused when they next
+  // reconnect.
+  setEnabled: (appId: string, enabled: boolean): Promise<AppSummary> =>
+    request('PUT', `/console/apps/${id(appId)}/enabled`, { enabled }).then((r) => r.json()),
 
   deleteApp: (appId: string): Promise<void> =>
     request('DELETE', `/console/apps/${id(appId)}`).then(() => undefined),

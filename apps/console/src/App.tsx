@@ -191,6 +191,7 @@ export default function App() {
   // coercion of "" to 0.
   const [maxPromptLengthDraft, setMaxPromptLengthDraft] = useState('')
   const [maxPromptLengthBusy, setMaxPromptLengthBusy] = useState(false)
+  const [enabledBusy, setEnabledBusy] = useState(false)
 
   // Backed by GET /console/notifications (backend's internal/notify rule
   // engine — see that package's own doc comment for the event → rule →
@@ -519,6 +520,34 @@ export default function App() {
     return runAction(setMaxPromptLengthBusy, async () => {
       await api.setMaxPromptLength(draft.appId, value)
       await refreshSummaries()
+    })
+  }
+
+  // No confirmation on enabling, one on disabling: turning an integration
+  // off is the direction that breaks a live site, and the dialog is where
+  // the "already-open connections keep running" caveat can actually be
+  // read before the fact rather than discovered after.
+  function toggleEnabled(next: boolean) {
+    if (!draft) return
+    const appId = draft.appId
+    const apply = async () => {
+      await runAction(setEnabledBusy, async () => {
+        await api.setEnabled(appId, next)
+        await refreshSummaries()
+      })
+    }
+    if (next) {
+      void apply()
+      return
+    }
+    setPendingConfirm({
+      message:
+        `Disable "${appId}"? Its embedded SDK stops being able to connect — ` +
+        `a site using it can no longer reach the agent. Pages that are already ` +
+        `connected keep working until their connection ends. The key, origins ` +
+        `and tools are kept, so enabling it again restores the same setup.`,
+      confirmLabel: 'Disable',
+      onConfirm: apply,
     })
   }
 
@@ -1054,6 +1083,9 @@ export default function App() {
               maxPromptLengthBusy={maxPromptLengthBusy}
               onSaveMaxPromptLength={saveMaxPromptLength}
               systemMaxPromptLength={activeSummary?.systemMaxPromptLength ?? null}
+              enabled={activeSummary?.enabled ?? true}
+              enabledBusy={enabledBusy}
+              onToggleEnabled={toggleEnabled}
               onDeleteApp={deleteApp}
             />
           ) : (
@@ -1074,6 +1106,9 @@ export default function App() {
               maxPromptLengthBusy={maxPromptLengthBusy}
               onSaveMaxPromptLength={saveMaxPromptLength}
               systemMaxPromptLength={activeSummary?.systemMaxPromptLength ?? null}
+              enabled={activeSummary?.enabled ?? true}
+              enabledBusy={enabledBusy}
+              onToggleEnabled={toggleEnabled}
               onDeleteApp={deleteApp}
             />
           )

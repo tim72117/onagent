@@ -29,6 +29,9 @@ export function AppSettingsList({
   maxPromptLengthBusy,
   onSaveMaxPromptLength,
   systemMaxPromptLength,
+  enabled,
+  enabledBusy,
+  onToggleEnabled,
   onDeleteApp,
 }: {
   appId: string
@@ -48,6 +51,9 @@ export function AppSettingsList({
   maxPromptLengthBusy: boolean
   onSaveMaxPromptLength: (e: React.FormEvent) => Promise<boolean>
   systemMaxPromptLength: number | null
+  enabled: boolean
+  enabledBusy: boolean
+  onToggleEnabled: (next: boolean) => void
   onDeleteApp: () => void
 }) {
   const keySheet = useSheet()
@@ -107,6 +113,23 @@ export function AppSettingsList({
           <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
             <path d="M9 18l6-6-6-6" />
           </svg>
+        </button>
+        {/* Acts directly rather than opening a sheet, unlike every row
+            above it: there is nothing to edit, only a state to flip, and
+            App.tsx already puts a confirmation in front of the disabling
+            direction where the caveats can be read. */}
+        <button
+          type="button"
+          className={styles.row}
+          disabled={enabledBusy}
+          onClick={() => onToggleEnabled(!enabled)}
+        >
+          <div className={styles.rowInfo}>
+            <div className={styles.rowLabel}>Status</div>
+            <div className={styles.rowValue}>
+              {enabledBusy ? 'Saving…' : enabled ? 'Enabled' : 'Disabled'}
+            </div>
+          </div>
         </button>
       </div>
 

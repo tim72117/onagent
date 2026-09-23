@@ -437,3 +437,107 @@ func mustRegistry(t *testing.T, database *gorm.DB) *toolschema.Registry {
 // TestCheckOrigin_NoResolverNoOriginHeaderAllowed,
 // TestCheckOrigin_NoResolverDelegatesToAllowedOrigins) — intentionally not
 // duplicated here.
+
+// TestAPIKeyResolver_DisabledApp covers the app's own on/off switch
+// (console App settings → Status, toolschema.Registry.SetEnabled): a
+// disabled app must have its handshake refused even though its key,
+// origins and tools are all still in place and would otherwise pass every
+// other check in ResolveApp.
+func TestAPIKeyResolver_DisabledApp(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, _ := database.DB()
+
+	const ownerID = 999810
+	const appID = "test-ws-resolver-disabled-app"
+	const origin = "https://disabled.example.com"
+	makeTestUser(t, sqlDB, ownerID, "ws-resolver-disabled@example.com")
+	reg := makeTestApp(t, database, appID, ownerID)
+
+	authStore := auth.New(database)
+	key, err := authStore.Issue(appID)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if err := authStore.SetOrigins(appID, []string{origin}); err != nil {
+		t.Fatalf("SetOrigins: %v", err)
+	}
+
+	resolver := &APIKeyResolver{
+		Auth:  authStore,
+		Apps:  reg,
+		Quota: quota.New(database),
+		Log:   testLogger(),
+	}
+
+	// Baseline: everything is configured, so this app connects fine while
+	// enabled. Without this the test could pass for the wrong reason — a
+	// key or origin mistake would also produce a rejection below.
+	if _, _, _, ok, _, _ := resolver.ResolveApp(newResolveRequest(key, origin)); !ok {
+		t.Fatal("ResolveApp ok = false while enabled, want true — test setup is wrong")
+	}
+
+	if err := reg.SetEnabled(appID, false); err != nil {
+		t.Fatalf("SetEnabled(false): %v", err)
+	}
+
+	_, _, _, ok, _, code := resolver.ResolveApp(newResolveRequest(key, origin))
+	if ok {
+		t.Fatal("ResolveApp ok = true for a disabled app, want false")
+	}
+	if code != http.StatusForbidden {
+		t.Errorf("ResolveApp code = %d, want %d", code, http.StatusForbidden)
+	}
+
+	// Re-enabling restores access with no other change: the switch is a
+	// pause, not a teardown — the key and origin set are untouched, which
+	// is the property that makes it usable for taking a site briefly
+	// offline.
+	if err := reg.SetEnabled(appID, true); err != nil {
+		t.Fatalf("SetEnabled(true): %v", err)
+	}
+	if _, _, _, ok, _, _ := resolver.ResolveApp(newResolveRequest(key, origin)); !ok {
+		t.Fatal("ResolveApp ok = false after re-enabling, want true")
+	}
+}
+
+// TestAPIKeyResolver_NewAppDefaultsToEnabled pins the default. The column
+// is NOT NULL DEFAULT TRUE precisely so that adding this switch could not
+// take an existing integration offline, and a regression here would be
+// silent: every app would simply stop connecting.
+func TestAPIKeyResolver_NewAppDefaultsToEnabled(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, _ := database.DB()
+
+	const ownerID = 999811
+	const appID = "test-ws-resolver-defaultenabled-app"
+	const origin = "https://default.example.com"
+	makeTestUser(t, sqlDB, ownerID, "ws-resolver-defaultenabled@example.com")
+	reg := makeTestApp(t, database, appID, ownerID)
+
+	app, ok := reg.Get(appID)
+	if !ok {
+		t.Fatalf("Registry.Get(%s) not found", appID)
+	}
+	if !app.Enabled {
+		t.Error("a newly created app is not Enabled, want enabled by default")
+	}
+
+	authStore := auth.New(database)
+	key, err := authStore.Issue(appID)
+	if err != nil {
+		t.Fatalf("Issue: %v", err)
+	}
+	if err := authStore.SetOrigins(appID, []string{origin}); err != nil {
+		t.Fatalf("SetOrigins: %v", err)
+	}
+
+	resolver := &APIKeyResolver{
+		Auth:  authStore,
+		Apps:  reg,
+		Quota: quota.New(database),
+		Log:   testLogger(),
+	}
+	if _, _, _, ok, _, _ := resolver.ResolveApp(newResolveRequest(key, origin)); !ok {
+		t.Error("ResolveApp ok = false for a brand-new app, want true")
+	}
+}

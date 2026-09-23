@@ -121,9 +121,24 @@ func (a *APIKeyResolver) ResolveApp(r *http.Request) (appID, sessionID string, u
 		a.Log.Info("ws handshake rejected: invalid or missing token", "origin", origin)
 		return "", "", 0, false, "invalid or missing token", http.StatusUnauthorized
 	}
-	if _, known := a.Apps.Get(result.AppID); !known {
+	app, known := a.Apps.Get(result.AppID)
+	if !known {
 		a.Log.Warn("ws handshake rejected: token resolves to unknown appId", "appId", result.AppID)
 		return "", "", 0, false, "unknown app", http.StatusUnauthorized
+	}
+	// The owner's own on/off switch (console App settings). Rejected here,
+	// before the upgrade, so a disabled app's site gets a plain HTTP
+	// response instead of a WebSocket that is opened only to be closed —
+	// which matters for more than tidiness: a live WebSocket is an open
+	// request for its whole lifetime, so upgrading first would keep
+	// billing an instance for an app its owner has taken offline.
+	//
+	// Only external connections are affected. The console's Playground
+	// resolves its app through console/playground.go, not this resolver,
+	// so a developer can keep working on a disabled app.
+	if !app.Enabled {
+		a.Log.Info("ws handshake rejected: app is disabled", "appId", result.AppID, "origin", origin)
+		return "", "", 0, false, "app is disabled", http.StatusForbidden
 	}
 	// No origins configured means every connection for this app is rejected
 	// (fail-closed) rather than falling back to some broader allowlist.

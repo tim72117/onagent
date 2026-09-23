@@ -209,6 +209,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /console/apps/{appId}/origin", h.withOwnedApp(h.setOrigin))
 	mux.HandleFunc("PUT /console/apps/{appId}/thought", h.withOwnedApp(h.setThought))
 	mux.HandleFunc("PUT /console/apps/{appId}/max-prompt-length", h.withOwnedApp(h.setMaxPromptLength))
+	mux.HandleFunc("PUT /console/apps/{appId}/enabled", h.withOwnedApp(h.setEnabled))
 	mux.HandleFunc("DELETE /console/apps/{appId}", h.withOwnedApp(h.deleteApp))
 	mux.HandleFunc("POST /console/apps/{appId}/key", h.withOwnedApp(h.issueKey))
 	mux.HandleFunc("DELETE /console/apps/{appId}/key", h.withOwnedApp(h.revokeKey))
@@ -544,6 +545,15 @@ type appSummary struct {
 	AllowedOrigins  []string `json:"allowedOrigins"`  // empty/nil means unset (fail-closed — see ws.Handler.ServeHTTP)
 	Thought         string   `json:"thought"`         // "" means the platform default applies (agent_roles.go's defaultThought)
 	MaxPromptLength *int     `json:"maxPromptLength"` // nil means the system-wide default applies (inference.EffectiveMaxPromptLength)
+	// Enabled is a pointer, not a bare bool, only so that a construction
+	// site which doesn't set it serializes as true (see MarshalJSON)
+	// rather than false. There are nine of these, several of which answer
+	// requests that have nothing to do with the switch (issuing a key,
+	// saving a tool); a bare bool would make every one of them report
+	// "disabled" the moment this field was added, and the symptom — the
+	// console showing a live app as off — looks like a backend bug rather
+	// than a forgotten field.
+	Enabled *bool `json:"enabled"`
 }
 
 // appSummaryJSON is appSummary's actual wire shape — see MarshalJSON below.
@@ -555,6 +565,7 @@ type appSummaryJSON struct {
 	Thought               string   `json:"thought"`
 	MaxPromptLength       *int     `json:"maxPromptLength"`
 	SystemMaxPromptLength int      `json:"systemMaxPromptLength"`
+	Enabled               bool     `json:"enabled"`
 }
 
 // MarshalJSON adds SystemMaxPromptLength (inference.SystemMaxPromptLength,
@@ -572,6 +583,9 @@ func (a appSummary) MarshalJSON() ([]byte, error) {
 		Thought:               a.Thought,
 		MaxPromptLength:       a.MaxPromptLength,
 		SystemMaxPromptLength: inference.SystemMaxPromptLength(),
+		// nil → true: see the Enabled field's own comment. Only a handler
+		// that has actually read the app's state sets this.
+		Enabled: a.Enabled == nil || *a.Enabled,
 	})
 }
 
@@ -595,6 +609,7 @@ func (h *Handler) listApps(w http.ResponseWriter, r *http.Request, user *session
 			AllowedOrigins:  h.Auth.OriginsFor(id),
 			Thought:         app.Thought,
 			MaxPromptLength: app.MaxPromptLength,
+			Enabled:         &app.Enabled,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -697,6 +712,46 @@ func (h *Handler) setThought(w http.ResponseWriter, r *http.Request, user *sessi
 		AllowedOrigins:  h.Auth.OriginsFor(appID),
 		Thought:         req.Thought,
 		MaxPromptLength: app.MaxPromptLength,
+	})
+}
+
+// setEnabledRequest carries the app's on/off switch. A bare bool is right
+// here (unlike setMaxPromptLengthRequest's pointer): there is no "clear
+// it" state to distinguish from false — an app is either serving its
+// embedded SDK or it isn't.
+type setEnabledRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// setEnabled takes an app's embedded SDK offline, or puts it back. It does
+// not touch the app's key, origins or tools: re-enabling restores exactly
+// the configuration that was there before, which is what makes this usable
+// as a pause rather than a teardown.
+//
+// Existing connections are left alone — see Registry.SetEnabled. A page
+// that is already connected keeps working until its connection ends, and
+// is refused when it next reconnects.
+func (h *Handler) setEnabled(w http.ResponseWriter, r *http.Request, user *session.User) {
+	appID := r.PathValue("appId")
+
+	var req setEnabledRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if err := h.Apps.SetEnabled(appID, req.Enabled); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	app, _ := h.Apps.Get(appID)
+	writeJSON(w, http.StatusOK, appSummary{
+		AppID:           appID,
+		ToolCount:       len(app.Tools),
+		HasKey:          h.Auth.HasKey(appID),
+		AllowedOrigins:  h.Auth.OriginsFor(appID),
+		Thought:         app.Thought,
+		MaxPromptLength: app.MaxPromptLength,
+		Enabled:         &req.Enabled,
 	})
 }
 

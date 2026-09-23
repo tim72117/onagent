@@ -161,6 +161,25 @@ type App struct {
 	// only affects the want agent role's system prompt.
 	Thought string `yaml:"thought,omitempty" json:"thought,omitempty"`
 
+	// Enabled is the app's on/off switch for its embedded SDK: false makes
+	// ws.APIKeyResolver reject the handshake before the WebSocket upgrade,
+	// so a disabled app's site can't open a connection at all (and, since
+	// the rejection is a plain HTTP response, doesn't hold an instance
+	// open the way a live connection does).
+	//
+	// Deliberately scoped to external connections only — the console's own
+	// Playground, the tool editor and every settings route keep working on
+	// a disabled app, so an owner can take an integration offline and go
+	// on developing against it. That mirrors how Public widens Playground
+	// access without touching any REST operation.
+	//
+	// Not part of the YAML tool-file format: this is per-app operational
+	// state a developer flips in the console, not something described
+	// alongside an app's tools, so `onagent tool create` neither reads nor
+	// writes it. Defaults to true everywhere — the column is NOT NULL
+	// DEFAULT TRUE, so an app that predates the switch stays reachable.
+	Enabled bool `yaml:"-" json:"enabled"`
+
 	// Public marks this app as reachable in the console Playground by any
 	// signed-in user, not just its owner — see console/playground.go's
 	// ResolveApp, which checks "owned OR public" instead of
