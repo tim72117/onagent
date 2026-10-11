@@ -2,43 +2,43 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>https://onagent.shuttle.tools/</loc>
-    <lastmod>2026-09-08</lastmod>
-    <xhtml:link rel="alternate" hreflang="en" href="https://onagent.shuttle.tools/" />
-    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://onagent.shuttle.tools/zh-tw/" />
+    <loc>https://onagents.dev/</loc>
+    <lastmod>2026-10-12</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://onagents.dev/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://onagents.dev/zh-tw/" />
   </url>
   <url>
-    <loc>https://onagent.shuttle.tools/zh-tw/</loc>
-    <lastmod>2026-09-08</lastmod>
-    <xhtml:link rel="alternate" hreflang="en" href="https://onagent.shuttle.tools/" />
-    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://onagent.shuttle.tools/zh-tw/" />
+    <loc>https://onagents.dev/zh-tw/</loc>
+    <lastmod>2026-10-12</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://onagents.dev/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://onagents.dev/zh-tw/" />
   </url>
   <url>
-    <loc>https://onagent.shuttle.tools/docs/</loc>
-    <lastmod>2026-07-16</lastmod>
+    <loc>https://onagents.dev/docs/</loc>
+    <lastmod>2026-10-12</lastmod>
   </url>
   <url>
-    <loc>https://onagent.shuttle.tools/pricing/</loc>
-    <lastmod>2026-07-22</lastmod>
-    <xhtml:link rel="alternate" hreflang="en" href="https://onagent.shuttle.tools/pricing/" />
-    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://onagent.shuttle.tools/zh-tw/pricing/" />
+    <loc>https://onagents.dev/pricing/</loc>
+    <lastmod>2026-10-12</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://onagents.dev/pricing/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://onagents.dev/zh-tw/pricing/" />
   </url>
   <url>
-    <loc>https://onagent.shuttle.tools/zh-tw/pricing/</loc>
-    <lastmod>2026-07-22</lastmod>
-    <xhtml:link rel="alternate" hreflang="en" href="https://onagent.shuttle.tools/pricing/" />
-    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://onagent.shuttle.tools/zh-tw/pricing/" />
+    <loc>https://onagents.dev/zh-tw/pricing/</loc>
+    <lastmod>2026-10-12</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://onagents.dev/pricing/" />
+    <xhtml:link rel="alternate" hreflang="zh-Hant" href="https://onagents.dev/zh-tw/pricing/" />
   </url>
   <url>
-    <loc>https://onagent.shuttle.tools/showcase/</loc>
-    <lastmod>2026-09-11</lastmod>
+    <loc>https://onagents.dev/showcase/</loc>
+    <lastmod>2026-10-12</lastmod>
   </url>
   <url>
-    <loc>https://onagent.shuttle.tools/privacy/</loc>
-    <lastmod>2026-09-01</lastmod>
+    <loc>https://onagents.dev/privacy/</loc>
+    <lastmod>2026-10-12</lastmod>
   </url>
   <url>
-    <loc>https://onagent.shuttle.tools/terms/</loc>
-    <lastmod>2026-09-01</lastmod>
+    <loc>https://onagents.dev/terms/</loc>
+    <lastmod>2026-10-12</lastmod>
   </url>
 </urlset>

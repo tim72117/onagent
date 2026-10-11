@@ -34,7 +34,7 @@ import styles from './SupportDemo.module.css'
 // state and the onBookedRef celebration effect below) — a visitor can
 // watch the AI's tool call really touch "their own" calendar.
 
-const WS_URL = import.meta.env.VITE_SUPPORT_WS_URL ?? 'wss://onagent.shuttle.tools/ws'
+const WS_URL = import.meta.env.VITE_SUPPORT_WS_URL ?? 'wss://onagents.dev/ws'
 const APP_ID = import.meta.env.VITE_SUPPORT_APP_ID ?? 'support-app'
 const API_KEY = import.meta.env.VITE_SUPPORT_API_KEY
 

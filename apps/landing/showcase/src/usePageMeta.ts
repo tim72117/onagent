@@ -21,7 +21,7 @@ interface PageMeta {
   path?: string
 }
 
-const SHOWCASE_ORIGIN = 'https://onagent.shuttle.tools/showcase'
+const SHOWCASE_ORIGIN = 'https://onagents.dev/showcase'
 
 const DEFAULT_META: PageMeta = {
   title: 'Showcase — onagent',

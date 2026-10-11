@@ -1199,7 +1199,7 @@ func loadToken() (string, error) {
 // neither -api nor -console is overridden, matching how the console
 // front-end is embedded same-origin with the API in production
 // (backend/cmd/server/web.go).
-const defaultServerURL = "https://onagent.shuttle.tools"
+const defaultServerURL = "https://onagents.dev"
 
 // apiFlag pulls an optional "-api <url>" out of args, wherever it appears
 // (a hand-rolled parse, not the stdlib flag package, since flag doesn't

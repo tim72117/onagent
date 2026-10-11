@@ -40,7 +40,7 @@ function escapeHtml(text) {
 // configured the same way at build time. VITE_ANALYSIS_API_KEY is left
 // undefined (not a placeholder string) when unset — see the
 // "not wired up yet" check below, which relies on that.
-const WS_URL = import.meta.env.VITE_ANALYSIS_WS_URL ?? 'wss://onagent.shuttle.tools/ws'
+const WS_URL = import.meta.env.VITE_ANALYSIS_WS_URL ?? 'wss://onagents.dev/ws'
 const APP_ID = import.meta.env.VITE_ANALYSIS_APP_ID ?? 'analysis-app'
 const API_KEY = import.meta.env.VITE_ANALYSIS_API_KEY
 
@@ -516,7 +516,7 @@ export function mountMarketingDemo(hostEl, options = {}) {
       code: `import { AgentBridge, defineTool } from '@onagent/bridge'
 
 const bridge = new AgentBridge({
-  url: 'wss://onagent.shuttle.tools/ws',
+  url: 'wss://onagents.dev/ws',
   appId: 'analysis-app',
   apiKey: API_KEY,
   onAssistantMessage: (text) => addChatMessage('assistant', text),

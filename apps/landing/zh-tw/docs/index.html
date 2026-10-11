@@ -24,10 +24,10 @@
   <link rel="alternate icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-  <link rel="canonical" href="https://onagent.shuttle.tools/zh-tw/docs/" />
-  <link rel="alternate" hreflang="en" href="https://onagent.shuttle.tools/docs/" />
-  <link rel="alternate" hreflang="zh-Hant" href="https://onagent.shuttle.tools/zh-tw/docs/" />
-  <link rel="alternate" hreflang="x-default" href="https://onagent.shuttle.tools/docs/" />
+  <link rel="canonical" href="https://onagents.dev/zh-tw/docs/" />
+  <link rel="alternate" hreflang="en" href="https://onagents.dev/docs/" />
+  <link rel="alternate" hreflang="zh-Hant" href="https://onagents.dev/zh-tw/docs/" />
+  <link rel="alternate" hreflang="x-default" href="https://onagents.dev/docs/" />
   <title>onagent 開發文件 — 串接平台</title>
   <meta
     name="description"
@@ -39,7 +39,7 @@
     property="og:description"
     content="取得 onagent CLI、建立 app、定義 tool、嵌入瀏覽器端 SDK——給第三方開發者的完整 onagent 串接指南。"
   />
-  <meta property="og:url" content="https://onagent.shuttle.tools/zh-tw/docs/" />
+  <meta property="og:url" content="https://onagents.dev/zh-tw/docs/" />
   <meta property="og:locale" content="zh_TW" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="onagent 開發文件 — 串接平台" />
@@ -492,7 +492,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <div class="ct">
             <h4>預設連線的伺服器</h4>
             <p>
-              每個 <code>onagent</code> 指令預設都會連到 <code>https://onagent.shuttle.tools</code>
+              每個 <code>onagent</code> 指令預設都會連到 <code>https://onagents.dev</code>
               （<code>-api</code> 與 <code>login --web</code> 用到的 <code>-console</code> 皆是）。
               兩者都可以用 <code>-api</code>／<code>-console</code> 旗標覆寫。這裡刻意沒有提供環境變數的覆寫方式——
               旗標是唯一能改變連線目標的途徑。
@@ -839,7 +839,7 @@ Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</
           <pre><span class="t-kw">import</span> <span class="t-punc">{</span> AgentBridge <span class="t-punc">}</span> <span class="t-kw">from</span> <span class="t-str">"@onagent/bridge"</span><span class="t-punc">;</span>
 
 <span class="t-kw">const</span> bridge <span class="t-punc">=</span> <span class="t-kw">new</span> <span class="t-fn">AgentBridge</span><span class="t-punc">({</span>
-  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://onagent.shuttle.tools/ws"</span><span class="t-punc">,</span>
+  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://onagents.dev/ws"</span><span class="t-punc">,</span>
   <span class="t-key">appId</span><span class="t-punc">:</span> <span class="t-str">"my-app"</span><span class="t-punc">,</span>
   <span class="t-key">apiKey</span><span class="t-punc">:</span> <span class="t-str">"YOUR_APP_API_KEY"</span><span class="t-punc">,</span>
   <span class="t-key">tools</span><span class="t-punc">:</span> <span class="t-punc">{</span>
@@ -863,7 +863,7 @@ Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</
           <table class="doc-table">
             <thead><tr><th>選項</th><th>必填</th><th>說明</th></tr></thead>
             <tbody>
-              <tr><td>url</td><td>是</td><td>WebSocket 端點，例如 <code>wss://onagent.shuttle.tools/ws</code>。請一律使用 <code>wss://</code>，絕不要用 <code>ws://</code>——API key 是掛在握手網址的查詢參數上（瀏覽器無法為 WebSocket 升級請求附加自訂標頭），所以未加密的連線會讓它以明文出現在網路上，而且往往也會出現在伺服器的存取紀錄裡。</td></tr>
+              <tr><td>url</td><td>是</td><td>WebSocket 端點，例如 <code>wss://onagents.dev/ws</code>。請一律使用 <code>wss://</code>，絕不要用 <code>ws://</code>——API key 是掛在握手網址的查詢參數上（瀏覽器無法為 WebSocket 升級請求附加自訂標頭），所以未加密的連線會讓它以明文出現在網路上，而且往往也會出現在伺服器的存取紀錄裡。</td></tr>
               <tr><td>appId</td><td>是</td><td>這個 session 要載入哪一個 app 的 tool 組合。</td></tr>
               <tr><td>apiKey</td><td>否</td><td><code>onagent key issue</code> 產生的金鑰。有設定時，授權一律以它為準、覆蓋 <code>appId</code>（後端會從金鑰在伺服器端解析出真正的 appId）。只有在連線到明確設定為允許開發／免驗證模式的後端時，才可以省略。</td></tr>
               <tr><td>tools</td><td>是</td><td>可以是你自己組出來的 <code>Record&lt;string, ToolHandler&gt;</code> 對應表，也可以是一個 <code>ToolEntry[]</code> 陣列（見下方 <a href="#define-tool"><code>defineTool</code></a>）——建構子會把兩種形式正規化成相同結果，並一併檢查名稱是否重複。詳見<a href="#tool-handlers">實作 tool handler</a>。</td></tr>
@@ -933,7 +933,7 @@ Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</
 <span class="t-punc">);</span>
 
 <span class="t-kw">const</span> bridge <span class="t-punc">=</span> <span class="t-kw">new</span> <span class="t-fn">AgentBridge</span><span class="t-punc">({</span>
-  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://onagent.shuttle.tools/ws"</span><span class="t-punc">,</span>
+  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://onagents.dev/ws"</span><span class="t-punc">,</span>
   <span class="t-key">appId</span><span class="t-punc">:</span> <span class="t-str">"my-app"</span><span class="t-punc">,</span>
   <span class="t-key">apiKey</span><span class="t-punc">:</span> <span class="t-str">"YOUR_APP_API_KEY"</span><span class="t-punc">,</span>
   <span class="t-key">tools</span><span class="t-punc">:</span> <span class="t-punc">[</span>searchProducts<span class="t-punc">],</span> <span class="t-com">// ToolEntry[]，不是 { name: handler } 對應表</span>

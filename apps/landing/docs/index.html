@@ -25,10 +25,10 @@
   <link rel="alternate icon" href="/favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-  <link rel="canonical" href="https://onagent.shuttle.tools/docs/" />
-  <link rel="alternate" hreflang="en" href="https://onagent.shuttle.tools/docs/" />
-  <link rel="alternate" hreflang="zh-Hant" href="https://onagent.shuttle.tools/zh-tw/docs/" />
-  <link rel="alternate" hreflang="x-default" href="https://onagent.shuttle.tools/docs/" />
+  <link rel="canonical" href="https://onagents.dev/docs/" />
+  <link rel="alternate" hreflang="en" href="https://onagents.dev/docs/" />
+  <link rel="alternate" hreflang="zh-Hant" href="https://onagents.dev/zh-tw/docs/" />
+  <link rel="alternate" hreflang="x-default" href="https://onagents.dev/docs/" />
   <title>onagent docs — integrate the platform</title>
   <meta
     name="description"
@@ -40,7 +40,7 @@
     property="og:description"
     content="Get the onagent CLI, create an app, define tools, and embed the browser SDK — the full onagent integration guide for third-party developers."
   />
-  <meta property="og:url" content="https://onagent.shuttle.tools/docs/" />
+  <meta property="og:url" content="https://onagents.dev/docs/" />
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:title" content="onagent docs — integrate the platform" />
   <meta
@@ -499,7 +499,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
           <div class="ct">
             <h4>Default server</h4>
             <p>
-              Every <code>onagent</code> command talks to <code>https://onagent.shuttle.tools</code> by default (both
+              Every <code>onagent</code> command talks to <code>https://onagents.dev</code> by default (both
               <code>-api</code> and, for <code>login --web</code>, <code>-console</code>). Both can be overridden with
               the <code>-api</code>/<code>-console</code> flags. There's no environment-variable override — these
               flags are the only way to redirect it, on purpose.
@@ -854,7 +854,7 @@ Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</
           <pre><span class="t-kw">import</span> <span class="t-punc">{</span> AgentBridge <span class="t-punc">}</span> <span class="t-kw">from</span> <span class="t-str">"@onagent/bridge"</span><span class="t-punc">;</span>
 
 <span class="t-kw">const</span> bridge <span class="t-punc">=</span> <span class="t-kw">new</span> <span class="t-fn">AgentBridge</span><span class="t-punc">({</span>
-  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://onagent.shuttle.tools/ws"</span><span class="t-punc">,</span>
+  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://onagents.dev/ws"</span><span class="t-punc">,</span>
   <span class="t-key">appId</span><span class="t-punc">:</span> <span class="t-str">"my-app"</span><span class="t-punc">,</span>
   <span class="t-key">apiKey</span><span class="t-punc">:</span> <span class="t-str">"YOUR_APP_API_KEY"</span><span class="t-punc">,</span>
   <span class="t-key">tools</span><span class="t-punc">:</span> <span class="t-punc">{</span>
@@ -878,7 +878,7 @@ Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</
           <table class="doc-table">
             <thead><tr><th>Option</th><th>Required</th><th>Notes</th></tr></thead>
             <tbody>
-              <tr><td>url</td><td>Yes</td><td>WebSocket endpoint, e.g. <code>wss://onagent.shuttle.tools/ws</code>. Always use <code>wss://</code>, never <code>ws://</code> — the API key rides in a URL query parameter on the handshake (browsers can't attach custom headers to a WebSocket upgrade), so an unencrypted connection puts it on the wire, and often in server access logs, in plaintext.</td></tr>
+              <tr><td>url</td><td>Yes</td><td>WebSocket endpoint, e.g. <code>wss://onagents.dev/ws</code>. Always use <code>wss://</code>, never <code>ws://</code> — the API key rides in a URL query parameter on the handshake (browsers can't attach custom headers to a WebSocket upgrade), so an unencrypted connection puts it on the wire, and often in server access logs, in plaintext.</td></tr>
               <tr><td>appId</td><td>Yes</td><td>The app whose tool set this session loads.</td></tr>
               <tr><td>apiKey</td><td>No</td><td>The key from <code>onagent key issue</code>. When set, it always overrides <code>appId</code> for authorization (the backend resolves the real appId server-side from the key). Omit only when connecting to a backend explicitly configured to allow its dev/no-auth mode.</td></tr>
               <tr><td>tools</td><td>Yes</td><td>Either a <code>Record&lt;string, ToolHandler&gt;</code> map you build yourself, or a <code>ToolEntry[]</code> array (see <a href="#define-tool"><code>defineTool</code></a> below) — the constructor normalizes either shape the same way, including a duplicate-name check. See <a href="#tool-handlers">Implement tool handlers</a>.</td></tr>
@@ -948,7 +948,7 @@ Set <span class="t-str">"my-app"</span>'s max prompt length to 200 characters.</
 <span class="t-punc">);</span>
 
 <span class="t-kw">const</span> bridge <span class="t-punc">=</span> <span class="t-kw">new</span> <span class="t-fn">AgentBridge</span><span class="t-punc">({</span>
-  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://onagent.shuttle.tools/ws"</span><span class="t-punc">,</span>
+  <span class="t-key">url</span><span class="t-punc">:</span> <span class="t-str">"wss://onagents.dev/ws"</span><span class="t-punc">,</span>
   <span class="t-key">appId</span><span class="t-punc">:</span> <span class="t-str">"my-app"</span><span class="t-punc">,</span>
   <span class="t-key">apiKey</span><span class="t-punc">:</span> <span class="t-str">"YOUR_APP_API_KEY"</span><span class="t-punc">,</span>
   <span class="t-key">tools</span><span class="t-punc">:</span> <span class="t-punc">[</span>searchProducts<span class="t-punc">],</span> <span class="t-com">// ToolEntry[], not a { name: handler } map</span>

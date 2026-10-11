@@ -6,6 +6,41 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.7.2
+
+No breaking changes. Internal to `cmd/server`/`cmd/onagent` (both `package
+main`); no public symbol changed.
+
+- **Migrated the official domain from `onagent.shuttle.tools` to
+  `onagents.dev`.** `cmd/server/main.go` gains `withLegacyDomainRedirect`,
+  wrapping every route in a 301 from the legacy host to the canonical one
+  (same pattern as tripace's own `tripace.shuttle.tools` → `tripace.io`
+  migration) — except WebSocket upgrade requests (`/ws`, Playground), since
+  a 301 isn't a redirect a WebSocket handshake follows; those still connect
+  to the legacy host directly until clients update their own URL. Host
+  comparison strips the port and ignores case before matching.
+  `cmd/onagent`'s `defaultServerURL` now points at the new domain too.
+
+- Deployment env vars (`deploy-cloudrun.yml`) updated to the new domain:
+  `ALLOWED_ORIGIN`, `APP_ORIGINS`, `GOOGLE_OAUTH_REDIRECT_URL`.
+  `APP_ORIGINS` was previously `https://agent.shuttle.tools` (missing the
+  "on" prefix, with no other reference to that host anywhere in the repo) —
+  treated as a pre-existing typo and folded into this migration rather than
+  preserved.
+
+- `apps/landing`'s canonical/hreflang/`og:url` tags, `sitemap.xml`,
+  `robots.txt`, and the showcase/marketing-demo WebSocket defaults all
+  updated to the new domain; `sitemap.xml`'s `lastmod` dates bumped to
+  reflect the location change.
+
+- `docs/deployment.md` updated to match: new domain throughout, a note on
+  apex domains needing 4 A + 4 AAAA records (not a `ghs.googlehosted.com`
+  ALIAS — its resolved addresses drift and don't match what a given
+  mapping actually requires), and a callout that Cloud Run domain mappings
+  remain a Preview-stage feature Google doesn't recommend for production,
+  with a Global External Application Load Balancer as the documented
+  alternative if this ever needs revisiting.
+
 ## v0.7.1
 
 No breaking changes. The database gains a column, but through

@@ -2,7 +2,9 @@
 
 本文件說明如何把 onagent（Go 後端 + `apps/landing`、`apps/console`、
 `apps/admin` 三個內嵌前端）部署到 Google Cloud Run，並掛上自訂網域
-`onagent.shuttle.tools`。
+`onagents.dev`（2026-10 從先前的 `onagent.shuttle.tools` 遷移過來；
+`backend/cmd/server/main.go` 的 `withLegacyDomainRedirect` 會把舊網域的
+請求 301 轉到新網域，`/ws` 等 WebSocket 升級請求除外，見該函式註解）。
 
 > ⚠️ 以下步驟會建立真實付費雲端資源
 >
@@ -168,10 +170,16 @@ service 部署成功後，執行（或重跑 `deploy/setup.sh` 裡對應那段�
 ```bash
 gcloud beta run domain-mappings create \
   --service=onagent-server \
-  --domain=onagent.shuttle.tools \
+  --domain=onagents.dev \
   --region=asia-east1 \
   --project=<你的 PROJECT_ID>
 ```
+
+**先決條件**：網域必須先在這個 Google 帳號底下完成驗證
+（`gcloud domains verify <domain>` 會開瀏覽器導到 Search Console 的
+新增資源流程），否則 `domain-mappings create` 會直接報錯並列出目前
+已驗證的網域清單；驗證時 Search Console 的「新增資源」要填**純網域名稱**，
+不能帶 `https://`、`www.` 或結尾斜線。
 
 ### 6. 到 Namecheap 手動新增 DNS 記錄
 
@@ -181,36 +189,58 @@ gcloud beta run domain-mappings create \
 
 ```bash
 gcloud beta run domain-mappings describe \
-  --domain=onagent.shuttle.tools \
+  --domain=onagents.dev \
   --region=asia-east1 \
   --project=<你的 PROJECT_ID>
 ```
 
-輸出的 `status.resourceRecords` 裡會列出實際要設定的記錄類型
-（通常是一筆 `CNAME`，對應到類似 `ghs.googlehosted.com.` 這樣的目標，
-但**確切的值請以這次指令的實際輸出為準，不要照抄本文件的任何範例值，
-不同狀態、不同 Cloud Run 版本回傳的目標值可能不同**）。
+輸出的 `status.resourceRecords` 裡會列出實際要設定的記錄類型，**根頻域
+（apex，例如 `onagents.dev` 本身）跟子網域（例如 `onagent.shuttle.tools`）
+拿到的類型不一樣**：
+
+- **根網域**：會拿到 4 筆 `A` + 4 筆 `AAAA`，必須逐筆加好，**不能**用
+  Namecheap 的 ALIAS 記錄指到 `ghs.googlehosted.com.` 代替——該別名解析
+  出來的 IP 會隨時間變動、跟這次 mapping 實際要求的位址不一致，雖然
+  ALIAS 本身的機制可以合法用在 apex，但目的地不對，曾經實際造成 DNS
+  裡多出不在清單內的 A/AAAA 記錄、污染正確設定（根因是忘了刪除先前
+  測試用的 ALIAS 記錄，而非 ALIAS 本身的問題，但教訓是：根網域一律
+  照指令輸出的明確位址設定，不要抄捷徑）。
+- **子網域**：通常是一筆 `CNAME`，對應到類似 `ghs.googlehosted.com.`
+  這樣的目標。
+
+**確切的值請以這次指令的實際輸出為準，不要照抄本文件的任何範例值，
+不同狀態、不同 Cloud Run 版本回傳的目標值可能不同。**
 
 拿到實際記錄內容後：
 
-1. 登入 Namecheap → Domain List → 找到 `shuttle.tools` → Manage
+1. 登入 Namecheap → Domain List → 找到 `onagents.dev` → Manage
 2. 切到 **Advanced DNS** 分頁
-3. Add New Record，Host 填 `onagent`（對應 `onagent.shuttle.tools`），
-   Type / Value 依照上一步指令輸出的實際內容填寫
-4. 儲存後等待 DNS 生效（通常幾分鐘到數小時不等，視 TTL 而定）
+3. Add New Record，Host 填 `@`（根網域本身），
+   Type / Value 依照上一步指令輸出的實際內容逐筆填寫（根網域的情況
+   會有 8 筆：4 A + 4 AAAA，全部都用 `@`）
+4. 儲存後等待 DNS 生效（通常幾分鐘到數小時不等，視 TTL 而定）；可以用
+   `dig @<Namecheap 權威伺服器> onagents.dev A/AAAA +short` 直接問權威
+   伺服器本身，排除本機/中間快取干擾，確認記錄數量跟內容正確
 
 生效後可用以下指令確認 mapping 狀態變成 `Ready`：
 
 ```bash
 gcloud beta run domain-mappings describe \
-  --domain=onagent.shuttle.tools \
+  --domain=onagents.dev \
   --region=asia-east1 \
   --project=<你的 PROJECT_ID> \
   --format='value(status.conditions)'
 ```
 
-以及直接用瀏覽器開 `https://onagent.shuttle.tools` 確認 HTTPS 憑證
+以及直接用瀏覽器開 `https://onagents.dev` 確認 HTTPS 憑證
 （Cloud Run 網域對應會自動簽發 Google-managed 憑證）已經生效。
+
+> ⚠️ Cloud Run 的網域對應（domain mapping）功能截至 2026 年仍是 Preview
+> 階段，Google 官方文件提到因延遲問題不建議用在正式環境、未被納入 GA
+> 支援範圍。目前 onagent 仍在用這個方式，是接受這個取捨下的現況，不是
+> 官方建議的長期做法——未來若要更穩妥，正式的替代方案是改用 **Global
+> External Application Load Balancer**（可用自己的憑證、依路徑路由、
+> 搭配 Cloud CDN/Cloud Armor），需要時再評估是否要換架構。
 
 ## 環境變數 / secrets 一覽
 
@@ -223,8 +253,8 @@ gcloud beta run domain-mappings describe \
 | `COOKIE_SECURE` | `--update-env-vars` | 設為 `true`，session cookie 只透過 HTTPS 傳送 |
 | `AI_PROVIDER` | `--update-env-vars` | 目前設為 `googleapis` |
 | `AI_MODEL` | `--update-env-vars` | 目前設為 `gemini-3.1-flash-lite` |
-| `ALLOWED_ORIGIN`（單數） | `--update-env-vars` | 逗號分隔的來源網址白名單，給 **onagent 自己的前端**（console/admin 的 Playground WebSocket、`/console/*`、`/auth/*`、`/admin/*` 的 credentialed CORS）用；目前設為 `https://onagent.shuttle.tools`。不是 secret，不走 Secret Manager |
-| `APP_ORIGINS` | `--update-env-vars` | 逗號分隔的來源網址白名單，給**第三方開發者自己的網站**連 `/ws` WebSocket 用；跟 `ALLOWED_ORIGIN` 是兩個不同的名單，不要混淆。目前設為 `https://agent.shuttle.tools`。不是 secret，不走 Secret Manager |
+| `ALLOWED_ORIGIN`（單數） | `--update-env-vars` | 逗號分隔的來源網址白名單，給 **onagent 自己的前端**（console/admin 的 Playground WebSocket、`/console/*`、`/auth/*`、`/admin/*` 的 credentialed CORS）用；目前設為 `https://onagents.dev`。不是 secret，不走 Secret Manager |
+| `APP_ORIGINS` | `--update-env-vars` | 逗號分隔的來源網址白名單，給**第三方開發者自己的網站**連 `/ws` WebSocket 用；跟 `ALLOWED_ORIGIN` 是兩個不同的名單，不要混淆。目前設為 `https://onagents.dev`（2026-10 網域遷移前曾誤設為 `https://agent.shuttle.tools`，查無此網域的其他引用，判斷是既有筆誤一併修正，而非刻意指向另一個獨立網域）。不是 secret，不走 Secret Manager |
 | `DATABASE_URL` | Secret Manager | Postgres 連線字串（例如 Neon，`sslmode=require`） |
 | `GOOGLE_API_KEY` | Secret Manager | `AI_PROVIDER=googleapis` 對應的 API 金鑰 |
 | `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` | Secret Manager | 啟動時建立的第一個營運後台（admin）帳號，只在資料庫裡沒有任何 admin 帳號時生效 |

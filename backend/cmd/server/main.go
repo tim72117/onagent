@@ -8,6 +8,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"runtime/debug"
@@ -496,10 +497,55 @@ func main() {
 
 	addr := envOr("ADDR", ":8080")
 	log.Info("listening", "addr", addr)
-	if err := http.ListenAndServe(addr, recoverMiddleware(mux, log)); err != nil {
+	if err := http.ListenAndServe(addr, recoverMiddleware(withLegacyDomainRedirect(mux), log)); err != nil {
 		log.Error("server exited", "err", err)
 		os.Exit(1)
 	}
+}
+
+// legacyDomain/canonicalDomain support the domain migration off
+// onagent.shuttle.tools onto onagents.dev — same two-named-constants +
+// outermost-301-redirect-middleware pattern tripace's own server used for
+// its tripace.shuttle.tools -> tripace.io migration (see that repo's
+// cmd/server/main.go), not a newly invented mechanism. Centralized here so
+// a future domain change only edits these two values, not every call site
+// of withLegacyDomainRedirect.
+const (
+	legacyDomain    = "onagent.shuttle.tools"
+	canonicalDomain = "onagents.dev"
+)
+
+// withLegacyDomainRedirect wraps mux directly (all routes: /console,
+// /admin/api, static hosting), with recoverMiddleware wrapped around *this*
+// rather than the other way around — so a panic in this function's own logic
+// is still caught, same as every other handler in the chain. A request whose
+// Host is legacyDomain (port and case ignored, since some clients/health
+// checks/load balancers append an explicit port, e.g.
+// "onagent.shuttle.tools:443") gets a 301 to the same path+query under
+// canonicalDomain, so bookmarks/inbound links/search engine indexes migrate
+// over time; every other Host passes through untouched.
+//
+// WebSocket upgrade requests (/ws, and /console/apps/{appId}/playground) are
+// deliberately excluded: a 301 response to a handshake is not a redirect a
+// WebSocket client follows — browsers and most WS libraries treat any
+// non-101 response as a hard connection failure, so redirecting here would
+// break every client still pointed at the legacy host instead of migrating
+// it. Those clients keep connecting to the legacy host directly (still
+// served, just not yet redirected) until they update their own configured
+// URL.
+func withLegacyDomainRedirect(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := strings.ToLower(r.Host)
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if host == legacyDomain && !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			target := "https://" + canonicalDomain + r.URL.RequestURI()
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // recoverMiddleware turns a panic in any handler into a 500 response instead
