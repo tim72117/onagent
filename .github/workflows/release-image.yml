@@ -54,10 +54,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Replaces the old static GH_PAT (classic PAT, silently expired — see
+      # this repo's v0.7.3 CI incident): the onagent-want GitHub App is
+      # installed read-only on github.com/tim72117/want, and this mints a
+      # fresh ~1h installation token every run instead of a long-lived
+      # secret someone has to remember to rotate.
+      - name: Generate a token for github.com/tim72117/want
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: tim72117
+          repositories: want
+
       - name: Build and push
         env:
           DOCKER_BUILDKIT: "1"
-          GH_PAT: ${{ secrets.GH_PAT }}
+          GH_PAT: ${{ steps.app-token.outputs.token }}
         run: |
           docker build \
             -f Dockerfile.release \

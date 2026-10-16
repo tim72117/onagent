@@ -43,10 +43,28 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker asia-east1-docker.pkg.dev --quiet
 
+      # Replaces the old static GH_PAT (classic PAT, silently expired — see
+      # this repo's v0.7.3 CI incident): the onagent-want GitHub App is
+      # installed read-only on github.com/tim72117/want, and this mints a
+      # fresh ~1h installation token every run instead of a long-lived
+      # secret someone has to remember to rotate. Still passed into the
+      # Dockerfile under the secret id "gh_pat" (see Dockerfile's git
+      # config line) — that name describes the mount point's purpose
+      # (authenticating git over HTTPS), not literally a PAT, so it didn't
+      # need renaming for this.
+      - name: Generate a token for github.com/tim72117/want
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          owner: tim72117
+          repositories: want
+
       - name: Build Docker image
         env:
           DOCKER_BUILDKIT: "1"
-          GH_PAT: ${{ secrets.GH_PAT }}
+          GH_PAT: ${{ steps.app-token.outputs.token }}
           LANDING_ANALYSIS_API_KEY: ${{ secrets.LANDING_ANALYSIS_API_KEY }}
           LANDING_SUPPORT_API_KEY: ${{ secrets.LANDING_SUPPORT_API_KEY }}
         run: |
