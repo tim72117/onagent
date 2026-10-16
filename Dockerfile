@@ -81,7 +81,7 @@ FROM golang:1.26 AS build
 # RUN 步驟執行期間以檔案形式存在,不會被任何 layer 記錄下來。
 # 對應的建置指令:DOCKER_BUILDKIT=1 docker build --secret id=gh_pat,env=GH_PAT ...
 RUN --mount=type=secret,id=gh_pat \
-    git config --global url."https://$(cat /run/secrets/gh_pat)@github.com/".insteadOf "https://github.com/"
+    git config --global url."https://x-access-token:$(cat /run/secrets/gh_pat)@github.com/".insteadOf "https://github.com/"
 
 # 先單獨複製 go.mod / go.sum 以利 layer 快取(相依沒變時不重抓)。
 COPY backend/go.mod backend/go.sum /src/backend/
