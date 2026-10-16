@@ -6,6 +6,27 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.7.4
+
+No breaking changes. CI/infra only — no Go or TypeScript source changed.
+
+- Replaced the `GH_PAT` classic personal access token (used by
+  `release-onagent.yml`, `deploy-cloudrun.yml`, and `release-image.yml` to
+  authenticate `go mod download`/Docker builds against the private
+  `github.com/tim72117/want` module) with short-lived tokens minted per
+  run via `actions/create-github-app-token`, using a new GitHub App
+  (`onagent-want`) installed read-only on that repo. The classic PAT had a
+  ~90-day expiration set at creation and silently expired around
+  2026-10-14, breaking the v0.7.3 tag's CLI release and Cloud Run deploy
+  (`fatal: could not read Password for 'https://***@github.com/':
+  terminal prompts disabled`) — this removes the manual-rotation failure
+  mode going forward.
+- Fixed `Dockerfile` and `Dockerfile.release`'s git credential format to
+  `https://x-access-token:<token>@github.com/`: GitHub App installation
+  tokens (unlike classic PATs) are rejected when passed as a bare
+  credential with no username, which the Dockerfiles' pre-existing
+  `https://<token>@github.com/` format assumed.
+
 ## v0.7.3
 
 No breaking changes. Purely additive CLI commands; every existing verb
