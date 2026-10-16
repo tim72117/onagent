@@ -1,6 +1,6 @@
 {
   "name": "@onagent/claude-skill",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Claude Code skill installer for onagent-cli-setup — downloads the matching onagent CLI binary for your platform on install.",
   "type": "module",
   "bin": {

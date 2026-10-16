@@ -23,7 +23,7 @@ description: 協助使用者透過 onagent CLI 登入 onagent 平台、在 conso
 
 > 以下與後續章節為了簡潔，一律直接寫 `onagent login`、`onagent app list`、`onagent tool create` 等指令；實際執行時請替換成上一步判斷出來的完整路徑，例如 `${CLAUDE_SKILL_DIR}/bin/onagent-linux-amd64 login --web`，而不是直接執行裸指令 `onagent`。
 
-`onagent` 提供兩種登入方式，指向的後端與 console 網址預設都是 `https://onagent.shuttle.tools`，如需指向本機開發環境可用 `-api`、`-console` 參數覆蓋。**`-console` 預設會直接繼承 `-api` 解析後的值**（因為 console 前端通常跟後端 API 同源部署）——只設 `-api` 就會同時決定 CLI 呼叫後端 API 打去哪裡、以及 `--web` 開瀏覽器要跳去的網址：例如 `onagent login --web -api http://localhost:8081`，瀏覽器會開到 `http://localhost:8081`，不需要額外再指定 `-console`。只有當 console 前端跟 API 不同源時（例如各自獨立部署），才需要另外用 `-console <url>` 覆蓋瀏覽器要開的網址。
+`onagent` 提供兩種登入方式，指向的後端與 console 網址預設都是 `https://onagents.dev`，如需指向本機開發環境可用 `-api`、`-console` 參數覆蓋。**`-console` 預設會直接繼承 `-api` 解析後的值**（因為 console 前端通常跟後端 API 同源部署）——只設 `-api` 就會同時決定 CLI 呼叫後端 API 打去哪裡、以及 `--web` 開瀏覽器要跳去的網址：例如 `onagent login --web -api http://localhost:8081`，瀏覽器會開到 `http://localhost:8081`，不需要額外再指定 `-console`。只有當 console 前端跟 API 不同源時（例如各自獨立部署），才需要另外用 `-console <url>` 覆蓋瀏覽器要開的網址。
 
 - **`onagent login --web [-api <url>] [-console <url>]`**：開啟瀏覽器走網頁登入流程。這是預設應該優先使用的方式，適合互動式終端機環境，也是唯一能確保跟 console 網頁 UI（例如之後建立 app、簽發 apiKey）使用同一組登入狀態的方式。
 - **`onagent login [-api <url>]`**：在終端機互動輸入 email/password 登入，不會開瀏覽器。適合沒有瀏覽器可用的環境（例如純 SSH、CI/無頭環境），或使用者明確表示不想開瀏覽器時使用。
@@ -47,7 +47,7 @@ onagent app list
 
 ## 二、建立 App、發 Key、設定 Origin
 
-建立 app、發 API key、設定 Allowed origin 三件事現在都已經有對應的 `onagent` CLI 指令，也都可以在 console 網頁 UI 完成，兩種方式效果相同、擇一即可。`onagent` 的指令樹是 `<resource> <verb>` 形式：`app list`/`app create`/`app delete`/`app origin set`/`app thought set`、`key issue`/`key revoke`、`tool list`/`tool create`/`tool delete`，再加上 `login`/`login --web`。
+建立 app、發 API key、設定 Allowed origin 三件事現在都已經有對應的 `onagent` CLI 指令，也都可以在 console 網頁 UI 完成，兩種方式效果相同、擇一即可。`onagent` 的指令樹是 `<resource> <verb>` 形式：`app list`/`app get`/`app create`/`app delete`/`app origin set`/`app thought set`/`app thought get`、`key issue`/`key revoke`、`tool list`/`tool create`/`tool delete`，再加上 `login`/`login --web`。
 
 ### 1. 建立 app
 
@@ -61,13 +61,23 @@ appId 合法格式必須符合正則 `^[a-zA-Z0-9][a-zA-Z0-9_-]*$`，也就是�
 - 只能以英文字母或數字開頭
 - 之後可以包含英文字母、數字、`-`、`_`
 
-也可以在 https://onagent.shuttle.tools/app 登入後點「+ New app」手動建立，效果相同，只是多一道開瀏覽器的步驟。
+也可以在 https://onagents.dev/app 登入後點「+ New app」手動建立，效果相同，只是多一道開瀏覽器的步驟。
 
 需要刪除整個 app（連同底下所有 tool、key、origin 設定一併刪除，無法復原）時：
 
 ```bash
 onagent app delete <appId>
 ```
+
+需要查看一個既有 app 目前的完整設定（thought、enabled、public、
+maxPromptLength、tool 數量）時：
+
+```bash
+onagent app get <appId>
+```
+
+**`origin` 目前查不到**——後端沒有對應的讀取端點，`app get` 的輸出不會
+顯示 Allowed origin，只能到 console 網頁 UI 看。
 
 ### 2. 定義 tools
 
@@ -120,6 +130,12 @@ onagent app thought set <appId> <thought>
 這是目前唯一能透過 CLI 寫入某個 app 的 thought（want agent 的自訂 system prompt）的指令，也可以改到 console 網頁 UI 的 Agent thought 編輯器操作，兩者效果相同。
 
 傳空字串（`onagent app thought set <appId> ""`）會清除自訂 thought，改回平台預設值。
+
+查看目前設定的 thought（跟 `app get` 的差別：只印 thought 本身，不印其他欄位，適合接其他指令用）：
+
+```bash
+onagent app thought get <appId>
+```
 
 ## 三、定義 tool 並用 onagent tool create 推上去
 
@@ -208,7 +224,7 @@ onagent tool list <appId>
 1. 判斷目前平台（`uname -sm` 或 Windows），呼叫安裝時已下載到 `${CLAUDE_SKILL_DIR}/bin/onagent-<os>-<arch>[.exe]` 的執行檔；目前 GitHub Release 有 Windows、Intel/Apple Silicon macOS、Linux（amd64/arm64）共五種平台的版本可下載，若目前平台沒有對應的版本，告知使用者此 skill 目前沒有對應執行檔，不要自行編譯或安裝。
 2. 執行 `onagent login --web`（或無瀏覽器環境用 `onagent login`）登入。
 3. 用 `onagent app list` 確認不再出現「not logged in」，驗證登入成功。
-4. 執行 `onagent app create <appId>` 建立 app（也可以到 console 網頁 https://onagent.shuttle.tools/app 點「+ New app」手動建立，效果相同）。需要刪除 app 時用 `onagent app delete <appId>`（無法復原）。
+4. 執行 `onagent app create <appId>` 建立 app（也可以到 console 網頁 https://onagents.dev/app 點「+ New app」手動建立，效果相同）。需要刪除 app 時用 `onagent app delete <appId>`（無法復原）。
 5. 定義 tool：在 console 的 tool 編輯器手動輸入，或每個 tool 各撰寫一份本機 YAML 檔準備用 `onagent tool create` 推送。
 6. 執行 `onagent key issue <appId>`（或在 console 按「Issue key」）取得 `apiKey`，並立刻妥善保存（**只顯示一次**，重發會讓舊 key 立刻失效）。需要單純撤銷 key 時用 `onagent key revoke <appId>`。
 7. 執行 `onagent app origin set <appId> <origin>`（或在 console 設定「Allowed origin」）為實際部署網域並存檔（**未設定會 fail-closed，WebSocket 全部連不上**，即使 `apiKey` 正確也一樣）。

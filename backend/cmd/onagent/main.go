@@ -40,17 +40,26 @@ import (
 var version = "dev"
 
 // resourceCommand is one verb attached to a resource (e.g. "app"'s "list",
-// "create", "origin", "thought"). requireSet marks the two verbs that
-// aren't a full CRUD-style action but a single mutable field on app
-// ("origin", "thought") — for those, the next arg after the resource+verb
-// must literally be "set" (e.g. `onagent app origin set <appId> <origin>`),
+// "create", "origin", "thought"). requireSet marks verbs that aren't a full
+// CRUD-style action but a single mutable field on app ("origin", "thought",
+// "maxpromptlength") — for those, the next arg after the resource+verb must
+// literally be "set" (e.g. `onagent app origin set <appId> <origin>`),
 // modeling "set" as a sub-verb rather than letting `app origin <appId>
 // <origin>` silently mean the same thing two different ways.
+//
+// getRun/getUsage are the "get" counterpart to requireSet's "set": optional,
+// since not every requireSet field has a backend read endpoint yet
+// (internal/auth.Store.OriginsFor has no HTTP route, so "origin" has no
+// getRun) — "thought" does, because it's already part of the toolschema.App
+// JSON GET /console/apps/{appId} returns, so no backend change was needed
+// to add it.
 type resourceCommand struct {
 	verb       string
 	requireSet bool
 	run        func(args []string) error
 	usage      string // one-line "onagent <resource> <verb> ..." shown in help/errors
+	getRun     func(args []string) error
+	getUsage   string // shown alongside usage when getRun is set
 }
 
 // resource groups a noun (e.g. "app") with the verbs it supports. This is
@@ -67,10 +76,12 @@ var resources = []resource{
 		name: "app",
 		commands: []resourceCommand{
 			{verb: "list", run: runListApps, usage: "onagent app list [-api <url>]"},
+			{verb: "get", run: runAppGet, usage: "onagent app get <appId> [-api <url>]"},
 			{verb: "create", run: runCreateApp, usage: "onagent app create <appId> [-public] [-api <url>]"},
 			{verb: "delete", run: runDeleteApp, usage: "onagent app delete <appId> [-api <url>]"},
 			{verb: "origin", requireSet: true, run: runAppOrigin, usage: "onagent app origin set <appId> <origin> [-api <url>]"},
-			{verb: "thought", requireSet: true, run: runAppThought, usage: "onagent app thought set <appId> <thought> [-api <url>]"},
+			{verb: "thought", requireSet: true, run: runAppThought, usage: "onagent app thought set <appId> <thought> [-api <url>]",
+				getRun: runAppThoughtGet, getUsage: "onagent app thought get <appId> [-api <url>]"},
 			{verb: "maxpromptlength", requireSet: true, run: runAppMaxPromptLength, usage: "onagent app maxpromptlength set <appId> <value|clear> [-api <url>]"},
 		},
 	},
@@ -147,12 +158,13 @@ func main() {
 	}
 }
 
-// dispatchResource resolves the verb (and, for the two "requireSet"
-// commands, the mandatory literal "set" after it) under resource r and
-// invokes its run function. It prints r's usage and returns a non-nil
-// error (main exits non-zero on any error) whenever the verb doesn't
-// exist, is missing, or a requireSet command isn't immediately followed by
-// "set".
+// dispatchResource resolves the verb under resource r and invokes its run
+// function. For a requireSet command, the next arg must be the literal
+// "set" (dispatching to run) or, if the command also declares getRun, "get"
+// (dispatching to getRun instead) — any other value, or none at all, is an
+// error. It prints r's usage and returns a non-nil error (main exits
+// non-zero on any error) whenever the verb doesn't exist, is missing, or a
+// requireSet command isn't immediately followed by a recognized sub-verb.
 func dispatchResource(r *resource, args []string) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(os.Stderr, resourceUsage(r))
@@ -172,7 +184,13 @@ func dispatchResource(r *resource, args []string) error {
 	}
 
 	if cmd.requireSet {
+		if len(rest) > 0 && rest[0] == "get" && cmd.getRun != nil {
+			return cmd.getRun(rest[1:])
+		}
 		if len(rest) == 0 || rest[0] != "set" {
+			if cmd.getRun != nil {
+				return fmt.Errorf("usage: %s\n       %s", cmd.usage, cmd.getUsage)
+			}
 			return fmt.Errorf("usage: %s", cmd.usage)
 		}
 		rest = rest[1:]
@@ -199,10 +217,13 @@ func topUsage() string {
 	for _, r := range resources {
 		for _, c := range r.commands {
 			b.WriteString("  " + c.usage + "\n")
+			if c.getUsage != "" {
+				b.WriteString("  " + c.getUsage + "\n")
+			}
 		}
 	}
 	b.WriteString(`
-  -api defaults to https://onagent.shuttle.tools (the deployed onagent
+  -api defaults to https://onagents.dev (the deployed onagent
   service). -console (login --web only) is the origin the console
   front-end is served from — the CLI appends /app/cli-auth itself, since
   that's the path prefix the console is mounted under — and defaults to
@@ -221,6 +242,9 @@ func resourceUsage(r *resource) string {
 	fmt.Fprintf(&b, "usage: onagent %s <command>\n", r.name)
 	for _, c := range r.commands {
 		b.WriteString("  " + c.usage + "\n")
+		if c.getUsage != "" {
+			b.WriteString("  " + c.getUsage + "\n")
+		}
 	}
 	return b.String()
 }
@@ -603,7 +627,77 @@ func runAppOrigin(args []string) error {
 	return nil
 }
 
-// --- app thought set -----------------------------------------------------------
+// --- app get ---------------------------------------------------------------
+
+// runAppGet prints every field GET /console/apps/{appId} returns that `app
+// list`'s one-line table doesn't: thought, enabled, public,
+// maxPromptLength, and the tool count (origin is deliberately absent — see
+// internal/auth.Store.OriginsFor's doc comment; there is no HTTP route that
+// exposes it yet, so the CLI has nothing to call).
+func runAppGet(args []string) error {
+	base, rest := apiFlag(args)
+	if len(rest) != 1 {
+		return fmt.Errorf("usage: onagent app get <appId> [-api <url>]")
+	}
+	appID := rest[0]
+
+	client, err := authenticatedClient(base)
+	if err != nil {
+		return err
+	}
+
+	app, err := client.getApp(appID)
+	if err != nil {
+		return fmt.Errorf("get app: %w", err)
+	}
+
+	fmt.Printf("appId:           %s\n", app.AppID)
+	if app.Thought == "" {
+		fmt.Println("thought:         (unset — using the platform default)")
+	} else {
+		fmt.Printf("thought:         %s\n", app.Thought)
+	}
+	fmt.Printf("enabled:         %t\n", app.Enabled)
+	fmt.Printf("public:          %t\n", app.Public)
+	if app.MaxPromptLength == nil {
+		fmt.Println("maxPromptLength: (unset — using the system-wide default)")
+	} else {
+		fmt.Printf("maxPromptLength: %d\n", *app.MaxPromptLength)
+	}
+	fmt.Printf("tools:           %d\n", len(app.Tools))
+	return nil
+}
+
+// --- app thought get/set -----------------------------------------------------------
+
+// runAppThoughtGet is `onagent app thought get`'s getRun — a narrower,
+// single-field counterpart to runAppGet for a caller that only wants the
+// thought text itself (e.g. to pipe into another command), not the full
+// `app get` dump.
+func runAppThoughtGet(args []string) error {
+	base, rest := apiFlag(args)
+	if len(rest) != 1 {
+		return fmt.Errorf("usage: onagent app thought get <appId> [-api <url>]")
+	}
+	appID := rest[0]
+
+	client, err := authenticatedClient(base)
+	if err != nil {
+		return err
+	}
+
+	app, err := client.getApp(appID)
+	if err != nil {
+		return fmt.Errorf("get app: %w", err)
+	}
+
+	if app.Thought == "" {
+		fmt.Println("(unset — using the platform default)")
+	} else {
+		fmt.Println(app.Thought)
+	}
+	return nil
+}
 
 func runAppThought(args []string) error {
 	base, rest := apiFlag(args)

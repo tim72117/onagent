@@ -6,6 +6,38 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.7.3
+
+No breaking changes. Purely additive CLI commands; every existing verb
+(`origin set`, `thought set`, `maxpromptlength set`, ...) parses and
+behaves exactly as before.
+
+- **`onagent app get <appId>`** — prints an app's thought, enabled, public,
+  maxPromptLength, and tool count, none of which `app list`'s one-line
+  table shows. No backend change needed: it's the same `toolschema.App`
+  JSON `GET /console/apps/{appId}` already returns to the browser console.
+  `origin` is deliberately absent from the output — `internal/auth.Store`
+  (where allowed-origins actually live) has no HTTP read route yet.
+
+- **`onagent app thought get <appId>`** — the single-field counterpart to
+  `app thought set`, for scripting against just the thought text. Required
+  generalizing `resourceCommand`'s "set"-only sub-verb dispatch
+  (`requireSet`) to an optional `getRun`/`getUsage` pair; `origin` and
+  `maxpromptlength` don't declare one, so they're unaffected and still only
+  accept `set`.
+
+- Fixed two now-stale references to the pre-v0.7.2 domain
+  (`onagent.shuttle.tools`) missed by that migration: `onagent`'s own
+  `--help` output, and `packages/claude-skill/skill/SKILL.md` (which also
+  gained a note on the new `app get`/`app thought get` commands and bumped
+  `@onagent/claude-skill` to 0.1.1 — not yet published to npm, see that
+  package's own release workflow).
+
+- Added `backend/cmd/onagent/dispatch_test.go`: pure argument-parsing tests
+  for `dispatchResource`'s verb/sub-verb resolution, filling in a file
+  `apiclient_test.go`'s own doc comment had referenced by name since before
+  this change but which never actually existed.
+
 ## v0.7.2
 
 No breaking changes. Internal to `cmd/server`/`cmd/onagent` (both `package
