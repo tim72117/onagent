@@ -137,6 +137,7 @@
 18. **帶版本的 tool schema 與相容性握手** — 為每個 app 的工具集加版本；`hello` 帶上 SDK 預期的版本/雜湊，`ack` 回報漂移。目前 `main.go:311` 讀的是活的全域 registry，所以一次 `save-tools` 推送會**即時改寫所有已連線頁面底下的工具集**，唯一回饋是 `client.ts:271` 的 warning；反向情況（已部署頁面比推送的 schema 新）則完全偵測不到。可支撐分階段推出與回滾。2-3 週。
 
 19. **可抽換的 transport** — 在 `client.ts:182` 後面放一個介面，WebSocket 只是其中一種實作，另外提供 SSE+POST 與同源 `postMessage` 版本。WebSocket 握手正是**API key 必須放在 query string 的唯一原因**（`client.ts:174-179`，文件在 `:83-89`）——HTTP transport 可以送真正的 `Authorization` header。也讓 SDK 測試不再綁著 socket。約 2 週。
+    - **現況（2026-10-22）：部分完成。** transport 介面與 SSE+POST 版本已實作（v0.7.5、`@onagent/bridge` 0.2.0，見 `docs/refactor-sse-transport-2026-10-22.md`）；同源 `postMessage` 版本未做。上面「HTTP transport 可以送真正的 `Authorization` header」這個前提**對 SSE 不成立**：`EventSource` 跟 WebSocket 一樣不能帶自訂 header，所以 SSE 串流的 key 仍放在 query string（上行的 POST 改用 sessionId 授權，不帶 key）。要真正拿掉 query string 裡的 key，得換成 `fetch` + `ReadableStream` 讀串流，而不是 `EventSource`。
 
 20. **工具呼叫模擬器 + devtools 面板** — 開發模式專用的 `bridge.simulateToolCall(name, args)`，加上 console Playground 裡的「直接呼叫這個工具」按鈕與 envelope 檢視器。目前 `playground.go:218` 只能靠「說服 LLM 去呼叫它」來觸達一個 handler，所以除錯參數形狀的 bug 等於在玩 prompt 輪盤——正是 `analysis/App.vue:115-125` 那段 `clear`/`names` 註解記錄下來在對抗的那類 bug。1-2 週。
 

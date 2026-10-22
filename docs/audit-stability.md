@@ -105,6 +105,7 @@
 - **影響**：使用者關掉分頁或斷線後，一個已經沒有人在等待結果的推論呼叫仍會繼續佔用資源長達 90 秒；若疊加 `docs/audit-functional.md` 已追蹤的「completeTimeout 分支未呼叫 `Interrupt()`」，這條殘留呼叫完成後產生的事件還可能污染同一 session 之後新建立的推論（見該檔案交叉引用）。Console 的 Playground 功能改用共用 `ws.Session`（見 `docs/audit-functional.md` 的 A2「已解決」條目）後，這段程式碼現在同時服務兩種連線——真實 Agent Bridge SDK 的連線，以及 Console 開發者自己開的 Playground 連線；開發者在 console 裡關閉 Playground 分頁，同樣會留下最長 90 秒的殘留 `Complete()` 呼叫。
 - **修法**：在 `NewSession`/`run` 內用 `context.WithCancel` 包一層獨立於 HTTP request context 的 ctx，`ReadMessage` 因錯誤返回時明確呼叫該 cancel，讓正在進行的 `handlePrompt`/`Complete` 呼叫能真正被中斷。因為兩條連線路徑現在共用同一段程式碼，修好一次即可同時涵蓋兩者，不需要分別修。
 - **現況**：確認仍未修復（2026-08-16 對照現行程式碼複核；2026-09-05 本次 panic/資源專項複核期間再次對照 `session.go:107-146` 確認同一段程式碼未變更，問題依舊存在）。
+- **現況（2026-10-22 複核）**：WebSocket 路徑**仍未修復**，但上方的位置與符號已過時——SSE transport 重構（`docs/refactor-sse-transport-2026-10-22.md`）把 `Session` 與 `*websocket.Conn` 解耦：`run` 改名為 `runConn(ctx, conn)`（`conn` 改為參數，不再是 `Session.conn` 欄位），讀取改為 `conn.ReadMessage()`，收到的訊息經 `Session.handleRaw` 分派；`NewSession` 仍是把 `r.Context()` 原樣傳下去，`runConn` 返回時依舊不會取消它，所以進行中的 `handlePrompt`/`Complete` 仍會殘留。新增的 SSE 路徑（`ws/sse.go` 的 `Stream`）**沒有**這個問題：它用 `context.WithCancel` 包出串流自己的 ctx，串流結束時明確 cancel，所有經 POST 進來的訊息都在這個 ctx 下分派。WS 路徑的修法不變，可照 SSE 的做法在 `NewSession` 包一層 `WithCancel`、`runConn` 返回時 cancel。
 
 ### ⚪ `/healthz` 無條件回 200，不反映資料庫健康狀態
 - **位置**：`backend/cmd/server/main.go:249-252`

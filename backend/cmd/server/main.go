@@ -459,6 +459,10 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", wsHandler)
+	// SSE alternative to /ws for clients that can't hold a WebSocket open —
+	// same resolver, so the same token/origin/enabled/quota rules. Handles
+	// its own CORS (per-app origin), so it's not behind siteCORS/publicCORS.
+	ws.NewSSEHandler(apps, inferSvc, log, wsResolver, quotaSvc).Register(mux)
 	mux.Handle("/apps/{appId}/tools.json", publicCORS(handleToolSchema(apps)))
 	mux.Handle("/apps/{appId}/tools.ts", publicCORS(handleToolTypeScript(apps)))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -533,13 +537,20 @@ const (
 // it. Those clients keep connecting to the legacy host directly (still
 // served, just not yet redirected) until they update their own configured
 // URL.
+//
+// The SSE transport (/sse, /sse/{sessionId}) is excluded for a related
+// reason: its POSTs would be retried by the browser as GETs after a 301, and
+// a stream redirected to the canonical host would mint sessions the legacy
+// host's POSTs can't find — so it stays on whichever host the SDK was
+// configured with, same as /ws.
 func withLegacyDomainRedirect(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host := strings.ToLower(r.Host)
 		if h, _, err := net.SplitHostPort(host); err == nil {
 			host = h
 		}
-		if host == legacyDomain && !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		isSSE := r.URL.Path == "/sse" || strings.HasPrefix(r.URL.Path, "/sse/")
+		if host == legacyDomain && !isSSE && !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 			target := "https://" + canonicalDomain + r.URL.RequestURI()
 			http.Redirect(w, r, target, http.StatusMovedPermanently)
 			return

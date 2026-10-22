@@ -8,7 +8,7 @@ import type {
   ToolResultPayload,
 } from "./protocol.js";
 
-const SDK_VERSION = "0.1.0";
+const SDK_VERSION = "0.2.0";
 
 /** A tool handler the developer registers to fulfill a named tool call. */
 export type ToolHandler = (args: any) => Promise<unknown> | unknown;
@@ -74,6 +74,24 @@ export function defineTool<Args>(
 export interface AgentBridgeOptions {
   /** WebSocket endpoint, e.g. "wss://agent.example.com/ws". */
   url: string;
+  /**
+   * How to reach the backend. Defaults to "ws".
+   *
+   * - "ws": a WebSocket to `url`.
+   * - "sse": Server-Sent Events down + HTTP POST up, for networks where a
+   *   WebSocket can't get through (proxies that strip the Upgrade). Same
+   *   messages, same handlers, same reconnect/queue behavior — only the
+   *   wire differs. Needs `EventSource` and `fetch`.
+   * - "auto": start with a WebSocket; if one closes without ever having
+   *   opened, switch to SSE for the rest of this bridge's life.
+   */
+  transport?: "ws" | "sse" | "auto";
+  /**
+   * SSE endpoint, e.g. "https://agent.example.com/sse". Only used when
+   * `transport` is "sse" or "auto". Defaults to `url` with ws(s):// →
+   * http(s):// and a trailing "/ws" → "/sse".
+   */
+  sseUrl?: string;
   /** The developer app ID whose tool set this session should load. */
   appId: string;
   /**
@@ -164,8 +182,25 @@ type QueuedSend = { type: string; requestId?: string; payload?: unknown };
  * "ready" flag themselves.
  */
 export class AgentBridge {
-  private ws: WebSocket | null = null;
+  private transport: Transport | null = null;
+  /** Which wire connect() uses next. Fixed unless transport is "auto" —
+   * see onTransportClose for how "auto" moves between the two. */
+  private activeMode: "ws" | "sse";
+  /** Resolved SSE endpoint, or null when SSE is never used. */
+  private readonly sseBase: string | null;
+  /** "auto" mode: consecutive WebSocket attempts that closed without ever
+   * opening. Reset by any successful open. See AUTO_FALLBACK_AFTER. */
+  private wsNeverOpenedStreak = 0;
+  /** "auto" mode, while on SSE: "trial" until an SSE connection has
+   * actually opened, "committed" after. See onTransportClose. */
+  private autoSse: "trial" | "committed" | null = null;
+  /** When "auto" last committed to SSE — see AUTO_WS_REPROBE_MS. */
+  private sseCommittedAt = 0;
   private queue: QueuedSend[] = [];
+  /** Prompts whose SSE POST definitely didn't land. Kept apart from queue
+   * and flushed ahead of it: they were sent before anything that has been
+   * queued since, and must still arrive first. */
+  private retry: QueuedSend[] = [];
   private ready = false;
   private closedByUser = false;
   private backoffMs: number;
@@ -194,6 +229,14 @@ export class AgentBridge {
     this.backoffMs = this.minBackoffMs;
     this.tools = Array.isArray(opts.tools) ? toToolRecord(opts.tools) : opts.tools;
     this.disconnectWhenHidden = opts.disconnectWhenHidden ?? true;
+    const mode = opts.transport ?? "ws";
+    // Resolved up front so a bad URL or a missing EventSource fails here,
+    // at construction, rather than silently on some later fallback.
+    this.sseBase = mode === "ws" ? null : opts.sseUrl ?? deriveSseUrl(opts.url);
+    if (mode === "sse" && typeof EventSource === "undefined") {
+      throw new Error('AgentBridge: transport "sse" needs EventSource, which this environment lacks');
+    }
+    this.activeMode = mode === "sse" ? "sse" : "ws";
     this.installUnloadFallback();
     this.installVisibilityHandling();
     // lazyConnect starts suspended rather than not-connected, so the first
@@ -223,46 +266,151 @@ export class AgentBridge {
     // a connection nobody is using.
     this.detachVisibility?.();
     this.detachVisibility = undefined;
-    this.ws?.close();
+    this.transport?.close();
   }
 
-  private wsUrl(): string {
-    if (!this.opts.apiKey) return this.opts.url;
-    const url = new URL(this.opts.url);
+  /** Appends the api key as a `token` query parameter — the only place it
+   * can travel on either wire (neither a WebSocket upgrade nor an
+   * EventSource request can carry custom headers). */
+  private withToken(base: string): string {
+    if (!this.opts.apiKey) return base;
+    const url = new URL(base);
     url.searchParams.set("token", this.opts.apiKey);
     return url.toString();
   }
 
   private connect(): void {
-    const ws = new WebSocket(this.wsUrl());
-    this.ws = ws;
+    // Committed to SSE long enough that the WebSocket may work again (the
+    // first switch may have been wrong, or the network may have changed):
+    // give it one attempt. Failing that one sends us straight back to SSE —
+    // the streak is primed so a single failure crosses the threshold.
+    if (
+      this.opts.transport === "auto" &&
+      this.activeMode === "sse" &&
+      this.autoSse === "committed" &&
+      Date.now() - this.sseCommittedAt >= AUTO_WS_REPROBE_MS
+    ) {
+      this.activeMode = "ws";
+      this.autoSse = null;
+      this.wsNeverOpenedStreak = AUTO_FALLBACK_AFTER - 1;
+    }
 
-    ws.addEventListener("open", () => {
-      this.backoffMs = this.minBackoffMs;
-      this.hasConnected = true;
-      this.send("hello", undefined, {
-        appId: this.opts.appId,
-        sdkVersion: SDK_VERSION,
-        pageUrl: typeof location !== "undefined" ? location.href : undefined,
-      });
+    // Every callback is tied to the transport it came from. A transport we
+    // already replaced can still fire — a WebSocket's close event arrives
+    // asynchronously, after a quick hide/show may already have connected a
+    // new one — and acting on it would mark the live connection not ready
+    // and schedule yet another connect, orphaning the live one.
+    let t: Transport;
+    const current = () => this.transport === t;
+    const handlers: TransportHandlers = {
+      onOpen: () => current() && this.onTransportOpen(),
+      onMessage: (raw) => current() && this.handleMessage(raw),
+      onClose: (opened) => current() && this.onTransportClose(opened),
+    };
+    t =
+      this.activeMode === "sse"
+        ? new SseTransport(this.withToken(this.sseBase!), this.sseBase!, handlers, (msg, failure) =>
+            // Not gated on current(): a prompt lost by an old transport
+            // still has to be resent on the new one.
+            this.onSendFailed(msg, failure)
+          )
+        : new WsTransport(this.withToken(this.opts.url), handlers);
+    this.transport = t;
+  }
+
+  private onTransportOpen(): void {
+    this.backoffMs = this.minBackoffMs;
+    this.hasConnected = true;
+    if (this.activeMode === "ws") {
+      this.wsNeverOpenedStreak = 0;
+    } else if (this.opts.transport === "auto" && this.autoSse !== "committed") {
+      this.autoSse = "committed";
+      this.sseCommittedAt = Date.now();
+    }
+    this.send("hello", undefined, {
+      appId: this.opts.appId,
+      sdkVersion: SDK_VERSION,
+      pageUrl: typeof location !== "undefined" ? location.href : undefined,
     });
+  }
 
-    ws.addEventListener("message", (ev) => {
-      this.handleMessage(String(ev.data));
-    });
+  private onTransportClose(opened: boolean): void {
+    this.ready = false;
+    // suspended covers a close we asked for (page hidden, or a lazy
+    // bridge that hasn't been used yet) — reconnecting here would undo
+    // it immediately and reinstate the very connection we just dropped.
+    // Returning before the fallback logic below matters too: a close we
+    // caused says nothing about whether either wire can get through.
+    if (this.closedByUser || this.suspended) return;
+    if (this.opts.transport === "auto") this.updateAutoMode(opened);
+    this.scheduleReconnect();
+  }
 
-    ws.addEventListener("close", () => {
-      this.ready = false;
-      // suspended covers a close we asked for (page hidden, or a lazy
-      // bridge that hasn't been used yet) — reconnecting here would undo
-      // it immediately and reinstate the very connection we just dropped.
-      if (this.closedByUser || this.suspended) return;
-      this.scheduleReconnect();
-    });
+  /**
+   * "auto" mode's choice of wire, after a connection closed on its own.
+   *
+   * The WebSocket API hides why a handshake failed, so a WebSocket that never
+   * opens could mean a network that blocks it — or a backend that's down
+   * (mid-deploy, say) or refusing this app (403 disabled, 429 over quota).
+   * Only the first is a reason to switch, and the only way to tell them apart
+   * is to try SSE: SSE can only get through where the server is up and
+   * accepting us. So after AUTO_FALLBACK_AFTER failed WebSocket attempts,
+   * SSE is tried as a "trial", and the bridge commits to SSE only once an
+   * SSE connection actually opens. If SSE fails to open too, the problem
+   * was never the wire: back to WebSocket, count reset.
+   */
+  private updateAutoMode(opened: boolean): void {
+    if (this.activeMode === "ws") {
+      if (opened || isOffline()) return;
+      this.wsNeverOpenedStreak++;
+      if (this.wsNeverOpenedStreak >= AUTO_FALLBACK_AFTER && typeof EventSource !== "undefined") {
+        this.activeMode = "sse";
+        this.autoSse = "trial";
+      }
+      return;
+    }
+    if (this.autoSse === "trial" && !opened) {
+      this.activeMode = "ws";
+      this.autoSse = null;
+      this.wsNeverOpenedStreak = 0;
+    }
+  }
 
-    ws.addEventListener("error", () => {
-      // The subsequent "close" event drives reconnect; nothing to do here
-      // beyond letting it fire.
+  /**
+   * An SSE upstream POST that didn't succeed, sorted by what's known about
+   * whether the server acted on it — resending is only safe when it
+   * definitely didn't:
+   *
+   * - "not-delivered": the session was already gone (a 404, which the
+   *   server returns before dispatching anything, or the transport closed
+   *   before the POST went out). A prompt is resent on the next session —
+   *   it's the user's intent, and that session can still answer it. hello
+   *   is re-sent by every connection anyway, and a tool_result answers a
+   *   question from the session that died, so neither is.
+   * - "rejected": the server refused this message itself (e.g. 413 over the
+   *   size limit). Resending would be refused identically, forever.
+   * - "network": no response at all. The server may already have received
+   *   it and started inference, so resending risks running a prompt — and
+   *   its tools — twice.
+   *
+   * The last two are reported through onError instead of retried.
+   */
+  private onSendFailed(msg: QueuedSend, failure: SendFailure): void {
+    if (failure.kind === "not-delivered") {
+      if (msg.type !== "prompt") return;
+      this.retry.push(msg);
+      // The failure can report in after the next session is already up
+      // (a slow POST from the old session outliving a fast reconnect) —
+      // past the ack that would have flushed it. Send it now rather than
+      // leave it waiting for some future reconnect.
+      if (this.ready && this.transport?.isOpen) this.flushQueue();
+      return;
+    }
+    this.opts.onError?.({
+      message:
+        failure.kind === "rejected"
+          ? `server rejected a ${msg.type} message (HTTP ${failure.status})`
+          : `a ${msg.type} message may not have reached the server (network error); not resent, to avoid running it twice`,
     });
   }
 
@@ -366,7 +514,7 @@ export class AgentBridge {
   }
 
   private enqueue(msg: QueuedSend): void {
-    if (this.ready && this.ws?.readyState === WebSocket.OPEN) {
+    if (this.ready && this.transport?.isOpen) {
       this.write(msg);
       return;
     }
@@ -391,9 +539,15 @@ export class AgentBridge {
   }
 
   private flushQueue(): void {
-    const pending = this.queue;
+    const pending = this.pending();
     this.queue = [];
+    this.retry = [];
     for (const msg of pending) this.write(msg);
+  }
+
+  /** Everything waiting to be sent, in send order — see retry. */
+  private pending(): QueuedSend[] {
+    return [...this.retry, ...this.queue];
   }
 
   private send(type: string, requestId: string | undefined, payload: unknown): void {
@@ -401,11 +555,11 @@ export class AgentBridge {
   }
 
   private write(msg: QueuedSend): void {
-    if (this.ws?.readyState !== WebSocket.OPEN) {
+    if (!this.transport?.isOpen) {
       this.queue.push(msg);
       return;
     }
-    this.ws.send(JSON.stringify(msg));
+    this.transport.send(msg);
   }
 
   /**
@@ -428,7 +582,7 @@ export class AgentBridge {
         // Set before close() so the close handler sees it and skips its
         // reconnect — the listener fires synchronously on the same tick.
         this.suspended = true;
-        this.ws?.close();
+        this.transport?.close();
         return;
       }
 
@@ -437,7 +591,7 @@ export class AgentBridge {
       // deliberately deferred. Anything queued means someone tried to send
       // while away, so that does warrant reconnecting.
       if (!this.suspended) return;
-      if (this.opts.lazyConnect && this.queue.length === 0 && !this.hasConnected) return;
+      if (this.opts.lazyConnect && this.pending().length === 0 && !this.hasConnected) return;
       this.suspended = false;
       this.connect();
     };
@@ -460,14 +614,239 @@ export class AgentBridge {
 
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState !== "hidden") return;
-      if (this.queue.length === 0) return;
+      const pending = this.pending();
+      if (pending.length === 0) return;
       if (!this.opts.beaconUrl) return;
       navigator.sendBeacon(
         this.opts.beaconUrl,
-        JSON.stringify({ appId: this.opts.appId, queued: this.queue })
+        JSON.stringify({ appId: this.opts.appId, queued: pending })
       );
     });
   }
+}
+
+/** "auto" mode tries SSE after this many consecutive WebSocket attempts
+ * that never opened — see AgentBridge.updateAutoMode. */
+const AUTO_FALLBACK_AFTER = 3;
+
+/** How long "auto" stays committed to SSE before its next reconnect tries
+ * the WebSocket again — see AgentBridge.connect. */
+const AUTO_WS_REPROBE_MS = 10 * 60_000;
+
+/** SSE: how long to wait for the stream's session event and then the first
+ * reply (normally the ack). A proxy that buffers event streams can leave an
+ * EventSource connected but silent forever; this turns that into a
+ * reconnect instead of a bridge that quietly never becomes ready. */
+const SSE_HANDSHAKE_TIMEOUT_MS = 15_000;
+
+/** SSE: how long one upstream POST may take. Sends are serialized, so a
+ * single stalled POST would otherwise hold up every message after it —
+ * including tool_results the server stops waiting for after 20s. */
+const SSE_POST_TIMEOUT_MS = 10_000;
+
+/** A browser that reports itself offline can't tell us anything about
+ * whether a WebSocket would get through. */
+function isOffline(): boolean {
+  return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+/** Why an SSE POST didn't succeed — see AgentBridge.onSendFailed. */
+type SendFailure =
+  | { kind: "not-delivered" }
+  | { kind: "rejected"; status: number }
+  | { kind: "network" };
+
+/** What a Transport reports back to AgentBridge. */
+interface TransportHandlers {
+  /** The connection can take messages; AgentBridge sends hello next. */
+  onOpen(): void;
+  /** One server→client envelope, as raw JSON. */
+  onMessage(raw: string): void;
+  /** The connection is gone. `opened` is whether onOpen ever fired —
+   * "auto" mode's signal that this wire can't get through at all. */
+  onClose(opened: boolean): void;
+}
+
+/** One connection to the backend. AgentBridge owns everything above the
+ * wire — hello, queueing, reconnect/backoff, tool dispatch — so a Transport
+ * only moves envelopes. */
+interface Transport {
+  readonly isOpen: boolean;
+  send(msg: QueuedSend): void;
+  close(): void;
+}
+
+class WsTransport implements Transport {
+  private readonly ws: WebSocket;
+  private opened = false;
+
+  constructor(url: string, h: TransportHandlers) {
+    this.ws = new WebSocket(url);
+    this.ws.addEventListener("open", () => {
+      this.opened = true;
+      h.onOpen();
+    });
+    this.ws.addEventListener("message", (ev) => h.onMessage(String(ev.data)));
+    this.ws.addEventListener("close", () => h.onClose(this.opened));
+    this.ws.addEventListener("error", () => {
+      // The subsequent "close" event drives reconnect; nothing to do here
+      // beyond letting it fire.
+    });
+  }
+
+  get isOpen(): boolean {
+    return this.ws.readyState === WebSocket.OPEN;
+  }
+
+  send(msg: QueuedSend): void {
+    this.ws.send(JSON.stringify(msg));
+  }
+
+  close(): void {
+    this.ws.close();
+  }
+}
+
+/**
+ * SSE down, HTTP POST up (backend: internal/ws/sse.go). The stream's first
+ * event is a named "session" event carrying the sessionId every POST is
+ * addressed to; after that it carries the same envelopes a WebSocket would.
+ */
+class SseTransport implements Transport {
+  private readonly es: EventSource;
+  private sessionId: string | null = null;
+  private closed = false;
+  private chain: Promise<void> = Promise.resolve();
+  /** Pending until the first envelope arrives — see SSE_HANDSHAKE_TIMEOUT_MS. */
+  private handshakeTimer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(
+    streamUrl: string,
+    private readonly base: string,
+    private readonly h: TransportHandlers,
+    private readonly onSendFailed: (msg: QueuedSend, failure: SendFailure) => void
+  ) {
+    this.es = new EventSource(streamUrl);
+    this.handshakeTimer = setTimeout(() => this.shutdown(), SSE_HANDSHAKE_TIMEOUT_MS);
+    this.es.addEventListener("session", (ev) => {
+      try {
+        this.sessionId = JSON.parse((ev as MessageEvent).data).sessionId ?? null;
+      } catch {
+        this.sessionId = null;
+      }
+      if (!this.sessionId) {
+        this.shutdown();
+        return;
+      }
+      h.onOpen();
+    });
+    this.es.addEventListener("message", (ev) => {
+      // The first envelope (normally the ack to hello) ends the handshake.
+      clearTimeout(this.handshakeTimer);
+      h.onMessage(String((ev as MessageEvent).data));
+    });
+    // EventSource would retry on its own, but each retry is a brand-new
+    // server session nobody has said hello on. Stop it and let AgentBridge's
+    // own backoff + reconnect (which does say hello) take over, exactly as
+    // a WebSocket close does.
+    this.es.addEventListener("error", () => this.shutdown());
+  }
+
+  get isOpen(): boolean {
+    return this.sessionId !== null && !this.closed;
+  }
+
+  send(msg: QueuedSend): void {
+    const url = this.messageUrl();
+    // Chained, not fired independently: separate fetches can overtake each
+    // other on the wire, and a WebSocket never reorders — a prompt must
+    // never land before the hello sent ahead of it.
+    this.chain = this.chain.then(async () => {
+      if (this.closed) {
+        this.onSendFailed(msg, { kind: "not-delivered" });
+        return;
+      }
+      const abort = new AbortController();
+      const timer = setTimeout(() => abort.abort(), SSE_POST_TIMEOUT_MS);
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: "POST",
+          // text/plain, not application/json: it keeps this a CORS
+          // "simple" request, so the browser sends it straight away instead
+          // of preflighting every new session's URL first. The server reads
+          // the raw body and ignores the content type.
+          headers: { "Content-Type": "text/plain;charset=UTF-8" },
+          body: JSON.stringify(msg),
+          signal: abort.signal,
+        });
+      } catch {
+        // No response, so this message's fate is unknown — onSendFailed
+        // must not resend it. Only a timeout also ends the session: a POST
+        // that hangs points at a broken connection, and keeping the
+        // session would leave every later message queued behind it. A
+        // plain network error is left to the stream's own error event.
+        if (msg.type === "hello") return this.shutdown();
+        this.onSendFailed(msg, { kind: "network" });
+        if (abort.signal.aborted) this.shutdown();
+        return;
+      } finally {
+        clearTimeout(timer);
+      }
+      if (res.status === 404) {
+        // The session is gone (its stream closed, or this POST reached an
+        // instance that doesn't hold it). The server answers this before
+        // dispatching anything, so the message definitely wasn't acted on.
+        this.onSendFailed(msg, { kind: "not-delivered" });
+        this.shutdown();
+        return;
+      }
+      if (!res.ok) {
+        // A session whose hello didn't land never gets an ack, so nothing
+        // queued behind it would ever be sent. Start over instead of
+        // reporting it.
+        if (msg.type === "hello") return this.shutdown();
+        this.onSendFailed(msg, { kind: "rejected", status: res.status });
+      }
+    });
+  }
+
+  /** base + "/{sessionId}", via URL so a query string or hash already on
+   * base stays where it belongs instead of swallowing the path segment. */
+  private messageUrl(): string {
+    const u = new URL(this.base);
+    u.pathname = `${u.pathname.replace(/\/+$/, "")}/${encodeURIComponent(this.sessionId!)}`;
+    return u.toString();
+  }
+
+  close(): void {
+    this.shutdown();
+  }
+
+  private shutdown(): void {
+    if (this.closed) return;
+    this.closed = true;
+    clearTimeout(this.handshakeTimer);
+    this.es.close();
+    this.h.onClose(this.sessionId !== null);
+  }
+}
+
+/** ws(s)://host/path/ws?q → http(s)://host/path/sse?q. The query string is
+ * kept: anything the developer put on `url` (a token passed there rather
+ * than via apiKey, say) must reach the SSE endpoint too. */
+function deriveSseUrl(wsUrl: string): string {
+  const u = new URL(wsUrl);
+  if (u.protocol === "wss:") u.protocol = "https:";
+  else if (u.protocol === "ws:") u.protocol = "http:";
+  if (!u.pathname.endsWith("/ws")) {
+    throw new Error(
+      `AgentBridge: can't derive an SSE URL from "${wsUrl}" (expected a path ending in /ws) — pass sseUrl explicitly`
+    );
+  }
+  u.pathname = u.pathname.slice(0, -"/ws".length) + "/sse";
+  u.hash = "";
+  return u.toString();
 }
 
 function randomRequestId(): string {

@@ -1,6 +1,10 @@
-// Package ws implements the WebSocket endpoint the Agent Bridge SDK
-// connects to: one Session per browser tab, speaking the Envelope protocol
-// defined in internal/protocol.
+// Package ws implements the endpoints the Agent Bridge SDK connects to: one
+// Session per browser tab, speaking the Envelope protocol defined in
+// internal/protocol. Session itself is transport-agnostic — it only needs a
+// way to write an outbound envelope (writeMessage) and someone to feed it
+// inbound ones (handleRaw). Two transports supply those: a WebSocket
+// (NewSession/runConn below, Handler in handler.go) and SSE-down + POST-up
+// (SSEHandler in sse.go).
 package ws
 
 import (
@@ -30,7 +34,6 @@ const (
 // Session represents one connected browser tab.
 type Session struct {
 	id    string
-	conn  *websocket.Conn
 	apps  *toolschema.Registry
 	infer inference.Service
 	quota *quota.Service // nil disables quota enforcement (see quota.Service)
@@ -50,17 +53,21 @@ type Session struct {
 	// doc comment), so Record never runs to observe the zero value.
 	userID int64
 
+	// writeMu serializes every write to the underlying transport — send()'s
+	// envelopes, plus each transport's own keepalive (WS ping frames, SSE
+	// comment lines), which share the same stream and must not interleave
+	// with an envelope mid-write.
 	writeMu sync.Mutex
 
 	mu           sync.Mutex
 	app          *toolschema.App
 	pendingCalls map[string]chan protocol.ToolResultPayload
 
-	// writeMessage does the actual outbound write send() ends with —
-	// defaults to s.conn's real WriteMessage/SetWriteDeadline, but tests
-	// exercising pendingCalls/AskInteraction's correlation and timeout logic
-	// (which never need a real socket) can replace it with a no-op or a
-	// recording stub instead of constructing a *websocket.Conn.
+	// writeMessage does the actual outbound write send() ends with, supplied
+	// by the transport (a WebSocket text frame, or an SSE "data:" event).
+	// Tests exercising pendingCalls/AskInteraction's correlation and timeout
+	// logic (which never need a real transport) replace it with a recording
+	// stub instead.
 	writeMessage func(data []byte) error
 }
 
@@ -95,9 +102,20 @@ func resolveSessionID(id string) string {
 // (see AppResolver.ResolveApp's own doc comment) — stored unchanged on
 // Session.userID and threaded into every prompt's inference.Request.UserID.
 func NewSession(ctx context.Context, conn *websocket.Conn, apps *toolschema.Registry, infer inference.Service, log *slog.Logger, authAppID string, quotaSvc *quota.Service, sessionID string, userID int64) {
+	s := newSession(apps, infer, log, authAppID, quotaSvc, sessionID, userID, func(data []byte) error {
+		_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+		return conn.WriteMessage(websocket.TextMessage, data)
+	})
+	defer s.close()
+	s.runConn(ctx, conn)
+}
+
+// newSession builds a Session around a transport's outbound writer and
+// registers it as an inference.InteractionAsker. Every caller must defer
+// close() — see its doc comment for what leaks otherwise.
+func newSession(apps *toolschema.Registry, infer inference.Service, log *slog.Logger, authAppID string, quotaSvc *quota.Service, sessionID string, userID int64, write func([]byte) error) *Session {
 	s := &Session{
 		id:           resolveSessionID(sessionID),
-		conn:         conn,
 		apps:         apps,
 		infer:        infer,
 		quota:        quotaSvc,
@@ -105,37 +123,55 @@ func NewSession(ctx context.Context, conn *websocket.Conn, apps *toolschema.Regi
 		authAppID:    authAppID,
 		userID:       userID,
 		pendingCalls: make(map[string]chan protocol.ToolResultPayload),
-	}
-	s.writeMessage = func(data []byte) error {
-		_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-		return conn.WriteMessage(websocket.TextMessage, data)
+		writeMessage: write,
 	}
 	// Makes s reachable from a ToolKindQuery tool's Call, which runs inside
 	// want's own goroutine with no reference to this Session — see
 	// inference.RegisterAsker's doc comment for the full path back here.
-	// Must be deregistered on close (in run's defer below): a lingering
-	// entry would let a later query tool call reach a closed connection and
-	// hang until want's own interaction timeout.
+	// Must be deregistered on close: a lingering entry would let a later
+	// query tool call reach a closed connection and hang until want's own
+	// interaction timeout.
 	inference.RegisterAsker(s.id, s)
-	s.run(ctx)
+	return s
 }
 
-func (s *Session) run(ctx context.Context) {
-	defer s.conn.Close()
-	defer inference.UnregisterAsker(s.id)
-	// Releases this session's want orchestrator (see inference.WantService)
-	// — without this, every connection that ever completed a prompt would
-	// leak its orchestrator's dispatch goroutine for the life of the
-	// process, growing without bound as users connect and disconnect.
-	defer s.infer.CloseSession(s.id)
+// close releases everything newSession registered. Releasing the want
+// orchestrator (infer.CloseSession) matters as much as the asker: without
+// it, every connection that ever completed a prompt would leak its
+// orchestrator's dispatch goroutine for the life of the process, growing
+// without bound as users connect and disconnect.
+func (s *Session) close() {
+	inference.UnregisterAsker(s.id)
+	s.infer.CloseSession(s.id)
+}
 
-	s.conn.SetReadLimit(1 << 20) // 1MB: generous for large tool-call payloads, bounded against abuse.
-	_ = s.conn.SetReadDeadline(time.Now().Add(pongTimeout))
-	s.conn.SetPongHandler(func(string) error {
-		return s.conn.SetReadDeadline(time.Now().Add(pongTimeout))
+// handleRaw decodes one inbound envelope and dispatches it — the single
+// entry point every transport feeds received messages through. ctx must be
+// the session's lifetime context, not a per-message one: handlePrompt runs
+// on its own goroutine and outlives the message that started it (an SSE
+// POST in particular returns long before inference finishes).
+func (s *Session) handleRaw(ctx context.Context, raw []byte) {
+	var env protocol.Envelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		s.sendError("", "invalid envelope JSON")
+		return
+	}
+	s.handle(ctx, env)
+}
+
+// runConn is the WebSocket transport's read loop. Liveness is WS-native
+// ping/pong: a missed pong lets the read deadline expire, ReadMessage
+// fails, and the session ends.
+func (s *Session) runConn(ctx context.Context, conn *websocket.Conn) {
+	defer conn.Close()
+
+	conn.SetReadLimit(maxInboundMessageBytes)
+	_ = conn.SetReadDeadline(time.Now().Add(pongTimeout))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(pongTimeout))
 	})
 
-	stopPing := s.startPingLoop()
+	stopPing := s.startPingLoop(conn)
 	defer stopPing()
 
 	for {
@@ -145,23 +181,20 @@ func (s *Session) run(ctx context.Context) {
 		default:
 		}
 
-		_, raw, err := s.conn.ReadMessage()
+		_, raw, err := conn.ReadMessage()
 		if err != nil {
 			s.log.Info("ws session closed", "session", s.id, "err", err)
 			return
 		}
-
-		var env protocol.Envelope
-		if err := json.Unmarshal(raw, &env); err != nil {
-			s.sendError("", "invalid envelope JSON")
-			continue
-		}
-
-		s.handle(ctx, env)
+		s.handleRaw(ctx, raw)
 	}
 }
 
-func (s *Session) startPingLoop() func() {
+// maxInboundMessageBytes caps one inbound envelope on either transport:
+// generous for large tool_result payloads, bounded against abuse.
+const maxInboundMessageBytes = 1 << 20
+
+func (s *Session) startPingLoop(conn *websocket.Conn) func() {
 	ticker := time.NewTicker(pingInterval)
 	done := make(chan struct{})
 	go func() {
@@ -178,8 +211,8 @@ func (s *Session) startPingLoop() func() {
 			select {
 			case <-ticker.C:
 				s.writeMu.Lock()
-				_ = s.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-				err := s.conn.WriteMessage(websocket.PingMessage, nil)
+				_ = conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+				err := conn.WriteMessage(websocket.PingMessage, nil)
 				s.writeMu.Unlock()
 				if err != nil {
 					return

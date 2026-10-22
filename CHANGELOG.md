@@ -6,6 +6,68 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.7.5
+
+No breaking changes. Adds an SSE transport alongside the existing
+WebSocket one; WebSocket stays the default and behaves as before.
+`@onagent/bridge` bumped to 0.2.0 (new options, defaults unchanged) — not
+yet published to npm, see `release-bridge-sdk.yml`. Design, decisions and
+known limits: `docs/refactor-sse-transport-2026-10-22.md`.
+
+- **SSE transport (backend).** New `GET /sse?token=` (server→client event
+  stream; first event is a named `session` event with the sessionId) and
+  `POST /sse/{sessionId}` (one client→server envelope per request). Same
+  `protocol.Envelope` messages, same `APIKeyResolver` (token, app enabled,
+  per-app allowed origin, quota) as `/ws`, so it's never more permissive.
+  A POST is authorized by its unguessable sessionId plus an Origin match;
+  an unknown session and a wrong origin get an identical 404 that still
+  carries CORS headers (so the SDK can read it). No `OPTIONS` route —
+  POSTs are `text/plain`, a CORS simple request. A stream with no Origin
+  is refused; a duplicate fixed session id gets 409; only a real size
+  overflow is 413. Liveness is a `: ping` comment every 30s.
+  `withLegacyDomainRedirect` exempts `/sse*` the same way it exempts
+  WebSocket upgrades.
+- **`ws.Session` decoupled from `*websocket.Conn`** so both transports
+  share one Session: outbound via the transport-supplied `writeMessage`,
+  inbound via `handleRaw`, teardown via `close()`. WebSocket reading and
+  ping/pong moved to `runConn`; `NewSession`'s signature is unchanged, so
+  `ws.Handler` and the console Playground are untouched. The only
+  WebSocket-visible difference: at teardown the socket now closes before
+  the session's inference asker is released, rather than after.
+- **`@onagent/bridge` 0.2.0.** New `transport: "ws" | "sse" | "auto"`
+  (default `"ws"`) and `sseUrl` (default derived from `url`, query string
+  kept). SSE: POSTs serialized so they can't reorder; a 404'd prompt is
+  resent on the next session (ahead of later prompts), anything with an
+  unknown fate is reported via `onError` and not resent; a failed hello, a
+  stream that never delivers its session event or ack within 15s, and a
+  POST that hangs past 10s each restart the session. `"auto"` tries SSE
+  after 3 WebSocket attempts that never opened, commits only once SSE
+  actually opens (and reverts to WebSocket if it can't — the server, not
+  the wire, was the problem), and reprobes WebSocket after 10 minutes.
+- **Fix (`@onagent/bridge`, affects WebSocket too).** A replaced
+  connection's late close event — e.g. the old socket closing after a
+  quick hide/show had already reconnected — used to mark the live
+  connection not ready and open yet another one, orphaning the live
+  connection. Callbacks are now tied to the transport they came from.
+- **Tests.** First tests in the codebase that open a real WebSocket
+  (`ws/conn_test.go`); SSE transport tests (`ws/sse_test.go`); WebSocket
+  and SSE run one shared end-to-end integration scenario
+  (`ws/transport_integration_test.go`, `-tags integration`), backed by an
+  integration-only `inference.LookupAskerForTest`; SDK SSE/auto tests
+  (`client.sse.test.ts`). Also verified in a real browser (Chrome 155,
+  cross-origin): SSE, WebSocket, `auto` with a blocked WebSocket, and
+  recovery after a backend restart.
+- **Known limit: SSE is only reliable on a single backend instance** — a
+  POST can be load-balanced to an instance that doesn't hold its stream.
+  Not fixed in this release; options are in the design doc. Opt-in only,
+  so nothing changes for existing WebSocket integrations.
+- Docs: `audit-stability.md`'s "disconnect doesn't cancel `Complete()`"
+  item updated for the renamed code (still open for WebSocket; the SSE
+  path already cancels on stream end). Improvement backlog item 19
+  (pluggable transport) marked partly done, correcting its premise that an
+  HTTP transport could send an `Authorization` header — `EventSource`
+  can't either.
+
 ## v0.7.4
 
 No breaking changes. CI/infra only — no Go or TypeScript source changed.
