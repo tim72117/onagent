@@ -71,7 +71,7 @@ var plans = map[Tier]Plan{
 	TierUltra: {
 		Tier:          TierUltra,
 		Name:          "Ultra",
-		MonthlyTokens: 10_000_000,
+		MonthlyTokens: 20_000_000,
 	},
 }
 

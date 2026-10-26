@@ -6,6 +6,17 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.7.7
+
+No breaking changes. One constant changed; no API or schema changes.
+
+- Raised the Ultra tier's monthly token allowance from 10,000,000 to
+  20,000,000 (`quota.plans[TierUltra].MonthlyTokens`). Takes effect
+  immediately for every existing Ultra user on deploy — quota checks
+  always resolve a user's tier to this table at check time rather than
+  reading a per-user copy of the number (see `quota.PlanFor`'s doc
+  comment).
+
 ## v0.7.6
 
 No breaking changes. Purely additive field; every existing caller of
