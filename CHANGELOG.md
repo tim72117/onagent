@@ -6,6 +6,26 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## v0.7.6
+
+No breaking changes. Purely additive field; every existing caller of
+`GET /console/apps/{appId}` and `onagent app get` keeps working unchanged.
+
+- **`GET /console/apps/{appId}`** now also returns `allowedOrigins`,
+  filled in from `internal/auth.Store.OriginsFor` (previously only
+  `appSummary`-shaped responses like the app list exposed it; the app
+  detail route returned a bare `toolschema.App`, which has no field for
+  it — allowed-origins live in a separate table owned by `auth.Store`,
+  not `toolschema.Registry`). Wrapped in a new `appDetail` struct that
+  embeds `toolschema.App` rather than adding the field to `App` itself,
+  keeping the two tables' data sources separate in code the way they
+  already are in storage.
+- **`onagent app get <appId>`** prints the new `allowedOrigins` field.
+  `onagent tool list <appId>` keeps re-emitting the same response as
+  round-trippable `tool create` YAML (appId + tools + thought only) —
+  `appDetail`'s `AllowedOrigins` field is tagged `yaml:"-"` specifically
+  so it doesn't leak into that output.
+
 ## v0.7.5
 
 No breaking changes. Adds an SSE transport alongside the existing

@@ -48,11 +48,11 @@ var version = "dev"
 // <origin>` silently mean the same thing two different ways.
 //
 // getRun/getUsage are the "get" counterpart to requireSet's "set": optional,
-// since not every requireSet field has a backend read endpoint yet
-// (internal/auth.Store.OriginsFor has no HTTP route, so "origin" has no
-// getRun) — "thought" does, because it's already part of the toolschema.App
-// JSON GET /console/apps/{appId} returns, so no backend change was needed
-// to add it.
+// since not every requireSet field has its own dedicated "get" subcommand —
+// "origin" doesn't (its value now surfaces as `app get`'s allowedOrigins
+// line instead; see runAppGet), while "thought" does, because it's a single
+// value a caller might want to pipe elsewhere on its own (see
+// runAppThoughtGet's doc comment).
 type resourceCommand struct {
 	verb       string
 	requireSet bool
@@ -631,9 +631,7 @@ func runAppOrigin(args []string) error {
 
 // runAppGet prints every field GET /console/apps/{appId} returns that `app
 // list`'s one-line table doesn't: thought, enabled, public,
-// maxPromptLength, and the tool count (origin is deliberately absent — see
-// internal/auth.Store.OriginsFor's doc comment; there is no HTTP route that
-// exposes it yet, so the CLI has nothing to call).
+// maxPromptLength, allowedOrigins, and the tool count.
 func runAppGet(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 1 {
@@ -663,6 +661,11 @@ func runAppGet(args []string) error {
 		fmt.Println("maxPromptLength: (unset — using the system-wide default)")
 	} else {
 		fmt.Printf("maxPromptLength: %d\n", *app.MaxPromptLength)
+	}
+	if len(app.AllowedOrigins) == 0 {
+		fmt.Println("allowedOrigins:  (unset — every connection is rejected until one is set)")
+	} else {
+		fmt.Printf("allowedOrigins:  %s\n", strings.Join(app.AllowedOrigins, ", "))
 	}
 	fmt.Printf("tools:           %d\n", len(app.Tools))
 	return nil
@@ -1188,20 +1191,33 @@ func (c *apiClient) revokeKey(appID string) error {
 	return res.Body.Close()
 }
 
+// appDetail mirrors internal/console's appDetail response shape: the full
+// App definition plus AllowedOrigins, which toolschema.App itself has no
+// field for (allowed-origins live in auth.Store, a separate table — see
+// that package's own OriginsFor doc comment).
+type appDetail struct {
+	toolschema.App
+	// yaml:"-" — `tool list` yaml.Marshal's this same struct straight back
+	// out as a round-trippable `tool create` document (see that function's
+	// comment); AllowedOrigins has no place in that format and would
+	// otherwise leak into it as a stray `allowedorigins` key.
+	AllowedOrigins []string `json:"allowedOrigins" yaml:"-"`
+}
+
 // getApp returns the full App definition (every tool with its complete
 // parameter schema) — the same document runSaveTools sends,
-// read back. Mirrors internal/console's getApp handler, which the web
-// console's editor calls for the same purpose.
-func (c *apiClient) getApp(appID string) (toolschema.App, error) {
+// read back — plus its allowed origins. Mirrors internal/console's getApp
+// handler, which the web console's editor calls for the same purpose.
+func (c *apiClient) getApp(appID string) (appDetail, error) {
 	res, err := c.do(http.MethodGet, "/console/apps/"+pathEscape(appID), nil)
 	if err != nil {
-		return toolschema.App{}, err
+		return appDetail{}, err
 	}
 	defer res.Body.Close()
 
-	var out toolschema.App
+	var out appDetail
 	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
-		return toolschema.App{}, fmt.Errorf("decode response: %w", err)
+		return appDetail{}, fmt.Errorf("decode response: %w", err)
 	}
 	return out, nil
 }

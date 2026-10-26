@@ -615,13 +615,27 @@ func (h *Handler) listApps(w http.ResponseWriter, r *http.Request, user *session
 	writeJSON(w, http.StatusOK, out)
 }
 
+// appDetail is getApp's response shape: the full toolschema.App (every tool
+// with its complete parameter and returns schema, for the editor) plus
+// AllowedOrigins, which toolschema.App itself deliberately has no field for
+// — allowed-origins live in auth.Store, a separate table from the one
+// toolschema.Registry owns (see this package's other AllowedOrigins uses for
+// why the two must stay independently writable). Embedding rather than a
+// flat copy keeps every toolschema.App field (including ones added later)
+// reachable without this struct needing to track them one by one.
+type appDetail struct {
+	*toolschema.App
+	AllowedOrigins []string `json:"allowedOrigins"`
+}
+
 // getApp returns the full App definition (every tool with its complete
 // parameter and returns schema). The editor loads this for editing — the
 // public /apps/{appId}/tools.json can't serve that purpose because its
 // LLM-schema shape drops the returns declaration.
 func (h *Handler) getApp(w http.ResponseWriter, r *http.Request, user *session.User) {
-	app, _ := h.Apps.Get(r.PathValue("appId")) // ownership + existence already checked by withOwnedApp
-	writeJSON(w, http.StatusOK, app)
+	appID := r.PathValue("appId")
+	app, _ := h.Apps.Get(appID) // ownership + existence already checked by withOwnedApp
+	writeJSON(w, http.StatusOK, appDetail{App: app, AllowedOrigins: h.Auth.OriginsFor(appID)})
 }
 
 type createAppRequest struct {
