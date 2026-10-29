@@ -1,6 +1,7 @@
 import { KeyEditSheet } from './KeyEditSheet'
 import { OriginEditSheet } from './OriginEditSheet'
 import { MaxPromptLengthEditSheet } from './MaxPromptLengthEditSheet'
+import { MaxPromptImagesEditSheet } from './MaxPromptImagesEditSheet'
 import { useSheet } from './useSheet'
 import styles from './AppSettingsList.module.css'
 
@@ -29,6 +30,11 @@ export function AppSettingsList({
   maxPromptLengthBusy,
   onSaveMaxPromptLength,
   systemMaxPromptLength,
+  maxPromptImagesDraft,
+  onMaxPromptImagesDraftChange,
+  maxPromptImagesBusy,
+  onSaveMaxPromptImages,
+  systemMaxPromptImages,
   enabled,
   enabledBusy,
   onToggleEnabled,
@@ -51,6 +57,11 @@ export function AppSettingsList({
   maxPromptLengthBusy: boolean
   onSaveMaxPromptLength: (e: React.FormEvent) => Promise<boolean>
   systemMaxPromptLength: number | null
+  maxPromptImagesDraft: string
+  onMaxPromptImagesDraftChange: (value: string) => void
+  maxPromptImagesBusy: boolean
+  onSaveMaxPromptImages: (e: React.FormEvent) => Promise<boolean>
+  systemMaxPromptImages: number | null
   enabled: boolean
   enabledBusy: boolean
   onToggleEnabled: (next: boolean) => void
@@ -59,6 +70,7 @@ export function AppSettingsList({
   const keySheet = useSheet()
   const originSheet = useSheet()
   const maxPromptLengthSheet = useSheet()
+  const maxPromptImagesSheet = useSheet()
 
   return (
     <div className={styles.root}>
@@ -108,6 +120,17 @@ export function AppSettingsList({
                 : systemMaxPromptLength != null
                   ? `${systemMaxPromptLength} characters`
                   : ''}
+            </div>
+          </div>
+          <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+        </button>
+        <button type="button" className={styles.row} onClick={maxPromptImagesSheet.onOpen}>
+          <div className={styles.rowInfo}>
+            <div className={styles.rowLabel}>Images per prompt</div>
+            <div className={styles.rowValue}>
+              {maxPromptImagesDraft.trim() !== '' ? `Up to ${maxPromptImagesDraft.trim()}` : 'Off'}
             </div>
           </div>
           <svg className={styles.chevron} viewBox="0 0 24 24" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
@@ -169,6 +192,16 @@ export function AppSettingsList({
         busy={maxPromptLengthBusy}
         onSave={onSaveMaxPromptLength}
         systemMaxPromptLength={systemMaxPromptLength}
+      />
+
+      <MaxPromptImagesEditSheet
+        open={maxPromptImagesSheet.open}
+        onClose={maxPromptImagesSheet.onClose}
+        draft={maxPromptImagesDraft}
+        onDraftChange={onMaxPromptImagesDraftChange}
+        busy={maxPromptImagesBusy}
+        onSave={onSaveMaxPromptImages}
+        systemMaxPromptImages={systemMaxPromptImages}
       />
     </div>
   )

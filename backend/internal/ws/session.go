@@ -9,6 +9,7 @@ package ws
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -23,6 +24,7 @@ import (
 	"github.com/tim72117/onagent/internal/protocol"
 	"github.com/tim72117/onagent/internal/quota"
 	"github.com/tim72117/onagent/internal/toolschema"
+	wanttypes "github.com/tim72117/want/types"
 )
 
 const (
@@ -165,7 +167,6 @@ func (s *Session) handleRaw(ctx context.Context, raw []byte) {
 func (s *Session) runConn(ctx context.Context, conn *websocket.Conn) {
 	defer conn.Close()
 
-	conn.SetReadLimit(maxInboundMessageBytes)
 	_ = conn.SetReadDeadline(time.Now().Add(pongTimeout))
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(pongTimeout))
@@ -181,6 +182,9 @@ func (s *Session) runConn(ctx context.Context, conn *websocket.Conn) {
 		default:
 		}
 
+		// Re-applied before every read: the limit grows once hello has
+		// bound an app that accepts images (see inboundLimit).
+		conn.SetReadLimit(s.inboundLimit())
 		_, raw, err := conn.ReadMessage()
 		if err != nil {
 			s.log.Info("ws session closed", "session", s.id, "err", err)
@@ -191,8 +195,25 @@ func (s *Session) runConn(ctx context.Context, conn *websocket.Conn) {
 }
 
 // maxInboundMessageBytes caps one inbound envelope on either transport:
-// generous for large tool_result payloads, bounded against abuse.
+// generous for large tool_result payloads, bounded against abuse. A
+// session whose app accepts images allows more — see inboundLimit.
 const maxInboundMessageBytes = 1 << 20
+
+// inboundLimit is the largest inbound envelope this session accepts right
+// now: maxInboundMessageBytes, plus room for the base64 of as many
+// max-size images as the app lets one prompt attach. Before hello, or for
+// an app that doesn't accept images, that is just maxInboundMessageBytes —
+// so turning images on for one app doesn't loosen the cap for any other.
+func (s *Session) inboundLimit() int64 {
+	s.mu.Lock()
+	app := s.app
+	s.mu.Unlock()
+	if app == nil {
+		return maxInboundMessageBytes
+	}
+	n := inference.EffectiveMaxPromptImages(app.MaxPromptImages)
+	return maxInboundMessageBytes + int64(n)*int64(base64.StdEncoding.EncodedLen(int(wanttypes.MaxImageBytes)))
+}
 
 func (s *Session) startPingLoop(conn *websocket.Conn) func() {
 	ticker := time.NewTicker(pingInterval)
@@ -370,8 +391,14 @@ func (s *Session) handlePrompt(ctx context.Context, env protocol.Envelope) {
 		return
 	}
 
+	images, ok := s.checkPromptImages(env.RequestID, app, p.Images)
+	if !ok {
+		return
+	}
+
 	result, err := s.infer.Complete(ctx, inference.Request{
 		Prompt:    p.Text,
+		Images:    images,
 		Tools:     codegen.ToLLMTools(app),
 		AppID:     app.AppID,
 		SessionID: s.id,
@@ -395,6 +422,44 @@ func (s *Session) handlePrompt(ctx context.Context, env protocol.Envelope) {
 			Text: result.AssistantMessage,
 		})
 	}
+}
+
+// checkPromptImages applies this app's image policy to a prompt's
+// attachments and converts them for inference. On rejection it has already
+// sent the coded error, and ok is false. Like the length gate it fails
+// closed: every check is in-memory, so there is no ambiguous failure to be
+// lenient about.
+//
+// Validation is want's own (types.ValidateImageSource — media type, base64,
+// sniffed content, size), run here rather than left to SubmitContent so a
+// bad image gets CodeInvalidImage instead of a generic inference error.
+func (s *Session) checkPromptImages(requestID string, app *toolschema.App, imgs []protocol.PromptImage) ([]inference.Image, bool) {
+	if len(imgs) == 0 {
+		return nil, true
+	}
+	maxImages := inference.EffectiveMaxPromptImages(app.MaxPromptImages)
+	if maxImages == 0 {
+		s.log.Info("prompt rejected: images not allowed", "session", s.id, "app", app.AppID, "images", len(imgs))
+		s.sendErrorCode(requestID, "this app does not accept images", protocol.CodeImagesNotAllowed)
+		return nil, false
+	}
+	if len(imgs) > maxImages {
+		s.log.Info("prompt rejected: too many images", "session", s.id, "app", app.AppID, "images", len(imgs), "max", maxImages)
+		s.sendErrorCode(requestID,
+			fmt.Sprintf("prompt attaches %d images; this app accepts at most %d", len(imgs), maxImages), protocol.CodeTooManyImages)
+		return nil, false
+	}
+	out := make([]inference.Image, len(imgs))
+	for i, img := range imgs {
+		src := &wanttypes.ImageSource{Type: "base64", MediaType: img.MediaType, Data: img.Data}
+		if err := wanttypes.ValidateImageSource(src); err != nil {
+			s.log.Info("prompt rejected: invalid image", "session", s.id, "app", app.AppID, "index", i, "err", err)
+			s.sendErrorCode(requestID, fmt.Sprintf("image %d is invalid: %v", i, err), protocol.CodeInvalidImage)
+			return nil, false
+		}
+		out[i] = inference.Image{MediaType: img.MediaType, Data: img.Data}
+	}
+	return out, true
 }
 
 func (s *Session) handleToolResult(env protocol.Envelope) {

@@ -83,12 +83,58 @@ type Result struct {
 	Usage *types.Usage
 }
 
+// defaultMaxPromptImages is the system-wide cap on images per prompt used
+// when the MAX_PROMPT_IMAGES env var is unset or invalid. Four images at
+// want's 5MB-per-image ceiling (types.MaxImageBytes) keeps one prompt's
+// base64 under Cloud Run's 32MiB HTTP request limit, which bounds the SSE
+// transport's POST (see ws.Session.inboundLimit).
+const defaultMaxPromptImages = 4
+
+// SystemMaxPromptImages returns the system-wide ceiling on images per
+// prompt, read from MAX_PROMPT_IMAGES the same way SystemMaxPromptLength
+// reads its env var (unset or invalid falls back to the default).
+func SystemMaxPromptImages() int {
+	raw := os.Getenv("MAX_PROMPT_IMAGES")
+	if raw == "" {
+		return defaultMaxPromptImages
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return defaultMaxPromptImages
+	}
+	return n
+}
+
+// EffectiveMaxPromptImages returns how many images one prompt to an app may
+// attach: 0 when appLimit (toolschema.App.MaxPromptImages) is nil — images
+// are opt-in per app — otherwise appLimit clamped to SystemMaxPromptImages.
+func EffectiveMaxPromptImages(appLimit *int) int {
+	if appLimit == nil {
+		return 0
+	}
+	return min(*appLimit, SystemMaxPromptImages())
+}
+
+// Image is one image attached to a prompt: base64 data (no data: URL
+// prefix) and its media type. ws.Session.handlePrompt has already
+// validated it against want's rules (types.ValidateImageSource) before it
+// reaches a Service.
+type Image struct {
+	MediaType string
+	Data      string
+}
+
 // Request bundles everything the inference service needs to reason about
 // one prompt: the user's text and the tool set available for this session's
 // app.
 type Request struct {
 	Prompt string
 	Tools  []codegen.LLMTool
+
+	// Images are attached to Prompt, in the order the user attached them.
+	// Empty for a text-only prompt. Implementations without image support
+	// (MockService) ignore them.
+	Images []Image
 
 	// AppID identifies which developer app this prompt belongs to.
 	// Implementations use it to select app-specific reasoning behavior

@@ -191,6 +191,9 @@ export default function App() {
   // coercion of "" to 0.
   const [maxPromptLengthDraft, setMaxPromptLengthDraft] = useState('')
   const [maxPromptLengthBusy, setMaxPromptLengthBusy] = useState(false)
+  // Same text-draft pattern; here an empty field turns images off.
+  const [maxPromptImagesDraft, setMaxPromptImagesDraft] = useState('')
+  const [maxPromptImagesBusy, setMaxPromptImagesBusy] = useState(false)
   const [enabledBusy, setEnabledBusy] = useState(false)
 
   // Backed by GET /console/notifications (backend's internal/notify rule
@@ -365,6 +368,10 @@ export default function App() {
     setMaxPromptLengthDraft(activeSummary?.maxPromptLength != null ? String(activeSummary.maxPromptLength) : '')
   }, [activeSummary?.appId, activeSummary?.maxPromptLength])
 
+  useEffect(() => {
+    setMaxPromptImagesDraft(activeSummary?.maxPromptImages != null ? String(activeSummary.maxPromptImages) : '')
+  }, [activeSummary?.appId, activeSummary?.maxPromptImages])
+
   // Same reasoning as selectAppSettings's own fallback below: rendering the
   // "No app selected" empty state when the user actually already has one or
   // more apps is worse than just picking the first one — most noticeable on
@@ -519,6 +526,28 @@ export default function App() {
     }
     return runAction(setMaxPromptLengthBusy, async () => {
       await api.setMaxPromptLength(draft.appId, value)
+      await refreshSummaries()
+    })
+  }
+
+  // Same contract as saveMaxPromptLength above. An empty field sends null,
+  // which turns images off; a value over the system-wide cap is accepted by
+  // the backend (and clamped when enforced), so it isn't blocked here.
+  function saveMaxPromptImages(e: React.FormEvent): Promise<boolean> {
+    e.preventDefault()
+    if (!draft) return Promise.resolve(false)
+    const trimmed = maxPromptImagesDraft.trim()
+    let value: number | null = null
+    if (trimmed !== '') {
+      const n = Number(trimmed)
+      if (!Number.isInteger(n) || n <= 0) {
+        showToast('Images per prompt must be a positive whole number, or empty to turn images off.', 'error')
+        return Promise.resolve(false)
+      }
+      value = n
+    }
+    return runAction(setMaxPromptImagesBusy, async () => {
+      await api.setMaxPromptImages(draft.appId, value)
       await refreshSummaries()
     })
   }
@@ -1083,6 +1112,11 @@ export default function App() {
               maxPromptLengthBusy={maxPromptLengthBusy}
               onSaveMaxPromptLength={saveMaxPromptLength}
               systemMaxPromptLength={activeSummary?.systemMaxPromptLength ?? null}
+              maxPromptImagesDraft={maxPromptImagesDraft}
+              onMaxPromptImagesDraftChange={setMaxPromptImagesDraft}
+              maxPromptImagesBusy={maxPromptImagesBusy}
+              onSaveMaxPromptImages={saveMaxPromptImages}
+              systemMaxPromptImages={activeSummary?.systemMaxPromptImages ?? null}
               enabled={activeSummary?.enabled ?? true}
               enabledBusy={enabledBusy}
               onToggleEnabled={toggleEnabled}
@@ -1106,6 +1140,11 @@ export default function App() {
               maxPromptLengthBusy={maxPromptLengthBusy}
               onSaveMaxPromptLength={saveMaxPromptLength}
               systemMaxPromptLength={activeSummary?.systemMaxPromptLength ?? null}
+              maxPromptImagesDraft={maxPromptImagesDraft}
+              onMaxPromptImagesDraftChange={setMaxPromptImagesDraft}
+              maxPromptImagesBusy={maxPromptImagesBusy}
+              onSaveMaxPromptImages={saveMaxPromptImages}
+              systemMaxPromptImages={activeSummary?.systemMaxPromptImages ?? null}
               enabled={activeSummary?.enabled ?? true}
               enabledBusy={enabledBusy}
               onToggleEnabled={toggleEnabled}

@@ -86,6 +86,7 @@ type appsFull struct {
 	AllowedOrigins  pq.StringArray `gorm:"column:allowed_origins;type:text[]"`
 	Thought         *string        `gorm:"column:thought"`
 	MaxPromptLength *int           `gorm:"column:max_prompt_length"`
+	MaxPromptImages *int           `gorm:"column:max_prompt_images"`
 	Public          bool           `gorm:"column:public"`
 	Enabled         bool           `gorm:"column:enabled"`
 	CreatedAt       time.Time      `gorm:"column:created_at"`
@@ -152,6 +153,16 @@ type agentExperiencesFull struct {
 }
 
 func (agentExperiencesFull) TableName() string { return "agent_experiences" }
+
+type agentBlobsFull struct {
+	AppID     string    `gorm:"column:app_id;primaryKey"`
+	Hash      string    `gorm:"column:hash;primaryKey"`
+	MediaType string    `gorm:"column:media_type"`
+	Data      []byte    `gorm:"column:data"`
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+func (agentBlobsFull) TableName() string { return "agent_blobs" }
 
 type notificationsFull struct {
 	ID           int64      `gorm:"column:id;primaryKey"`
@@ -239,6 +250,7 @@ func schemaCheckTargets() map[string][]any {
 		"admin_sessions":     {&adminSessionsFull{}},
 		"identities":         {&identitiesFull{}},
 		"agent_experiences":  {&agentExperiencesFull{}},
+		"agent_blobs":        {&agentBlobsFull{}},
 		"notifications":      {&notificationsFull{}},
 		"rule_progress":      {&ruleProgressFull{}},
 		"use_case_responses": {&useCaseResponsesFull{}},

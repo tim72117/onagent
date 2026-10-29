@@ -1,4 +1,5 @@
 import styles from './AppSettingsView.module.css'
+import { maxPromptImagesHint } from './MaxPromptImagesEditSheet'
 
 // Per-app connection settings — key issuance and allowed origin. Reached
 // via its own sidebar nav item (see Sidebar.tsx's App settings entry /
@@ -29,6 +30,11 @@ export function AppSettingsView({
   maxPromptLengthBusy,
   onSaveMaxPromptLength,
   systemMaxPromptLength,
+  maxPromptImagesDraft,
+  onMaxPromptImagesDraftChange,
+  maxPromptImagesBusy,
+  onSaveMaxPromptImages,
+  systemMaxPromptImages,
   enabled,
   enabledBusy,
   onToggleEnabled,
@@ -50,6 +56,11 @@ export function AppSettingsView({
   maxPromptLengthBusy: boolean
   onSaveMaxPromptLength: (e: React.FormEvent) => Promise<boolean>
   systemMaxPromptLength: number | null
+  maxPromptImagesDraft: string
+  onMaxPromptImagesDraftChange: (value: string) => void
+  maxPromptImagesBusy: boolean
+  onSaveMaxPromptImages: (e: React.FormEvent) => Promise<boolean>
+  systemMaxPromptImages: number | null
   enabled: boolean
   enabledBusy: boolean
   onToggleEnabled: (next: boolean) => void
@@ -163,6 +174,28 @@ export function AppSettingsView({
         <span className={styles.originWarning} style={{ color: 'inherit', opacity: 0.7 }}>
           Max characters an end user's single prompt may contain. Can only tighten the
           system-wide limit, never loosen it.
+        </span>
+      </form>
+
+      <form className={styles.originForm} onSubmit={onSaveMaxPromptImages}>
+        <span className="micro-label">Images per prompt</span>
+        <div className={styles.originRow}>
+          <input
+            className={styles.originInput}
+            type="number"
+            min={1}
+            max={systemMaxPromptImages ?? undefined}
+            step={1}
+            placeholder="Off"
+            value={maxPromptImagesDraft}
+            onChange={(e) => onMaxPromptImagesDraftChange(e.target.value)}
+          />
+          <button type="submit" className="text-btn" disabled={maxPromptImagesBusy}>
+            {maxPromptImagesBusy ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+        <span className={styles.originWarning} style={{ color: 'inherit', opacity: 0.7 }}>
+          {maxPromptImagesHint(systemMaxPromptImages)}
         </span>
       </form>
 

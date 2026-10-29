@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS apps (
     allowed_origins TEXT[],            -- exact Origin headers a connection may present (any one matching is enough); NULL or empty = no site configured yet, so every WS handshake for this app is rejected (fail-closed) — see ws.Handler.ServeHTTP
     thought         TEXT,              -- per-app want agent system prompt; NULL = use the platform default (want_tools.go's defaultThought)
     max_prompt_length INTEGER,         -- per-app cap on a single prompt's character count; NULL = use the system-wide MAX_PROMPT_LENGTH env var. A non-NULL value can only TIGHTEN the effective limit, never loosen it past the system-wide cap — see inference.EffectiveMaxPromptLength.
+    max_prompt_images INTEGER,         -- per-app cap on how many images a single prompt may attach; NULL = images are not accepted at all (the default — images cost far more tokens than text, so an app owner opts in). A non-NULL value is clamped to the system-wide MAX_PROMPT_IMAGES env var — see inference.EffectiveMaxPromptImages.
     enabled         BOOLEAN NOT NULL DEFAULT TRUE, -- false takes this app's embedded SDK offline: ws.APIKeyResolver rejects the handshake before the upgrade. Does NOT affect the console (Playground, tool editing, settings) — see that resolver's own comment. DEFAULT TRUE so an existing app stays reachable when this column is added.
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -119,6 +120,7 @@ ALTER TABLE apps ADD COLUMN IF NOT EXISTS allowed_origins TEXT[];
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS owner_id BIGINT REFERENCES users (id) ON DELETE CASCADE;
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS thought TEXT;
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS max_prompt_length INTEGER;
+ALTER TABLE apps ADD COLUMN IF NOT EXISTS max_prompt_images INTEGER;
 -- NOT NULL DEFAULT TRUE, so every row that predates this column is enabled:
 -- adding the switch must not take any running integration offline.
 ALTER TABLE apps ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE;
@@ -434,6 +436,27 @@ CREATE INDEX IF NOT EXISTS agent_experiences_app_id_session_id_id_idx
 -- database that ran schema.sql before app_id existed. Safe to drop
 -- unconditionally: nothing else queries by session_id alone.
 DROP INDEX IF EXISTS agent_experiences_session_id_id_idx;
+
+-- agent_blobs holds the bytes of images attached to prompts, so
+-- agent_experiences.data only carries a reference ("sha256:<hex>") instead
+-- of the whole base64 payload — Load reads a session's full history on
+-- every prompt, and inlined images would make every one of those reads
+-- (and the JSONB rows themselves) grow by megabytes. Written and read only
+-- through want's types.BlobStore (see sessionstore.Store.BlobsForApp).
+--
+-- Content-addressed and scoped per app: the same image attached twice in
+-- one app is stored once, but two apps never share a row, so one app can
+-- never read another's image even with a guessed hash. No FK to apps and
+-- no retention, matching agent_experiences above — the rows it references
+-- are never deleted either; both need a retention policy together.
+CREATE TABLE IF NOT EXISTS agent_blobs (
+    app_id     TEXT NOT NULL,
+    hash       TEXT NOT NULL, -- lowercase hex sha256 of data
+    media_type TEXT NOT NULL,
+    data       BYTEA NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (app_id, hash)
+);
 
 -- notifications is the second-from-last stage of the event -> rule ->
 -- notification -> delivery pipeline (see internal/events' package doc

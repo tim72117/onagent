@@ -6,6 +6,54 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
+## Unreleased
+
+No breaking changes. Prompts can carry images, opt-in per app and off by
+default; every existing app and SDK keeps working unchanged. Schema gains
+one column and one table (both applied by `schema.sql` on startup).
+`@onagent/bridge` bumped to 0.3.0. Design, decisions, review findings and
+known limits: `docs/refactor-image-prompts-2026-10-29.md`.
+
+- **want v0.4.1 → v0.5.0.** Brings image input (`SubmitContent`,
+  `types.BlobStore`) and turns want's provider debug dumps off by default
+  (`WANT_DEBUG_LOG=1` to enable) — previously the Gemini provider wrote the
+  full request and response of every call under `logs/`.
+- **Protocol.** `PromptPayload` gains optional `images: [{mediaType, data}]`
+  (base64, png/jpeg/gif/webp). New error codes `images_not_allowed`,
+  `too_many_images`, `invalid_image`; like `prompt_too_long`, they reject
+  only that prompt.
+- **Per-app switch.** New `apps.max_prompt_images` (NULL = images off).
+  Set it with `PUT /console/apps/{appId}/max-prompt-images`,
+  `onagent app maxpromptimages set <appId> <n|clear>`, or the console's
+  "Images per prompt" setting. Clamped to the new `MAX_PROMPT_IMAGES` env
+  var (default 4). App summaries return `maxPromptImages` and
+  `systemMaxPromptImages`; `onagent app get` prints it.
+- **Validation** runs in `ws.Session.handlePrompt` before inference, using
+  want's own `types.ValidateImageSource` (type, base64, sniffed content,
+  5MB per image).
+- **Message size.** The 1MB inbound cap (WS frame and SSE POST) now grows
+  per session once hello binds an app that accepts images: 1MB plus room
+  for that app's image count at the 5MB-per-image ceiling (~29MB at the
+  default 4, under Cloud Run's 32MiB request limit). Apps without images
+  keep exactly 1MB.
+- **Storage.** Image bytes go to a new `agent_blobs` table
+  (content-addressed, scoped per app) through want's `BlobStore`;
+  `agent_experiences` keeps only a `sha256:` ref.
+- **SDK 0.3.0.** `prompt(text, { images })`, a new `imageFromBlob(file)`
+  helper, and `ErrorCode` entries for the new codes (plus the existing
+  `prompt_too_long`, which was missing).
+- **Quota needs no change.** Usage is recorded from the provider's
+  reported tokens, so image tokens count automatically.
+
+Known limits, not addressed here:
+
+- An image stays in the conversation and is re-sent to the model on every
+  later turn of that session, so its tokens are billed again each turn.
+- No retention for `agent_blobs` — the same as `agent_experiences`, whose
+  rows reference them; both need a policy together.
+- The console Playground has no image input yet.
+- Only end-user prompts carry images; bridge tool results stay JSON.
+
 ## v0.7.7
 
 No breaking changes. One constant changed; no API or schema changes.

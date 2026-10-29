@@ -83,6 +83,7 @@ var resources = []resource{
 			{verb: "thought", requireSet: true, run: runAppThought, usage: "onagent app thought set <appId> <thought> [-api <url>]",
 				getRun: runAppThoughtGet, getUsage: "onagent app thought get <appId> [-api <url>]"},
 			{verb: "maxpromptlength", requireSet: true, run: runAppMaxPromptLength, usage: "onagent app maxpromptlength set <appId> <value|clear> [-api <url>]"},
+			{verb: "maxpromptimages", requireSet: true, run: runAppMaxPromptImages, usage: "onagent app maxpromptimages set <appId> <value|clear> [-api <url>]"},
 		},
 	},
 	{
@@ -631,7 +632,7 @@ func runAppOrigin(args []string) error {
 
 // runAppGet prints every field GET /console/apps/{appId} returns that `app
 // list`'s one-line table doesn't: thought, enabled, public,
-// maxPromptLength, allowedOrigins, and the tool count.
+// maxPromptLength, maxPromptImages, allowedOrigins, and the tool count.
 func runAppGet(args []string) error {
 	base, rest := apiFlag(args)
 	if len(rest) != 1 {
@@ -661,6 +662,11 @@ func runAppGet(args []string) error {
 		fmt.Println("maxPromptLength: (unset — using the system-wide default)")
 	} else {
 		fmt.Printf("maxPromptLength: %d\n", *app.MaxPromptLength)
+	}
+	if app.MaxPromptImages == nil {
+		fmt.Println("maxPromptImages: (unset — prompts with images are rejected)")
+	} else {
+		fmt.Printf("maxPromptImages: %d\n", *app.MaxPromptImages)
 	}
 	if len(app.AllowedOrigins) == 0 {
 		fmt.Println("allowedOrigins:  (unset — every connection is rejected until one is set)")
@@ -761,6 +767,45 @@ func runAppMaxPromptLength(args []string) error {
 		fmt.Printf("Cleared %q's max prompt length (using the system-wide default).\n", appID)
 	} else {
 		fmt.Printf("Set %q's max prompt length to %d characters.\n", appID, *maxLen)
+	}
+	return nil
+}
+
+// --- app maxpromptimages set -----------------------------------------------
+
+// runAppMaxPromptImages sets how many images one end-user prompt to appID may
+// attach, or clears it (value == "clear"), which turns images off for the
+// app — the default. A value above the platform-wide MAX_PROMPT_IMAGES is
+// stored but clamped to it — see inference.EffectiveMaxPromptImages.
+func runAppMaxPromptImages(args []string) error {
+	base, rest := apiFlag(args)
+	if len(rest) != 2 {
+		return fmt.Errorf("usage: onagent app maxpromptimages set <appId> <value|clear> [-api <url>]")
+	}
+	appID, value := rest[0], rest[1]
+
+	var maxImages *int
+	if value != "clear" {
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("invalid value %q: must be a positive integer or %q", value, "clear")
+		}
+		maxImages = &n
+	}
+
+	client, err := authenticatedClient(base)
+	if err != nil {
+		return err
+	}
+
+	if _, err := client.setMaxPromptImages(appID, maxImages); err != nil {
+		return fmt.Errorf("set max prompt images: %w", err)
+	}
+
+	if maxImages == nil {
+		fmt.Printf("Cleared %q's max prompt images (prompts with images are now rejected).\n", appID)
+	} else {
+		fmt.Printf("Set %q's max prompt images to %d.\n", appID, *maxImages)
 	}
 	return nil
 }
@@ -1080,6 +1125,25 @@ func (c *apiClient) setMaxPromptLength(appID string, maxLen *int) (appSummary, e
 	}
 
 	res, err := c.do(http.MethodPut, "/console/apps/"+pathEscape(appID)+"/max-prompt-length", bytes.NewReader(body))
+	if err != nil {
+		return appSummary{}, err
+	}
+	defer res.Body.Close()
+
+	var out appSummary
+	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
+		return appSummary{}, fmt.Errorf("decode response: %w", err)
+	}
+	return out, nil
+}
+
+func (c *apiClient) setMaxPromptImages(appID string, maxImages *int) (appSummary, error) {
+	body, err := json.Marshal(map[string]*int{"maxPromptImages": maxImages})
+	if err != nil {
+		return appSummary{}, err
+	}
+
+	res, err := c.do(http.MethodPut, "/console/apps/"+pathEscape(appID)+"/max-prompt-images", bytes.NewReader(body))
 	if err != nil {
 		return appSummary{}, err
 	}

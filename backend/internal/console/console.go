@@ -209,6 +209,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /console/apps/{appId}/origin", h.withOwnedApp(h.setOrigin))
 	mux.HandleFunc("PUT /console/apps/{appId}/thought", h.withOwnedApp(h.setThought))
 	mux.HandleFunc("PUT /console/apps/{appId}/max-prompt-length", h.withOwnedApp(h.setMaxPromptLength))
+	mux.HandleFunc("PUT /console/apps/{appId}/max-prompt-images", h.withOwnedApp(h.setMaxPromptImages))
 	mux.HandleFunc("PUT /console/apps/{appId}/enabled", h.withOwnedApp(h.setEnabled))
 	mux.HandleFunc("DELETE /console/apps/{appId}", h.withOwnedApp(h.deleteApp))
 	mux.HandleFunc("POST /console/apps/{appId}/key", h.withOwnedApp(h.issueKey))
@@ -545,6 +546,7 @@ type appSummary struct {
 	AllowedOrigins  []string `json:"allowedOrigins"`  // empty/nil means unset (fail-closed — see ws.Handler.ServeHTTP)
 	Thought         string   `json:"thought"`         // "" means the platform default applies (agent_roles.go's defaultThought)
 	MaxPromptLength *int     `json:"maxPromptLength"` // nil means the system-wide default applies (inference.EffectiveMaxPromptLength)
+	MaxPromptImages *int     `json:"maxPromptImages"` // nil means the app accepts no images (inference.EffectiveMaxPromptImages)
 	// Enabled is a pointer, not a bare bool, only so that a construction
 	// site which doesn't set it serializes as true (see MarshalJSON)
 	// rather than false. There are nine of these, several of which answer
@@ -565,6 +567,8 @@ type appSummaryJSON struct {
 	Thought               string   `json:"thought"`
 	MaxPromptLength       *int     `json:"maxPromptLength"`
 	SystemMaxPromptLength int      `json:"systemMaxPromptLength"`
+	MaxPromptImages       *int     `json:"maxPromptImages"`
+	SystemMaxPromptImages int      `json:"systemMaxPromptImages"`
 	Enabled               bool     `json:"enabled"`
 }
 
@@ -583,6 +587,8 @@ func (a appSummary) MarshalJSON() ([]byte, error) {
 		Thought:               a.Thought,
 		MaxPromptLength:       a.MaxPromptLength,
 		SystemMaxPromptLength: inference.SystemMaxPromptLength(),
+		MaxPromptImages:       a.MaxPromptImages,
+		SystemMaxPromptImages: inference.SystemMaxPromptImages(),
 		// nil → true: see the Enabled field's own comment. Only a handler
 		// that has actually read the app's state sets this.
 		Enabled: a.Enabled == nil || *a.Enabled,
@@ -609,6 +615,7 @@ func (h *Handler) listApps(w http.ResponseWriter, r *http.Request, user *session
 			AllowedOrigins:  h.Auth.OriginsFor(id),
 			Thought:         app.Thought,
 			MaxPromptLength: app.MaxPromptLength,
+			MaxPromptImages: app.MaxPromptImages,
 			Enabled:         &app.Enabled,
 		})
 	}
@@ -696,6 +703,7 @@ func (h *Handler) setOrigin(w http.ResponseWriter, r *http.Request, user *sessio
 		AllowedOrigins:  h.Auth.OriginsFor(appID),
 		Thought:         app.Thought,
 		MaxPromptLength: app.MaxPromptLength,
+		MaxPromptImages: app.MaxPromptImages,
 	})
 }
 
@@ -726,6 +734,7 @@ func (h *Handler) setThought(w http.ResponseWriter, r *http.Request, user *sessi
 		AllowedOrigins:  h.Auth.OriginsFor(appID),
 		Thought:         req.Thought,
 		MaxPromptLength: app.MaxPromptLength,
+		MaxPromptImages: app.MaxPromptImages,
 	})
 }
 
@@ -765,6 +774,7 @@ func (h *Handler) setEnabled(w http.ResponseWriter, r *http.Request, user *sessi
 		AllowedOrigins:  h.Auth.OriginsFor(appID),
 		Thought:         app.Thought,
 		MaxPromptLength: app.MaxPromptLength,
+		MaxPromptImages: app.MaxPromptImages,
 		Enabled:         &req.Enabled,
 	})
 }
@@ -778,6 +788,38 @@ func (h *Handler) setEnabled(w http.ResponseWriter, r *http.Request, user *sessi
 // invalid positive limit.
 type setMaxPromptLengthRequest struct {
 	MaxPromptLength *int `json:"maxPromptLength"`
+}
+
+// setMaxPromptImagesRequest's pointer has the same reason as
+// setMaxPromptLengthRequest's: null (or an omitted field) clears the
+// setting, which for images means "accept none".
+type setMaxPromptImagesRequest struct {
+	MaxPromptImages *int `json:"maxPromptImages"`
+}
+
+func (h *Handler) setMaxPromptImages(w http.ResponseWriter, r *http.Request, user *session.User) {
+	appID := r.PathValue("appId")
+
+	var req setMaxPromptImagesRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	if err := h.Apps.SetMaxPromptImages(appID, req.MaxPromptImages); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	app, _ := h.Apps.Get(appID)
+	writeJSON(w, http.StatusOK, appSummary{
+		AppID:           appID,
+		ToolCount:       len(app.Tools),
+		HasKey:          h.Auth.HasKey(appID),
+		AllowedOrigins:  h.Auth.OriginsFor(appID),
+		Thought:         app.Thought,
+		MaxPromptLength: app.MaxPromptLength,
+		MaxPromptImages: req.MaxPromptImages,
+		Enabled:         &app.Enabled,
+	})
 }
 
 func (h *Handler) setMaxPromptLength(w http.ResponseWriter, r *http.Request, user *session.User) {
@@ -800,6 +842,7 @@ func (h *Handler) setMaxPromptLength(w http.ResponseWriter, r *http.Request, use
 		AllowedOrigins:  h.Auth.OriginsFor(appID),
 		Thought:         app.Thought,
 		MaxPromptLength: req.MaxPromptLength,
+		MaxPromptImages: app.MaxPromptImages,
 	})
 }
 
@@ -884,6 +927,7 @@ func (h *Handler) saveTool(w http.ResponseWriter, r *http.Request, user *session
 			AllowedOrigins:  h.Auth.OriginsFor(appID),
 			Thought:         app.Thought,
 			MaxPromptLength: app.MaxPromptLength,
+			MaxPromptImages: app.MaxPromptImages,
 		},
 		ToolID: toolID,
 	})
@@ -935,6 +979,7 @@ func (h *Handler) saveToolByID(w http.ResponseWriter, r *http.Request, user *ses
 			AllowedOrigins:  h.Auth.OriginsFor(appID),
 			Thought:         app.Thought,
 			MaxPromptLength: app.MaxPromptLength,
+			MaxPromptImages: app.MaxPromptImages,
 		},
 		ToolID: savedID,
 	})
@@ -960,6 +1005,7 @@ func (h *Handler) deleteTool(w http.ResponseWriter, r *http.Request, user *sessi
 		AllowedOrigins:  h.Auth.OriginsFor(appID),
 		Thought:         app.Thought,
 		MaxPromptLength: app.MaxPromptLength,
+		MaxPromptImages: app.MaxPromptImages,
 	})
 }
 
@@ -987,6 +1033,7 @@ func (h *Handler) deleteToolByID(w http.ResponseWriter, r *http.Request, user *s
 		AllowedOrigins:  h.Auth.OriginsFor(appID),
 		Thought:         app.Thought,
 		MaxPromptLength: app.MaxPromptLength,
+		MaxPromptImages: app.MaxPromptImages,
 	})
 }
 

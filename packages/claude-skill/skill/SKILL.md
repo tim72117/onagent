@@ -70,7 +70,7 @@ onagent app delete <appId>
 ```
 
 需要查看一個既有 app 目前的完整設定（thought、enabled、public、
-maxPromptLength、tool 數量）時：
+maxPromptLength、maxPromptImages、tool 數量）時：
 
 ```bash
 onagent app get <appId>

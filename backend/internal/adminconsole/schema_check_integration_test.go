@@ -105,7 +105,7 @@ func TestSchemaCheckReportsOkAgainstTheRealSchema(t *testing.T) {
 	wantTables := []string{
 		"users", "sessions", "user_tokens", "cli_auth_sessions", "apps",
 		"tools", "subscriptions", "usage_events", "admin_users", "admin_sessions",
-		"identities", "agent_experiences", "notifications", "rule_progress",
+		"identities", "agent_experiences", "agent_blobs", "notifications", "rule_progress",
 		"use_case_responses", "feedback",
 	}
 	if len(got.Tables) != len(wantTables) {

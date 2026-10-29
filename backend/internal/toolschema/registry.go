@@ -25,6 +25,7 @@ type appRow struct {
 	Thought         *string `gorm:"column:thought"`
 	Public          bool    `gorm:"column:public"`
 	MaxPromptLength *int    `gorm:"column:max_prompt_length"`
+	MaxPromptImages *int    `gorm:"column:max_prompt_images"`
 	Enabled         bool    `gorm:"column:enabled"`
 }
 
@@ -388,6 +389,30 @@ func (r *Registry) SetMaxPromptLength(appID string, maxLen *int) error {
 	return r.Reload()
 }
 
+// SetMaxPromptImages sets or clears (maxImages == nil) how many images a
+// single end-user prompt to appID may attach, and reloads so the change is
+// visible immediately. nil turns images off for the app; a non-nil
+// *maxImages <= 0 is rejected for the same reason as SetMaxPromptLength —
+// clearing is how to say "none". Like SetMaxPromptLength this stores the
+// app's requested value unclamped; inference.EffectiveMaxPromptImages
+// applies the system-wide MAX_PROMPT_IMAGES ceiling at read time.
+func (r *Registry) SetMaxPromptImages(appID string, maxImages *int) error {
+	if !ValidAppID(appID) {
+		return fmt.Errorf("toolschema: invalid appId %q", appID)
+	}
+	if maxImages != nil && *maxImages <= 0 {
+		return fmt.Errorf("toolschema: maxPromptImages must be positive, got %d", *maxImages)
+	}
+	res := r.db.Model(&appRow{}).Where("app_id = ?", appID).Update("max_prompt_images", maxImages)
+	if res.Error != nil {
+		return fmt.Errorf("toolschema: set max prompt images for %s: %w", appID, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return fmt.Errorf("toolschema: no such app %q", appID)
+	}
+	return r.Reload()
+}
+
 // SetPublic sets appID's Public flag and reloads so the change is visible
 // immediately. Fails if appID doesn't exist. No REST route calls this today
 // (no caller has asked for one) — it exists so a future admin/owner-facing
@@ -437,7 +462,7 @@ func loadAllApps(db *gorm.DB) (map[string]*App, error) {
 		if row.Thought != nil {
 			thought = *row.Thought
 		}
-		apps[row.AppID] = &App{AppID: row.AppID, Tools: []Tool{}, Thought: thought, Public: row.Public, MaxPromptLength: row.MaxPromptLength, Enabled: row.Enabled}
+		apps[row.AppID] = &App{AppID: row.AppID, Tools: []Tool{}, Thought: thought, Public: row.Public, MaxPromptLength: row.MaxPromptLength, MaxPromptImages: row.MaxPromptImages, Enabled: row.Enabled}
 	}
 
 	var toolRows []toolRow

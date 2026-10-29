@@ -33,6 +33,20 @@ export interface AckPayload {
 
 export interface PromptPayload {
   text: string;
+  /**
+   * Images attached to `text`, in order. Accepted only by an app whose owner
+   * has turned images on; otherwise the prompt is rejected with
+   * ErrorCode.ImagesNotAllowed. Omitted for a text-only prompt.
+   */
+  images?: PromptImage[];
+}
+
+/** One image attached to a prompt. See `imageFromBlob` to build one from a File. */
+export interface PromptImage {
+  /** One of image/png, image/jpeg, image/gif, image/webp — and it must match the bytes. */
+  mediaType: string;
+  /** The image's base64, without a `data:` URL prefix. */
+  data: string;
 }
 
 export interface ToolCallPayload {
@@ -71,4 +85,15 @@ export const ErrorCode = {
    * this arrives once per rejected prompt, not as a socket close.
    */
   QuotaExceeded: "quota_exceeded",
+  /** The prompt's text is over the app's character limit. */
+  PromptTooLong: "prompt_too_long",
+  /** The prompt attached images, but this app doesn't accept them. */
+  ImagesNotAllowed: "images_not_allowed",
+  /** The prompt attached more images than this app allows. */
+  TooManyImages: "too_many_images",
+  /**
+   * An attached image was rejected: unsupported type, bad base64, bytes that
+   * don't match `mediaType`, or over the size limit.
+   */
+  InvalidImage: "invalid_image",
 } as const;

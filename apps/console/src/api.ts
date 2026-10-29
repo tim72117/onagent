@@ -27,6 +27,10 @@ export interface AppSummary {
    * caps this value too, even when set: an app can only tighten the limit,
    * never loosen it past the system-wide cap). */
   maxPromptLength: number | null
+  /** How many images one end-user prompt may attach. null means the app
+   * accepts no images — the default; the backend rejects any prompt that
+   * attaches one. A set value is capped by systemMaxPromptImages. */
+  maxPromptImages: number | null
   /** Whether this app's embedded SDK may open connections. false makes the
    * backend reject a site's WebSocket handshake before the upgrade (see
    * ws.APIKeyResolver); the console's own Playground keeps working either
@@ -37,6 +41,9 @@ export interface AppSummary {
    * var, or its own built-in default) — the ceiling maxPromptLength above
    * can tighten but never loosen past. Same value for every app. */
   systemMaxPromptLength: number
+  /** The system-wide cap on images per prompt (backend's MAX_PROMPT_IMAGES
+   * env var, or its built-in default). Same value for every app. */
+  systemMaxPromptImages: number
 }
 
 // What both saveTool and saveToolByID return: the usual AppSummary fields,
@@ -242,6 +249,11 @@ export const api = {
   // system-wide default); a positive number sets it.
   setMaxPromptLength: (appId: string, maxPromptLength: number | null): Promise<AppSummary> =>
     request('PUT', `/console/apps/${id(appId)}/max-prompt-length`, { maxPromptLength }).then((r) => r.json()),
+
+  // maxPromptImages: null turns images off for the app; a positive number
+  // lets one prompt attach up to that many.
+  setMaxPromptImages: (appId: string, maxPromptImages: number | null): Promise<AppSummary> =>
+    request('PUT', `/console/apps/${id(appId)}/max-prompt-images`, { maxPromptImages }).then((r) => r.json()),
 
   // Takes the app's embedded SDK offline (false) or puts it back (true).
   // Leaves the key, origins and tools alone, so re-enabling restores the

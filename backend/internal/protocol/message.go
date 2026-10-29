@@ -77,6 +77,21 @@ type AckPayload struct {
 // PromptPayload is the Payload of a TypePrompt message.
 type PromptPayload struct {
 	Text string `json:"text"`
+	// Images are attached to Text, in order. Accepted only when the app has
+	// opted in (toolschema.App.MaxPromptImages); otherwise the prompt is
+	// rejected with CodeImagesNotAllowed. Omitted for a text-only prompt,
+	// which is every prompt an SDK older than 0.3.0 sends.
+	Images []PromptImage `json:"images,omitempty"`
+}
+
+// PromptImage is one image attached to a prompt.
+type PromptImage struct {
+	// MediaType is one of image/png, image/jpeg, image/gif, image/webp,
+	// and must match the bytes in Data.
+	MediaType string `json:"mediaType"`
+	// Data is the image's base64 (standard alphabet, padded), without a
+	// data: URL prefix.
+	Data string `json:"data"`
 }
 
 // ToolCallPayload is the Payload of a TypeToolCall message.
@@ -122,4 +137,18 @@ const (
 	// inference.EffectiveMaxPromptLength). The connection stays open and
 	// only this one prompt is rejected, same as CodeQuotaExceeded.
 	CodePromptTooLong = "prompt_too_long"
+
+	// CodeImagesNotAllowed means the prompt attached images but this app
+	// does not accept them (toolschema.App.MaxPromptImages is unset). Only
+	// this one prompt is rejected, same as CodePromptTooLong.
+	CodeImagesNotAllowed = "images_not_allowed"
+
+	// CodeTooManyImages means the prompt attached more images than this
+	// app's effective limit (inference.EffectiveMaxPromptImages).
+	CodeTooManyImages = "too_many_images"
+
+	// CodeInvalidImage means an attached image failed validation: an
+	// unsupported media type, data that is not valid base64, bytes that
+	// don't match the declared media type, or an image over the size limit.
+	CodeInvalidImage = "invalid_image"
 )

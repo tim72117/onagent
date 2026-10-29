@@ -261,6 +261,7 @@ gcloud beta run domain-mappings describe \
 | `ADDR` | 不需設定 | main.go 預設 `:8080`，符合 Cloud Run 的 `PORT=8080` 慣例，通常不需要覆寫 |
 | `QUOTA_ENABLED` | 不需設定 | main.go 預設 `true`（啟用每月額度限制）；目前部署未覆寫，維持預設 |
 | `MAX_PROMPT_LENGTH` | 不需設定 | 系統級的單則使用者 prompt 字數上限，未設定或非正整數時預設 `500`（見 `internal/inference.EffectiveMaxPromptLength`）；各 app 可透過 `onagent app maxpromptlength set` 個別收緊（不能放寬超過這個系統級上限）。目前部署未覆寫，維持預設 |
+| `MAX_PROMPT_IMAGES` | 不需設定 | 系統級的單則 prompt 可附圖片張數上限，未設定或非正整數時預設 `4`（見 `internal/inference.EffectiveMaxPromptImages`）。圖片預設關閉，app 要先用 `onagent app maxpromptimages set` 或 console 開啟，設定值會被壓在這個上限以內。開啟圖片的 app，單則訊息上限會從 1 MB 放寬到「1 MB + 張數 × 單張 base64 上限（約 7 MB）」，預設 4 張約 29 MB，低於 Cloud Run 單一 HTTP 請求的 32 MiB；**調高這個值前先確認 SSE 的 POST 不會超過 32 MiB** |
 | `GH_PAT` | GitHub Actions repo secret（**不是** GCP Secret Manager） | 只在 Docker build 階段使用（`--secret id=gh_pat`），抓 `github.com/tim72117/want` 私有模組，不會進最終 runtime image |
 | `LANDING_ANALYSIS_API_KEY` | GitHub Actions repo secret（**不是** GCP Secret Manager，選填） | 只在 landing 前端 build 階段使用（`--secret id=landing_analysis_api_key`），寫進 `.env.production.local` 給 Vite 讀取；會被打包進瀏覽器端 JS bundle（刻意如此，是瀏覽器端可見的 app key），不影響後端 runtime image |
 

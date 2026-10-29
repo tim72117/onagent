@@ -4,11 +4,13 @@ import type {
   AssistantMessagePayload,
   Envelope,
   ErrorPayload,
+  PromptImage,
+  PromptPayload,
   ToolCallPayload,
   ToolResultPayload,
 } from "./protocol.js";
 
-const SDK_VERSION = "0.2.0";
+const SDK_VERSION = "0.3.0";
 
 /** A tool handler the developer registers to fulfill a named tool call. */
 export type ToolHandler = (args: any) => Promise<unknown> | unknown;
@@ -181,6 +183,35 @@ type QueuedSend = { type: string; requestId?: string; payload?: unknown };
  * flushed once the connection is ready, so callers never have to check a
  * "ready" flag themselves.
  */
+/** Options for `AgentBridge.prompt`. */
+export interface PromptOptions {
+  /** Images to attach, in order. */
+  images?: PromptImage[];
+}
+
+const PROMPT_IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+/**
+ * Reads an image File/Blob (e.g. from `<input type="file">` or a paste
+ * event) into a `PromptImage` for `prompt(text, { images })`. Rejects a
+ * type the backend won't accept; size and content are checked server-side,
+ * where an oversized or mislabeled image comes back as
+ * `ErrorCode.InvalidImage`.
+ */
+export async function imageFromBlob(blob: Blob): Promise<PromptImage> {
+  if (!PROMPT_IMAGE_TYPES.includes(blob.type)) {
+    throw new Error(`unsupported image type "${blob.type}" (expected ${PROMPT_IMAGE_TYPES.join(", ")})`);
+  }
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  // String.fromCharCode in chunks: spreading a multi-megabyte array into
+  // one call overflows the argument limit.
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return { mediaType: blob.type, data: btoa(binary) };
+}
+
 export class AgentBridge {
   private transport: Transport | null = null;
   /** Which wire connect() uses next. Fixed unless transport is "auto" —
@@ -248,10 +279,17 @@ export class AgentBridge {
     }
   }
 
-  /** Ask the inference service to reason about a prompt. */
-  prompt(text: string): void {
+  /**
+   * Ask the inference service to reason about a prompt, optionally with
+   * images attached (see `imageFromBlob`). Images are accepted only by an
+   * app whose owner has turned them on; otherwise the prompt comes back as
+   * an error with `ErrorCode.ImagesNotAllowed`.
+   */
+  prompt(text: string, options: PromptOptions = {}): void {
     const requestId = randomRequestId();
-    this.enqueue({ type: "prompt", requestId, payload: { text } });
+    const payload: PromptPayload = { text };
+    if (options.images?.length) payload.images = options.images;
+    this.enqueue({ type: "prompt", requestId, payload });
   }
 
   /** Tear down the connection. No further reconnect attempts will be made. */

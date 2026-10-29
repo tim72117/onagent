@@ -627,6 +627,60 @@ func TestSetMaxPromptLength(t *testing.T) {
 	}
 }
 
+// TestSetMaxPromptImages covers the per-app image switch: off (nil) by
+// default, settable to a positive count, clearable back to off.
+func TestSetMaxPromptImages(t *testing.T) {
+	database := openTestDB(t)
+	sqlDB, _ := database.DB()
+	conn := sqlDB
+
+	const ownerID = 999811
+	const appID = "test-toolschema-maxpromptimages-app"
+	makeTestUser(t, conn, ownerID, "toolschema-maxpromptimages@example.com")
+	t.Cleanup(func() {
+		_, _ = conn.Exec(`DELETE FROM apps WHERE app_id = $1`, appID)
+	})
+
+	reg, err := NewRegistry(database)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	if err := reg.Create(appID, ownerID, false); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// A freshly created app accepts no images.
+	app, ok := reg.Get(appID)
+	if !ok || app.MaxPromptImages != nil {
+		t.Fatalf("Get after Create: MaxPromptImages = %v, want nil", app.MaxPromptImages)
+	}
+
+	limit := 3
+	if err := reg.SetMaxPromptImages(appID, &limit); err != nil {
+		t.Fatalf("SetMaxPromptImages(3): %v", err)
+	}
+	app, ok = reg.Get(appID)
+	if !ok || app.MaxPromptImages == nil || *app.MaxPromptImages != 3 {
+		t.Fatalf("Get after SetMaxPromptImages(3): MaxPromptImages = %v, want 3", app.MaxPromptImages)
+	}
+
+	if err := reg.SetMaxPromptImages(appID, nil); err != nil {
+		t.Fatalf("SetMaxPromptImages(nil): %v", err)
+	}
+	app, ok = reg.Get(appID)
+	if !ok || app.MaxPromptImages != nil {
+		t.Fatalf("Get after SetMaxPromptImages(nil): MaxPromptImages = %v, want nil", app.MaxPromptImages)
+	}
+
+	zero := 0
+	if err := reg.SetMaxPromptImages(appID, &zero); err == nil {
+		t.Fatalf("SetMaxPromptImages(0) = nil error, want an error")
+	}
+	if err := reg.SetMaxPromptImages("no-such-app-at-all", &limit); err == nil {
+		t.Fatalf("SetMaxPromptImages on a nonexistent app = nil error, want an error")
+	}
+}
+
 // TestSaveTool_PublishesToolCreatedEvent confirms SaveTool publishes
 // "tool.created" through a wired events.Bus when it inserts a brand-new
 // tool — the actual event-source demonstration for the events package

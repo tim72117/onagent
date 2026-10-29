@@ -171,6 +171,9 @@ func (s *WantService) buildOrchestrator(appID, role string, toolbox types.ToolPr
 
 	if s.sessionStore != nil {
 		orch.SetSessionStore(s.sessionStore.ForApp(appID))
+		// Images attached to prompts go to agent_blobs, leaving only a ref
+		// in agent_experiences — see sessionstore.Store.BlobsForApp.
+		orch.SetBlobStore(s.sessionStore.BlobsForApp(appID))
 	}
 
 	orch.Start()
@@ -337,7 +340,7 @@ func (s *WantService) Complete(ctx context.Context, req Request) (*Result, error
 	})
 	defer unsub()
 
-	if _, err := orch.Submit(req.Prompt); err != nil {
+	if _, err := submitPrompt(orch, req); err != nil {
 		return nil, fmt.Errorf("want submit failed: %w", err)
 	}
 
@@ -391,4 +394,23 @@ func sessionKeyFor(id string) string {
 		return id
 	}
 	return ""
+}
+
+// submitPrompt hands req to orch: plain Submit for a text-only prompt, so
+// that path is byte-for-byte what it was before images existed, and
+// SubmitContent otherwise. Images go before the text — the order both
+// Anthropic and Google recommend for a question about an image — and an
+// empty text block is left out rather than sent alongside them.
+func submitPrompt(orch *orchestrator.Orchestrator, req Request) (string, error) {
+	if len(req.Images) == 0 {
+		return orch.Submit(req.Prompt)
+	}
+	contents := make([]types.Content, 0, len(req.Images)+1)
+	for _, img := range req.Images {
+		contents = append(contents, types.NewImageContent(img.MediaType, img.Data))
+	}
+	if req.Prompt != "" {
+		contents = append(contents, types.NewTextContent(req.Prompt))
+	}
+	return orch.SubmitContent(contents)
 }

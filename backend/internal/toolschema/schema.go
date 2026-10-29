@@ -198,4 +198,12 @@ type App struct {
 	// env var). This bounds the *end user's* chat input (ws.Session.handlePrompt),
 	// not any developer-facing text like Thought above.
 	MaxPromptLength *int `yaml:"maxPromptLength,omitempty" json:"maxPromptLength,omitempty"`
+
+	// MaxPromptImages caps how many images a single prompt from this app's
+	// end users may attach — nil means images are not accepted at all,
+	// which is the default: an image costs far more tokens than a line of
+	// text, and those tokens bill to the app owner's quota, so the owner
+	// opts in. A non-nil value is clamped to the system-wide
+	// MAX_PROMPT_IMAGES env var (see inference.EffectiveMaxPromptImages).
+	MaxPromptImages *int `yaml:"maxPromptImages,omitempty" json:"maxPromptImages,omitempty"`
 }

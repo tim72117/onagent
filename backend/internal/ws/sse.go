@@ -263,7 +263,7 @@ func (h *SSEHandler) Message(w http.ResponseWriter, r *http.Request) {
 	}
 	setCORS(w, sess.origin)
 
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxInboundMessageBytes))
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, sess.s.inboundLimit()))
 	if err != nil {
 		// Only an actual size overflow is a 413 — the SDK treats any non-404
 		// as "the server rejected this message, don't resend". Anything else
