@@ -6,7 +6,7 @@ versioning follows semver conventions for a pre-1.0 project (see
 `.claude/skills/version-tagging`: a breaking change bumps minor, not patch,
 until 1.0).
 
-## Unreleased
+## v0.7.8
 
 No breaking changes. Prompts can carry images, opt-in per app and off by
 default; every existing app and SDK keeps working unchanged. Schema gains

@@ -1,12 +1,12 @@
 # Images in prompts — 2026-10-29
 
-**Status:** implemented in the working tree on top of v0.7.7, not yet
-committed or released (CHANGELOG "Unreleased", `@onagent/bridge` 0.3.0).
+**Status:** shipped in v0.7.8 (`@onagent/bridge` 0.3.0 not yet published to npm),
+released before the review fixes below.
 Unit and integration tests pass, apart from the
 `TestRegistryBackendDispatch_UpdateClearsDispatchWhenOmitted` failure, which
 also fails on a clean v0.7.7. Not yet run against a real model. A code review
 raised the items under [Review findings](#review-findings-2026-10-29). Items
-R1, R2 and R5 should be fixed before release.
+R1, R2 and R5 remain open and should be fixed next.
 
 ## Why
 
